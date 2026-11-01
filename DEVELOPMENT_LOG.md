@@ -27,3 +27,5 @@ Applied the permanent cross-account continuation protocol. The stored next-sessi
 Configured the official GitHub `origin` and verified with `git ls-remote --heads` that it had no branch heads before first publication. Added permanent GitHub continuity, safe-push, and remote-verification requirements to the handoff checkpoints.
 
 Published the complete verified local history to the empty GitHub `origin/main` without force-pushing, then verified the remote head at `2526fb4`.
+
+Added an injected provider transport seam. It validates response shape, sends no secret-reference metadata to the transport, and creates a canonical approval description bound to provider, model, cloud flag, task, and prompt SHA-256. The default test suite passed 11 unit tests with the listener test skipped.

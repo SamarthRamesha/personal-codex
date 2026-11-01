@@ -2,7 +2,7 @@
 """Personal Codex local control plane. Standard-library only by design for v0."""
 from __future__ import annotations
 
-import json, os, re, resource, shlex, signal, sqlite3, subprocess, sys, tempfile, time, uuid
+import hashlib, json, os, re, resource, shlex, signal, sqlite3, subprocess, sys, tempfile, time, uuid
 from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -70,6 +70,19 @@ def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: s
 def provider_capabilities(provider: dict) -> dict:
     """Describe the adapter boundary without invoking a provider or reading a secret."""
     return {"id": provider["id"], "kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "cloud_allowed": bool(provider["cloud_allowed"]), "supports_streaming": True, "supports_tool_calls": provider["kind"] == "openai-compatible", "invocation_requires_approval": True}
+
+def provider_invocation_detail(task_id: str, provider: dict, prompt: str) -> str:
+    """Bind a future approval to exact non-secret provider metadata and request bytes."""
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    return approval_detail("provider-invoke", task_id, provider_id=provider["id"], model=provider["model"], prompt_sha256=digest, cloud_allowed=str(bool(provider["cloud_allowed"])))
+
+def invoke_provider(provider: dict, prompt: str, transport) -> dict:
+    """Adapter seam for approved callers; transport is injected so tests perform no I/O."""
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 20_000: raise ValueError("Provider prompt must contain 1–20000 characters")
+    request = {"kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt}
+    response = transport(request)
+    if not isinstance(response, dict) or not isinstance(response.get("text"), str): raise ValueError("Provider transport returned an invalid response")
+    return {"text": response["text"][:MAX_OUTPUT_BYTES], "model": provider["model"], "provider_id": provider["id"]}
 
 def visible_files(root: Path, cap=160):
     result=[]

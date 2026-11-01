@@ -16,7 +16,7 @@
 ## Next
 
 - [ ] Implement project memory rebuild from manifests, docs, and parsed symbols.
-- [ ] Implement approval-gated provider invocation adapters (Ollama plus OpenAI-compatible first) with streaming, tool calls, and local/cloud consent. Metadata validation is complete.
+- [ ] Implement approval-gated provider invocation adapters (Ollama plus OpenAI-compatible first) with streaming, tool calls, and local/cloud consent. Metadata validation and an injected deterministic transport seam are complete.
 - [ ] Design and implement mutually authenticated ZimaOS worker registration after actual server discovery credentials are supplied.
 - [ ] Package a Tauri desktop shell only after the local API is covered by integration tests.
 

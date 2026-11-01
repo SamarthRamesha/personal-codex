@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import app.server as server
-from app.server import execute_in_workspace, merge_preview, parse_command, plan_for, redacted, repository_summary, safe_project_path, validate_provider_config, visible_files
+from app.server import execute_in_workspace, invoke_provider, merge_preview, parse_command, plan_for, provider_invocation_detail, redacted, repository_summary, safe_project_path, validate_provider_config, visible_files
 
 class SecurityAndPlanningTests(unittest.TestCase):
   def test_secret_named_files_not_visible(self):
@@ -44,6 +44,12 @@ class SecurityAndPlanningTests(unittest.TestCase):
     with self.assertRaises(ValueError): validate_provider_config('openai-compatible','https://provider.example/v1','model','API_KEY',False)
   def test_provider_secret_reference_is_only_an_environment_variable_name(self):
     with self.assertRaises(ValueError): validate_provider_config('openai-compatible','https://provider.example/v1','model','sk-secret-value',True)
+  def test_injected_provider_transport_has_no_secret_or_network_dependency(self):
+    provider={'id':'provider-1','kind':'ollama','endpoint':'http://127.0.0.1:11434','model':'fixture','cloud_allowed':0}
+    seen=[]
+    result=invoke_provider(provider,'hello',lambda request: seen.append(request) or {'text':'deterministic reply'})
+    self.assertEqual(result['text'],'deterministic reply'); self.assertNotIn('secret_ref',seen[0])
+    self.assertNotEqual(provider_invocation_detail('task-1',provider,'hello'),provider_invocation_detail('task-1',provider,'changed'))
 
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
 class HttpLifecycleTests(unittest.TestCase):
