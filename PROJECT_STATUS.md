@@ -2,7 +2,7 @@
 
 Updated: 2026-11-01 (Asia/Kolkata)
 
-## Current milestone: execution reliability, budgets and repository intelligence
+## Current milestone: live-provider readiness, memory promotion and streaming
 
 Continuity protocol: `NEXT_SESSION_PROMPT.md` is a permanent, ready-to-use cross-account handoff. It is regenerated after each meaningful verified milestone, on user request, and before usage exhaustion; it must embed the recursive continuation protocol for the next account.
 
@@ -39,6 +39,10 @@ Implemented and verified:
 - Repository context engine (`app/context.py`): manifest, doc/manifest prioritisation, Python `ast` and JS symbol outlines, token/failed-test/changed-file ranking, `.gitignore` and secret exclusion, symlink containment, per-file and total byte caps, stable digest, and an explicitly untrusted prompt block.
 - Project memory foundation (`memory` table): seven kinds, bounded content, credential-pattern rejection, project-scoped CRUD, and a "possibly stale" prompt section.
 - Dashboard: cancel task, explicit budget reset, budget meter, operation ledger, and selected-context panel with reasons, line ranges and digest.
+- Memory promotion: proposals only after a passing round, with provenance, duplicate and credential refusal, explicit approve/reject, staleness labelling and relevance-ranked bounded retrieval.
+- Streaming: bounded, cancellable NDJSON adapter with rejection of malformed, unterminated, oversized and erroring streams; opt-in via `PERSONAL_CODEX_STREAM_PROVIDER`.
+- Diagnostics: `scripts/live_provider_check.py` (model discovery, explicit model choice, schema probe, latency/bytes, sanitised errors) and provider health/latency metadata in the API.
+- Secret-shape redaction for provider error bodies.
 - Browser-free dashboard contract tests (`tests/test_ui.py`) assert that scripted element IDs exist, every button is wired, every `/api/...` path used by the script is routed, gated actions are all present, and only local assets are loaded without browser-stored secrets.
 - Provider adapter tests (`tests/test_providers.py`) run against an ephemeral loopback stub server: request shape and path, response extraction, malformed JSON, HTTP errors, redirect refusal, connection refusal, timeout, oversized response, unexpected structure, invalid endpoints, non-loopback refusal, credential handling, and transport selection. No external network or real model is used.
 - Agent tests (`tests/test_tools.py`): schema and argument validation, path/symlink/secret containment, patch hash binding, duplicate-match refusal, stop-on-failure execution, runner failure handling, digest binding, and an opt-in HTTP lifecycle where an approved proposal edits the worktree, runs a test command, refuses a second execution, and rejects a stale file with the file preserved.
@@ -47,7 +51,7 @@ Implemented and verified:
 Verification completed (2026-11-01, this session):
 
 - `python3 -m unittest discover -s tests -v` — 84 tests, `OK (skipped=14)`: the listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 84 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
+- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 104 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
 - `python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py` — passed.
 - `node --check web/app.js` — passed.
 - `node --check web/app.js` — passed.
@@ -55,4 +59,4 @@ Verification completed (2026-11-01, this session):
 
 Environment note: this cloud workspace ran Python 3.12.3 and Node 26.13.0; the owner's Mac has Python 3.13.9 and Node 24.22.1.
 
-Not implemented: provider streaming and native tool calling, project memory/indexer, native desktop shell, server connector, encrypted secrets, auth/TLS remote protocol, conflict-resolution tooling, and browser-automation UI tests. No live model has been exercised: all adapter and agent tests use injected transports or a local stub server, so a real Ollama/macOS run remains outstanding.
+Not implemented: provider-native tool calling, semantic retrieval, native desktop shell, server connector, encrypted secrets, auth/TLS remote protocol, conflict-resolution tooling, and browser-automation UI tests. No live model has been exercised: all adapter and agent tests use injected transports or a local stub server, so a real Ollama/macOS run remains outstanding.

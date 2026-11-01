@@ -64,7 +64,7 @@ def is_ignored(relative: str, patterns: list[str]) -> bool:
     if any(part in IGNORED_DIRS for part in parts[:-1]):
         return True
     name = parts[-1].lower()
-    if name in SECRET_NAMES or name.startswith(".env"):
+    if name in SECRET_NAMES or name.startswith(".env") or name == ".git":
         return True
     for pattern in patterns:
         if fnmatch(relative, pattern) or fnmatch(name, pattern) or fnmatch(parts[0], pattern):

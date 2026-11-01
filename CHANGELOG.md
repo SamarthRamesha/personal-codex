@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 — 2026-11-01
+
+- Added evidence-backed memory promotion: proposals require a passing round, carry provenance (task, round, test command, exit code, changed files), are deduplicated, credential-checked, and stored only after explicit approval or rejection.
+- Added memory staleness labelling, provenance columns (with an additive migration), and relevance-ranked bounded retrieval against the task and selected context paths.
+- Added `OllamaStreamTransport` with bounded NDJSON accumulation, cancellation, redirect/proxy refusal, and rejection of malformed, oversized, erroring or unterminated streams; opt-in via `PERSONAL_CODEX_STREAM_PROVIDER`.
+- Added model discovery (`/api/tags`) and `scripts/live_provider_check.py`, a read-only diagnostic with explicit model selection, schema validation, latency and byte reporting, and sanitised errors.
+- Added provider health metadata (status, issues, last latency) to `GET /api/providers` and `GET /api/providers/{id}/health`, and recorded latency after each invocation.
+- Added secret-shape redaction for provider error bodies.
+- Dashboard: project-memory panel with pending proposals and approve/reject, provider status and latency, `.git` excluded from prompt listings and context walks.
+- Added 20 tests: streaming, discovery, redaction, harness behaviour, memory promotion/staleness/retrieval, and UI contracts. Documented measured performance.
+
 ## 0.3.0 — 2026-11-01
 
 - Added per-operation cancellation: a persisted cancellation bound to the active round, checked before every tool and test command, revoking the round's approval, preserving completed work, and recording skipped indexes.

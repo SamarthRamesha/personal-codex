@@ -2,6 +2,12 @@
 
 ## 2026-11-01
 
+Verified `5e4267f` and confirmed no Ollama binary or service exists in this environment, so live model validation remains a documented, harnessed procedure rather than a claimed result. Built `scripts/live_provider_check.py` first so the owner can prove endpoint/model compatibility in one command, then made it deterministic under test with a loopback stub (unreachable service, empty model list, explicit-model requirement, valid probe, invalid JSON).
+
+Added streaming at the transport layer (NDJSON accumulation with byte/chunk caps, cancellation, termination and malformation rejection) and kept it opt-in so the approved non-streaming path is unchanged. Provider error bodies are now scrubbed of secret-shaped strings, and provider health/latency is exposed without new network calls.
+
+Memory promotion required the most care: the first implementation rejected every approval because duplicate detection also compared the proposal against itself. Fixed by separating "proposing" (memory + pending proposals) from "approving" (stored memory only). Two smaller bugs surfaced: provider inserts broke when additive migrations widened the table (fixed with explicit column lists), and the `.git` file/worktree marker leaked into prompt listings and context manifests (now filtered). Measured performance: context selection ~45 ms for 24 files and 42.5 kB selected, SQLite query ~0.11 ms, API responses under 2 ms. Verification: 104 tests with HTTP integration enabled, `OK`.
+
 Started Milestone 4 from a verified `cc334d1`. Implemented the repository context engine first because it determines prompt budget and approval binding: `app/context.py` with deterministic ranking, `.gitignore`/secret exclusion, symlink containment and digest. The round request now stores the exact approved prompt with its context so `round/plan` reproduces the approved bytes instead of rebuilding them (rebuilding would have silently broken the digest check).
 
 Added cancellation as persisted state bound to a round, with a `stop_check` consulted before every operation and a `round_feedback` cancellation record; added an operation ledger written through tool callbacks so `app/tools.py` keeps no storage authority; added cumulative budgets with clamped environment variables and an explicit reset. The dashboard gained cancel, budget meter, ledger, and context panels.

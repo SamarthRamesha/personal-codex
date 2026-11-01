@@ -5,7 +5,7 @@ const msg=(el,text,fail=false)=>{el.textContent=text;el.style.color=fail?'#ff9e9
 let tasks=[], selectedId=null, providerCache=[], invoking=false;
 function updateProviderHint(){
  const p=providerCache.find(x=>x.id===$('#provider-select').value);
- $('#provider-hint').textContent=p?`${p.kind} · ${p.model} · ${p.endpoint} · ${p.cloud_allowed?'cloud transmission needs a separate network approval':'loopback only — no network approval needed'}`:'No provider selected; register one below before requesting an invocation.';
+ $('#provider-hint').textContent=p?`${p.kind} · ${p.model} · ${p.endpoint} · ${p.cloud_allowed?'cloud transmission needs a separate network approval':'loopback only — no network approval needed'}${p.last_latency_ms!=null?` · last call ${p.last_latency_ms} ms`:''}${p.health&&p.health.issues.length?` · ${p.health.issues.join(', ')}`:''}`:'No provider selected; register one below before requesting an invocation.';
 }
 
 async function refresh(){
@@ -17,7 +17,7 @@ async function refresh(){
   document.querySelectorAll('[data-task]').forEach(el=>el.onclick=()=>selectTask(el.dataset.task));
   $('#approvals').innerHTML=approvals.length?approvals.map(a=>`<div class=item><span class=tag>${esc(a.kind)}</span><strong>${esc(a.detail)}</strong><div class=approval-buttons><button class=approve data-approval="${a.id}" data-status="approved">Approve</button><button class=reject data-approval="${a.id}" data-status="rejected">Reject</button></div></div>`).join(''):'<div class=empty>No pending approvals.</div>';
   document.querySelectorAll('[data-approval]').forEach(el=>el.onclick=()=>decide(el.dataset.approval,el.dataset.status));
-  $('#providers').innerHTML=providers.length?providers.map(p=>`<div class=item><strong>${esc(p.model)}</strong><small>${esc(p.kind)} · ${p.cloud_allowed?'cloud allowed':'local-only'}</small></div>`).join(''):'<div class=empty>No model providers configured.</div>';
+  $('#providers').innerHTML=providers.length?providers.map(p=>`<div class=item><span class=tag>${esc(p.health?p.health.status:'unknown')}</span><strong>${esc(p.model)}</strong><small>${esc(p.kind)} · ${p.cloud_allowed?'cloud allowed':'local-only'}${p.last_latency_ms!=null?` · last ${p.last_latency_ms} ms`:''}${p.health&&p.health.issues&&p.health.issues.length?` · ${esc(p.health.issues.join(', '))}`:''}</small></div>`).join(''):'<div class=empty>No model providers configured.</div>';
   providerCache=providers;
   $('#provider-select').innerHTML=providers.length?providers.map(p=>`<option value="${p.id}">${esc(p.model)} — ${esc(p.kind)}${p.cloud_allowed?' · cloud':''}</option>`).join(''):'<option value="">No providers configured</option>';
   $('#request-provider-invoke').disabled=!providers.length; $('#invoke-provider').disabled=!providers.length;
@@ -38,6 +38,7 @@ async function renderSelected(){
   const [workspace,events,executions,invocations,proposal,rounds,report]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`),api(`/api/tasks/${task.id}/invocations`),api(`/api/tasks/${task.id}/agent`),api(`/api/tasks/${task.id}/agent/rounds`),api(`/api/tasks/${task.id}/agent/report`)]);
   renderProposal(proposal);
   renderRounds(rounds,report);
+  await renderMemory(task);
   const ready=workspace.status==='ready'; $('#workspace-state').textContent=ready?workspace.branch:workspace.status;
   const released=workspace.status==='released', merged=workspace.status==='merged';
   $('#create-workspace').disabled=ready; $('#request-workspace').disabled=ready;
@@ -86,6 +87,17 @@ $('#plan-agent-round').onclick=()=>action(`/api/tasks/${selectedId}/agent/round/
 $('#execute-agent-round').onclick=()=>action(`/api/tasks/${selectedId}/agent/round/execute`,{},d=>`Round ${d.round} ${d.status}.`);
 $('#cancel-agent-round').onclick=()=>action(`/api/tasks/${selectedId}/agent/round/cancel`,{},d=>`Round ${d.round} ${d.status}.`);
 $('#cancel-task').onclick=()=>action(`/api/tasks/${selectedId}/cancel`,{reason:'cancelled from dashboard'},()=> 'Cancellation recorded; no new operation will start.');
+async function renderMemory(task){
+ try{
+  const [memory,proposals]=await Promise.all([api(`/api/projects/${task.project_id}/memory`),api(`/api/projects/${task.project_id}/memory/proposals`)]);
+  const pending=proposals.proposals.filter(p=>p.status==='pending');
+  const rows=[...pending.map(p=>`<div class=item><span class=tag>proposal</span><strong>${esc(p.kind)}: ${esc(p.content)}</strong><small class=muted>${esc(p.evidence||'')}</small><div class=approval-buttons><button data-proposal="${esc(p.id)}" data-decision="approved">Approve memory</button><button data-proposal="${esc(p.id)}" data-decision="rejected">Reject</button></div></div>`),
+   ...memory.memory.map(m=>`<div class=item><span class=tag>${esc(m.kind)}</span><strong>${esc(m.content)}</strong><small class=muted>${m.stale?'possibly stale — verify against the files':'verified against a passing round'}${m.source_task_id?' · from task '+esc(m.source_task_id.slice(0,8)):''}</small></div>`)];
+  $('#memory-list').innerHTML=rows.length?rows.join(''):'<div class=empty>No project memory yet.</div>';
+  $('#memory-list').onclick=(event)=>{const b=event.target.closest('button[data-proposal]');if(!b)return;action(`/api/memory-proposals/${b.dataset.proposal}/decide`,{status:b.dataset.decision},d=>`Memory ${d.status}.`)};
+ }catch(e){$('#memory-list').innerHTML='<div class=empty>Memory unavailable.</div>'}
+}
+$('#propose-memory').onclick=()=>action(`/api/tasks/${selectedId}/agent/memory/propose`,{kind:$('#memory-kind').value,content:$('#memory-content').value},d=>`Memory proposal queued (${d.kind}); approve it to store it.`);
 $('#reset-budget').onclick=()=>action(`/api/tasks/${selectedId}/agent/budget/reset`,{confirm:true},d=>`Budget reset explicitly; ${d.budget.used.invocations} invocation(s) used.`);
 $('#request-agent-plan').onclick=()=>action(`/api/tasks/${selectedId}/agent/request`,{provider_id:$('#provider-select').value,prompt:$('#agent-extra').value},d=>`Agent plan approval queued (${d.kind}).`);
 $('#build-agent-plan').onclick=()=>action(`/api/tasks/${selectedId}/agent/plan`,{provider_id:$('#provider-select').value,prompt:$('#agent-extra').value},d=>`Proposal ready: ${d.operations.length} operation(s); approve it in the queue.`);

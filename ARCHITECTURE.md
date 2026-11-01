@@ -92,6 +92,27 @@ control plane stores the full prompt (never exposed by the context API) so the a
 exactly what the adapter receives. Project memory is a separate bounded record set injected under a
 "possibly stale" heading.
 
+## Memory promotion and retrieval
+
+`memory_proposals` is the only path from model output to stored memory. A proposal requires a round with
+status `passed`, and its evidence object records the task, round, test command, exit code and changed
+files. The control plane normalises content for duplicate detection (against stored memory and pending
+proposals when proposing, against stored memory only when approving), rejects credential-like text, and
+stores `pending` until a user decision. Approval copies the record into `memory` with provenance columns
+(`source_task_id`, `source_round_id`, `evidence`, `digest`); rejection stores nothing and cannot be
+reversed. Reads compute `stale` from the source task's current status, and `memory_lines` ranks entries
+against task tokens and selected context paths under entry and byte caps. Prompts label every entry as
+verified or possibly stale, so memory never masquerades as repository truth.
+
+## Streaming and provider diagnostics
+
+`OllamaStreamTransport` consumes NDJSON with `http.client` under a byte and chunk cap, re-checks the
+loopback rule, ignores proxies, refuses redirects, checks cancellation between chunks, and raises on
+malformed chunks, error chunks, a missing terminal `done`, oversized output or empty text. Only the
+completed text leaves the adapter, so no partial stream can reach validation or approval. The server uses
+it for Ollama round calls only when `PERSONAL_CODEX_STREAM_PROVIDER=1`. `scripts/live_provider_check.py`
+is a deliberate, human-invoked, read-only diagnostic; nothing in the service contacts a provider on its own.
+
 ## Provider invocation boundary
 
 Invocation is a three-record flow: `provider-request` creates a pending approval whose canonical detail binds task, provider ID, endpoint, model, prompt SHA-256, and cloud flag; the user decides once; `invoke` requires the matching approved record before calling the adapter. Loopback providers use the `provider-invoke` approval kind; a provider registered with `cloud_allowed: true` requires a distinct `network` approval, so metadata consent and transmission consent stay separate.

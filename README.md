@@ -45,8 +45,12 @@ Python control plane (app/server.py)  ──  SQLite (data/personal_codex.db)
 - See an **operation-level ledger** (status, timing, applied flag, file hashes) for each round and a **cumulative budget meter** (prompt, response, test output, context, invocations).
 - Let the agent select **bounded repository context** locally: manifest, docs, test locations, symbol outlines, task/symbol/changed-file ranking, `.gitignore` and secret exclusion, symlink containment, byte caps, and a stable digest bound to the approved prompt.
 - Record project-scoped **memory** entries (conventions, decisions, known issues, solved problems, test commands) that are inspectable, editable, deletable, bounded, credential-rejected and clearly marked as possibly stale in prompts.
+- **Promote memory from evidence:** after a round passes, a memory record can be proposed, deduplicated, credential-checked, and stored only after explicit approval; the stored record keeps its source task, round, test command, exit code and changed files.
+- **Stream provider output** (opt-in) with bounded, validated accumulation; an incomplete or malformed stream is rejected instead of becoming a proposal.
+- **Diagnose a live provider** with `scripts/live_provider_check.py`: model discovery, a schema-validated probe, latency and byte counts, sanitised errors, and no repository writes.
+- Inspect provider status (`ready` / `needs-attention`) and the last observed latency without contacting the provider.
 
-Not implemented yet: provider streaming, provider-native tool calling, a semantic/vector index, desktop shell, ZimaOS worker, login/TLS, encrypted secret storage, conflict-resolution tooling, and browser automation tests.
+Not implemented yet: provider-native tool calling, a semantic/vector index, desktop shell, ZimaOS worker, login/TLS, encrypted secret storage, conflict-resolution tooling, and browser automation tests. A live model round has still never been completed in this environment (see below).
 
 ## Requirements
 
@@ -153,6 +157,34 @@ Everything above is verified with a deterministic injected transport. A live mod
 7. If it failed, request round 2 and confirm the next prompt contains the failure evidence. Repeat, then request completion and verify the final report.
 8. Record what actually happened (JSON compliance, patch matching, test usefulness) in `DEVELOPMENT_LOG.md`; never report a live run that did not happen.
 
+## Memory lifecycle
+
+Memory is not free-form model text. A proposal can only be created after a round passed its checks (`POST /api/tasks/{id}/agent/memory/propose`), and it stores evidence: source task, round number, test command, exit code and changed files. The proposal is deduplicated against existing memory and pending proposals, rejected if it looks like a credential, and remains `pending` until the user approves or rejects it (`POST /api/memory-proposals/{id}/decide`). Approval copies it into project memory with its provenance; rejection stores nothing. Memory reads report `stale: true` when the originating task is missing or no longer passed, and prompts label entries "verified against a passing round" or "possibly stale, verify against the files". Retrieval is relevance-ranked against the task and the selected context paths, capped by entries and bytes.
+
+## Provider streaming and diagnostics
+
+`OllamaStreamTransport` reads NDJSON chunks with `http.client` under a byte cap and a chunk cap, ignores proxies, refuses redirects and non-loopback hosts without cloud consent, honours a cancellation check between chunks, and fails on malformed chunks, error chunks, missing terminal `done`, oversized output or empty text. Only the completed, validated text can enter the approval lifecycle; partial output is never parsed as a proposal. Streaming is opt-in with `PERSONAL_CODEX_STREAM_PROVIDER=1` and currently applies to Ollama round calls.
+
+`scripts/live_provider_check.py` is the only component intended to talk to a real model, and only when a human runs it. It lists installed models, requires an explicitly named model, sends one tiny probe, validates the JSON against the round schema, and reports latency, byte counts and sanitised errors. Exit codes: 0 pass, 2 no usable model, 3 invalid proposal, 4 provider failure. It never registers a project or modifies a repository.
+
+```sh
+python3 scripts/live_provider_check.py --discover-models
+python3 scripts/live_provider_check.py --model <installed-model>
+```
+
+Provider HTTP error bodies are scrubbed of secret-shaped strings before they are shown or stored.
+
+## Measured performance (this repository, Linux, Python 3.12)
+
+| Operation | Result |
+| --- | --- |
+| `context.select` (24 files, 60 kB budget) | ~45 ms median, 12 files selected, 42.5 kB |
+| `context.manifest` | ~3 ms |
+| SQLite `events` query (50 rows) | ~0.11 ms |
+| `GET /api/tasks`, `GET /` (loopback) | under 2 ms |
+
+Provider latency is unknowable here because no model is installed; the diagnostic harness reports it on the owner's machine.
+
 ## Security model
 
 - Loopback-only listener; no login or TLS, so never expose it.
@@ -175,13 +207,13 @@ Known limitations: no OS sandboxing, no guaranteed address-space enforcement on 
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -v                              # 84 tests; listener-gated ones skipped
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 84 tests, disposable fixtures
+python3 -m unittest discover -s tests -v                              # 104 tests; listener-gated ones skipped
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 104 tests, disposable fixtures
 python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py
 node --check web/app.js
 ```
 
-`tests/test_server.py` covers repository filtering, planning, approvals, worktree, command execution, release, merge and branch deletion. `tests/test_providers.py` runs both adapters against an ephemeral loopback stub server (malformed JSON, HTTP errors, redirects, refusal, timeout, oversize, credentials). `tests/test_tools.py` covers the tool schema, path/symlink containment, patch hash binding, execution ordering, the full proposal → approval → execution API lifecycle including stale-file rejection, and the iterative round loop: a failing round followed by a corrected passing round and an evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation. `tests/test_ui.py` is a browser-free dashboard contract check (element IDs, wiring, routed API paths, local-only assets). `tests/test_context.py` covers the context engine (manifest, `.gitignore` and secret exclusion, symlink containment, ranking and determinism, byte and file caps, Python/JS outlines, untrusted-data framing) and the project-memory API (scoping, credential rejection, edit, delete). The round suite also covers cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted operations not being replayed, invocation and prompt budget refusal, explicit budget reset, and context visibility/digest binding. No live model and no external network are used.
+`tests/test_server.py` covers repository filtering, planning, approvals, worktree, command execution, release, merge and branch deletion. `tests/test_providers.py` runs both adapters against an ephemeral loopback stub server (malformed JSON, HTTP errors, redirects, refusal, timeout, oversize, credentials). `tests/test_tools.py` covers the tool schema, path/symlink containment, patch hash binding, execution ordering, the full proposal → approval → execution API lifecycle including stale-file rejection, and the iterative round loop: a failing round followed by a corrected passing round and an evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation. `tests/test_ui.py` is a browser-free dashboard contract check (element IDs, wiring, routed API paths, local-only assets). `tests/test_context.py` covers the context engine (manifest, `.gitignore` and secret exclusion, symlink containment, ranking and determinism, byte and file caps, Python/JS outlines, untrusted-data framing) and the project-memory API (scoping, credential rejection, edit, delete). The round suite also covers cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted operations not being replayed, invocation and prompt budget refusal, explicit budget reset, and context visibility/digest binding. `tests/test_streaming.py` covers streaming accumulation and rejection (missing terminal marker, malformed chunk, oversized stream, cancellation, sanitised HTTP errors), model discovery, error redaction, and the live diagnostic harness (unreachable service, no models, missing explicit model, valid probe, invalid JSON). The memory suite covers evidence requirements, duplicate refusal, credential refusal, explicit approval/rejection, provenance, staleness labelling and retrieval bounds. No live model and no external network are used.
 
 ## Project documents
 
@@ -190,7 +222,7 @@ node --check web/app.js
 ## Roadmap
 
 1. A verified live Ollama round on the owner's machine (the immediate priority).
-2. Streaming and provider-native tool calls.
-3. Semantic retrieval and memory promotion from verified rounds.
+2. Provider-native tool calls.
+3. A lightweight semantic retrieval benchmark before any embedding dependency is considered.
 4. Tauri desktop shell over the loopback API.
 5. Mutually authenticated ZimaOS worker on a private network.

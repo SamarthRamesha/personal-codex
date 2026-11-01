@@ -65,7 +65,12 @@ CREATE TABLE IF NOT EXISTS usage (task_id TEXT PRIMARY KEY, prompt_bytes INTEGER
 CREATE TABLE IF NOT EXISTS cancellations (task_id TEXT PRIMARY KEY, round_id TEXT, requested_at INTEGER NOT NULL, reason TEXT);
 CREATE TABLE IF NOT EXISTS contexts (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, round_id TEXT, round_number INTEGER NOT NULL, digest TEXT NOT NULL, bytes INTEGER NOT NULL, files TEXT NOT NULL, prompt TEXT, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS memory (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, content TEXT NOT NULL, source TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS memory_proposals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT, round_id TEXT, kind TEXT NOT NULL, content TEXT NOT NULL, evidence TEXT, digest TEXT NOT NULL, status TEXT NOT NULL, reason TEXT, created_at INTEGER NOT NULL, decided_at INTEGER);
 """
+MIGRATIONS = {
+    "providers": {"last_latency_ms": "INTEGER", "last_checked_at": "INTEGER"},
+    "memory": {"source_task_id": "TEXT", "source_round_id": "TEXT", "evidence": "TEXT", "digest": "TEXT"},
+}
 
 def now() -> int: return int(time.time())
 def uid() -> str: return str(uuid.uuid4())
@@ -76,7 +81,16 @@ class Store:
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA); self.conn.commit()
+        self.migrate()
         self.recover_interrupted()
+    def migrate(self):
+        """Additive, idempotent column migrations for databases created by earlier milestones."""
+        for table, columns in MIGRATIONS.items():
+            existing = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            for name, kind in columns.items():
+                if name not in existing:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+        self.conn.commit()
     def recover_interrupted(self):
         """A restart during execution must not leave a round stuck in 'executing' forever."""
         stamp = now()
@@ -153,12 +167,42 @@ def active_provider_transport(provider: dict):
     if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
     return providers.transport_for(provider, provider.get("secret_ref") or "")
 
+STREAM_PROVIDER = os.getenv("PERSONAL_CODEX_STREAM_PROVIDER", "0") == "1"
+
+def round_transport(provider: dict, stop_check=None, on_chunk=None):
+    """Pick the adapter for one approved round call. Streaming is opt-in and never changes the prompt."""
+    if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
+    if STREAM_PROVIDER and provider.get("kind") == "ollama":
+        streamer = providers.OllamaStreamTransport()
+        def transport(request):
+            return streamer({**request, "stop_check": stop_check or (lambda: False), "on_chunk": on_chunk or (lambda count: None)})
+        return transport
+    return providers.transport_for(provider, provider.get("secret_ref") or "")
+
+def record_latency(provider_id: str, started: float) -> int:
+    elapsed = int((time.time() - started) * 1000)
+    STORE.write("UPDATE providers SET last_latency_ms=?, last_checked_at=? WHERE id=?", (elapsed, now(), provider_id))
+    return elapsed
+
+def provider_health(provider: dict) -> dict:
+    """Describe a provider from stored state only: no network call and no credential read."""
+    last = STORE.one("SELECT * FROM invocations WHERE provider_id=? ORDER BY created_at DESC LIMIT 1", (provider["id"],))
+    issues = []
+    if not provider.get("model"): issues.append("no model configured")
+    if not provider.get("endpoint"): issues.append("no endpoint configured")
+    if not provider.get("enabled"): issues.append("provider is disabled")
+    return {"id": provider["id"], "kind": provider["kind"], "model": provider.get("model"), "endpoint": provider.get("endpoint"),
+            "cloud_allowed": bool(provider.get("cloud_allowed")), "last_latency_ms": provider.get("last_latency_ms"),
+            "last_checked_at": provider.get("last_checked_at"), "last_invocation_at": last["created_at"] if last else None,
+            "status": "ready" if not issues else "needs-attention", "issues": issues,
+            "discovery": "run scripts/live_provider_check.py --discover-models for an explicit, local-only model list"}
+
 def provider_row(provider_id):
     return STORE.one("SELECT id,kind,endpoint,model,cloud_allowed,enabled,secret_ref FROM providers WHERE id=?",(provider_id,))
 
 def build_agent_prompt(task: dict, workspace: dict, extra: str = "") -> str:
     """Deterministic agent instruction so an approval binds one exact prompt."""
-    listing=[entry["path"] for entry in tools.list_files(Path(workspace["path"]), ".", 1, 60)["entries"]]
+    listing=[entry["path"] for entry in tools.list_files(Path(workspace["path"]), ".", 1, 60)["entries"] if entry["path"] != ".git"]
     prompt=tools.agent_instruction(listing)+f"\nTask: {str(task['prompt'])[:2000]}"
     if extra: prompt+=f"\nExtra instructions: {extra[:2000]}"
     return prompt
@@ -194,7 +238,7 @@ def round_history_text(rounds: list) -> str:
 
 def build_round_prompt(task: dict, workspace: dict, extra: str = "", rounds: list = (), context_text: str = "") -> str:
     """Deterministic iterative instruction; history and selected context are part of the approved prompt bytes."""
-    listing = [entry["path"] for entry in tools.list_files(Path(workspace["path"]), ".", 1, 60)["entries"]]
+    listing = [entry["path"] for entry in tools.list_files(Path(workspace["path"]), ".", 1, 60)["entries"] if entry["path"] != ".git"]
     prompt = tools.agent_instruction(listing)
     if context_text:
         prompt += "\n\n" + context_text
@@ -276,10 +320,96 @@ def reset_budget(task_id: str) -> dict:
 MEMORY_KINDS = {"convention", "decision", "issue", "solved", "relationship", "test-command", "summary"}
 
 def memory_rows(project_id: str, limit: int = 50) -> list:
-    return STORE.rows("SELECT * FROM memory WHERE project_id=? ORDER BY updated_at DESC LIMIT ?", (project_id, limit))
+    """Memory with computed provenance and staleness; stored text is never treated as authority."""
+    rows = STORE.rows("SELECT * FROM memory WHERE project_id=? ORDER BY updated_at DESC LIMIT ?", (project_id, limit))
+    for row in rows:
+        task = STORE.one("SELECT status FROM tasks WHERE id=?", (row.get("source_task_id"),)) if row.get("source_task_id") else None
+        row["stale"] = bool(row.get("source_task_id") and (not task or task["status"] not in {"completed", "ready-to-complete"}))
+    return rows
 
-def memory_lines(project_id: str, limit: int = 10) -> list[str]:
-    return [f"[{row['kind']}] {row['content'][:300]}" for row in memory_rows(project_id, limit)]
+def normalized_memory(content: str) -> str:
+    return " ".join(str(content).lower().split())
+
+def memory_duplicate(project_id: str, content: str, include_proposals: bool = True):
+    """Refuse a record that duplicates approved memory (or an undecided proposal, when proposing)."""
+    target = normalized_memory(content)
+    for row in STORE.rows("SELECT * FROM memory WHERE project_id=?", (project_id,)):
+        if normalized_memory(row["content"]) == target:
+            return {"where": "memory", "id": row["id"]}
+    if not include_proposals:
+        return None
+    for row in STORE.rows("SELECT * FROM memory_proposals WHERE project_id=? AND status='pending'", (project_id,)):
+        if normalized_memory(row["content"]) == target:
+            return {"where": "proposal", "id": row["id"]}
+    return None
+
+def memory_proposal_rows(project_id: str, limit: int = 50) -> list:
+    return STORE.rows("SELECT * FROM memory_proposals WHERE project_id=? ORDER BY created_at DESC LIMIT ?", (project_id, limit))
+
+def propose_memory(task: dict, kind: str, content: str, evidence: str = "") -> dict:
+    """Queue a model-proposed memory entry. Nothing is trusted until a user approves it."""
+    rounds = decoded_rounds(task["id"])
+    passing = [row for row in rounds if row["status"] == "passed"]
+    if not passing:
+        raise ValueError("memory can only be proposed after a round passed its checks")
+    latest = passing[-1]
+    tests = latest.get("test_result") or {}
+    proof = {"task_id": task["id"], "round": latest["round_number"], "tests": tests.get("test_command"),
+            "exit_code": tests.get("test_exit_code"), "changed_files": tests.get("changed_files") or [],
+            "note": str(evidence or "")[:600]}
+    digest = hashlib.sha256(json.dumps({"kind": kind, "content": content, "evidence": proof}, sort_keys=True).encode("utf-8")).hexdigest()
+    duplicate = memory_duplicate(task["project_id"], content)
+    if duplicate:
+        raise ValueError(f"an equivalent memory entry already exists ({duplicate['where']} {duplicate['id'][:8]})")
+    pid = uid()
+    STORE.write("INSERT INTO memory_proposals VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (pid, task["project_id"], task["id"], latest["id"], kind, content, json.dumps(proof), digest,
+                 "pending", None, now(), None))
+    task_event(task["id"], "reviewer", "warning", f"Memory proposal {pid[:8]} ({kind}) is pending explicit user approval.")
+    return {"id": pid, "status": "pending", "kind": kind, "content": content, "evidence": proof, "digest": digest}
+
+def decide_memory(proposal_id: str, approve: bool, reason: str = "") -> dict:
+    row = STORE.one("SELECT * FROM memory_proposals WHERE id=?", (proposal_id,))
+    if not row: raise LookupError("memory proposal not found")
+    if row["status"] != "pending": raise ValueError(f"memory proposal is already {row['status']}")
+    stamp = now()
+    if not approve:
+        STORE.write("UPDATE memory_proposals SET status='rejected', reason=?, decided_at=? WHERE id=? AND status='pending'",
+                    (str(reason or "rejected by user")[:300], stamp, proposal_id))
+        return {"id": proposal_id, "status": "rejected"}
+    if memory_duplicate(row["project_id"], row["content"], include_proposals=False):
+        raise ValueError("an equivalent memory entry appeared after this proposal was queued")
+    evidence = json.loads(row["evidence"]) if row["evidence"] else {}
+    mid = uid()
+    STORE.write("INSERT INTO memory VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (mid, row["project_id"], row["kind"], row["content"], "round-promotion", stamp, stamp,
+                 row["task_id"], row["round_id"], row["evidence"], row["digest"]))
+    STORE.write("UPDATE memory_proposals SET status='approved', decided_at=? WHERE id=? AND status='pending'", (stamp, proposal_id))
+    return {"id": mid, "proposal_id": proposal_id, "status": "approved", "source_task_id": row["task_id"],
+            "source_round_id": row["round_id"], "evidence": evidence}
+
+def memory_lines(project_id: str, task: str = "", paths=(), limit: int = 6, max_bytes: int = 3000) -> list[str]:
+    """Bounded, relevance-ranked memory. Stale records are labelled instead of trusted."""
+    tokens = context.task_tokens(task or "", " ".join(list(paths)[:6]))
+    scored = []
+    for row in memory_rows(project_id, 200):
+        haystack = f"{row['kind']} {row['content']}".lower()
+        score = sum(2 for token in tokens if token in haystack)
+        if row.get("source_task_id") and row["source_task_id"] in tuple(paths):
+            score += 1
+        scored.append((score, row))
+    scored.sort(key=lambda item: (-item[0], item[1]["updated_at"]))
+    lines, total = [], 0
+    for score, row in scored:
+        if len(lines) >= limit: break
+        if score == 0 and len(scored) > limit: continue
+        label = "possibly stale, verify against the files" if row["stale"] else "verified against a passing round"
+        line = f"[{row['kind']}; {label}] {row['content'][:300]}"
+        size = len(line.encode("utf-8"))
+        if total + size > max_bytes: break
+        total += size
+        lines.append(line)
+    return lines
 
 def round_ledger(round_id: str) -> list:
     return STORE.rows("SELECT * FROM operations WHERE round_id=? ORDER BY op_index ASC", (round_id,))
@@ -534,7 +664,12 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/tasks/") and route.endswith("/events"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
         if route == "/api/approvals": return self.json(STORE.rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at DESC"))
-        if route == "/api/providers": return self.json(STORE.rows("SELECT id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at FROM providers ORDER BY created_at DESC"))
+        if route == "/api/providers":
+            rows=STORE.rows("SELECT id,kind,endpoint,model,cloud_allowed,enabled,created_at,last_latency_ms,last_checked_at FROM providers ORDER BY created_at DESC")
+            return self.json([{**row,"health":provider_health(row)} for row in rows])
+        if route.startswith("/api/providers/") and route.endswith("/health"):
+            pid=route.split("/")[3]; provider=STORE.one("SELECT * FROM providers WHERE id=?",(pid,))
+            return self.json(provider_health(provider)) if provider else self.json({"error":"provider not found"},404)
         if route.startswith("/api/providers/") and route.endswith("/capabilities"):
             pid=route.split("/")[3]; provider=STORE.one("SELECT id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at FROM providers WHERE id=?",(pid,))
             return self.json(provider_capabilities(provider)) if provider else self.json({"error":"provider not found"},404)
@@ -585,6 +720,10 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/projects/") and route.endswith("/summary"):
             pid=route.split("/")[3]; p=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             return self.json(repository_summary(Path(p["path"]))) if p else self.json({"error":"not found"},404)
+        if route.startswith("/api/projects/") and route.endswith("/memory/proposals"):
+            pid=route.split("/")[3]
+            if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
+            return self.json({"project_id":pid,"kinds":sorted(MEMORY_KINDS),"proposals":memory_proposal_rows(pid)})
         if route.startswith("/api/projects/") and route.endswith("/memory"):
             pid=route.split("/")[3]
             if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
@@ -598,6 +737,27 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            if route.startswith("/api/tasks/") and route.endswith("/agent/memory/propose"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                kind=str(data.get("kind") or ""); content=str(data.get("content") or "").strip()
+                if kind not in MEMORY_KINDS: return self.json({"error":f"memory kind must be one of: {', '.join(sorted(MEMORY_KINDS))}"},400)
+                if not content or len(content) > 2000: return self.json({"error":"memory content must contain 1-2000 characters"},400)
+                if re.search(r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*\S+", content):
+                    return self.json({"error":"memory proposal must not contain credential-like values"},400)
+                try:
+                    return self.json(propose_memory(task,kind,content,str(data.get("evidence") or "")),201)
+                except ValueError as error:
+                    return self.json({"error":str(error)},409)
+            if route.startswith("/api/memory-proposals/") and route.endswith("/decide"):
+                proposal_id=route.split("/")[3]; status=str(data.get("status") or "")
+                if status not in {"approved","rejected"}: return self.json({"error":"status must be 'approved' or 'rejected'"},400)
+                try:
+                    return self.json(decide_memory(proposal_id,status=="approved",str(data.get("reason") or "")))
+                except LookupError as error:
+                    return self.json({"error":str(error)},404)
+                except ValueError as error:
+                    return self.json({"error":str(error)},409)
             if route.startswith("/api/projects/") and route.endswith("/memory"):
                 pid=route.split("/")[3]
                 if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
@@ -608,7 +768,7 @@ class App(SimpleHTTPRequestHandler):
                     return self.json({"error":"memory must not contain credential-like values"},400)
                 if len(memory_rows(pid, 500)) >= 200: return self.json({"error":"project memory limit reached (200 entries)"},409)
                 mid=uid(); stamp=now()
-                STORE.write("INSERT INTO memory VALUES (?,?,?,?,?,?,?)",(mid,pid,kind,content,str(data.get("source") or "manual")[:200],stamp,stamp))
+                STORE.write("INSERT INTO memory (id,project_id,kind,content,source,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",(mid,pid,kind,content,str(data.get("source") or "manual")[:200],stamp,stamp))
                 return self.json({"id":mid,"kind":kind,"content":content,"status":"recorded"},201)
             if route.startswith("/api/projects/") and (route.endswith("/memory/delete") or route.endswith("/memory/update")):
                 pid=route.split("/")[3]; mid=str(data.get("id") or ""); row=STORE.one("SELECT * FROM memory WHERE id=? AND project_id=?",(mid,pid))
@@ -641,7 +801,7 @@ class App(SimpleHTTPRequestHandler):
             if route == "/api/providers":
                 kind=str(data.get("kind","openai-compatible")); endpoint=str(data.get("endpoint","")).strip(); model=str(data.get("model","")).strip(); ref=str(data.get("secret_ref","")).strip()
                 config=validate_provider_config(kind,endpoint,model,ref,data.get("cloud_allowed") is True)
-                pid=uid(); STORE.write("INSERT INTO providers VALUES (?,?,?,?,?,?,?,?)",(pid,kind,endpoint,model,ref,config["cloud_allowed"],1,now()))
+                pid=uid(); STORE.write("INSERT INTO providers (id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at) VALUES (?,?,?,?,?,?,?,?)",(pid,kind,endpoint,model,ref,config["cloud_allowed"],1,now()))
                 return self.json({"id":pid,"capabilities":provider_capabilities({"id":pid,**config}),"note":"Only an environment-variable reference is stored; no secret value was accepted and no provider was contacted."},201)
             if route.startswith("/api/tasks/") and route.endswith("/workspace-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
@@ -727,11 +887,12 @@ class App(SimpleHTTPRequestHandler):
                 if not provider: return self.json({"error":"provider not found"},404)
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
                 limits=round_limits(tid); number=limits["next_round"]
-                rounds=decoded_rounds(tid); memory=memory_lines(task["project_id"])
+                rounds=decoded_rounds(tid)
                 changed=[path for entry in rounds for path in ((entry.get("test_result") or {}).get("changed_files") or [])]
                 failed=[name for entry in rounds for name in ((entry.get("test_result") or {}).get("failed_tests") or [])]
                 selection=context.select(Path(workspace["path"]), str(task["prompt"]), str(data.get("prompt") or ""),
-                                         changed_files=changed, failed_tests=failed, max_bytes=MAX_CONTEXT_BYTES, memory=memory)
+                                         changed_files=changed, failed_tests=failed, max_bytes=MAX_CONTEXT_BYTES)
+                memory=memory_lines(task["project_id"], str(task["prompt"]), [snippet["path"] for snippet in selection["files"]])
                 context_text=context.prompt_block(selection, memory)
                 prompt=validate_provider_prompt(build_round_prompt(task,workspace,str(data.get("prompt") or ""),rounds,context_text))
                 budget=budget_error(tid, prompt_bytes=len(prompt.encode("utf-8")))
@@ -759,7 +920,7 @@ class App(SimpleHTTPRequestHandler):
                 if not provider: return self.json({"error":"provider not found"},404)
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
                 limits=round_limits(tid); number=limits["next_round"]
-                context_row=STORE.one("SELECT * FROM contexts WHERE task_id=? AND round_number=? AND round_id IS NULL ORDER BY created_at DESC LIMIT 1",(tid,number))
+                context_row=STORE.one("SELECT * FROM contexts WHERE task_id=? AND round_number=? AND round_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1",(tid,number))
                 if not context_row: return self.json({"error":f"request round {number} approval again; its approved prompt was not found"},409)
                 prompt=validate_provider_prompt(context_row["prompt"] or "")
                 kind=provider_approval_kind(provider); detail=round_invocation_detail(tid,provider,prompt,number)
@@ -767,7 +928,10 @@ class App(SimpleHTTPRequestHandler):
                 if not permitted: return self.json({"error":f"approved {kind} request for this exact round {number} prompt required"},403)
                 budget=budget_error(tid)
                 if budget: return self.json({"error":budget,"budget":budget_state(tid),"limits":limits},409)
-                result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"])
+                started=time.time()
+                transport=round_transport(provider, stop_check=lambda: cancellation_row(tid) is not None)
+                result=invoke_provider(provider,prompt,transport); result["text"]=redacted(result["text"])
+                record_latency(provider["id"],started)
                 add_usage(tid, response_bytes=len(result["text"].encode("utf-8")), invocations=1)
                 prompt_sha=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
                 repeated=STORE.one("SELECT id FROM invocations WHERE task_id=? AND response=? LIMIT 1",(tid,result["text"]))
@@ -924,7 +1088,7 @@ class App(SimpleHTTPRequestHandler):
                 kind=provider_approval_kind(provider); detail=provider_invocation_detail(tid,provider,prompt)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
                 if not permitted: return self.json({"error":f"approved {kind} request for this exact workspace, provider, and prompt required"},403)
-                result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"])
+                started=time.time(); result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"]); record_latency(provider["id"],started)
                 digest_prompt=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
                 STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest_prompt,result["text"],now()))
                 parsed=tools.parse_proposal(result["text"])
@@ -979,7 +1143,7 @@ class App(SimpleHTTPRequestHandler):
                 detail=provider_invocation_detail(tid,provider,prompt)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
                 if not permitted: return self.json({"error":f"approved {kind} request for this exact provider, endpoint, model, and prompt required"},403)
-                result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"])
+                started=time.time(); result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"]); record_latency(provider["id"],started)
                 digest=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
                 STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest,result["text"],now()))
                 transmission="cloud" if provider["cloud_allowed"] else "loopback"

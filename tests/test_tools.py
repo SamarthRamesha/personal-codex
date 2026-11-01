@@ -301,6 +301,7 @@ class RoundApiFixture(unittest.TestCase):
         self.thread.start()
         self.base = f"http://127.0.0.1:{self.http.server_port}"
         _, project = self.call("/api/projects", "POST", {"name": "fixture", "path": str(self.repo)})
+        self.project_id = project["id"]
         _, self.provider = self.call("/api/providers", "POST", {"kind": "ollama", "endpoint": "http://127.0.0.1:11434", "model": "stub"})
         _, task = self.call("/api/tasks", "POST", {"project_id": project["id"], "prompt": "make the readme correct"})
         self.task_id = task["id"]
@@ -623,3 +624,87 @@ class BudgetAndMemoryIntegrationTests(RoundApiFixture):
         self.assertIn("always run python3 -m unittest discover", stored["prompt"])
         self.assertIn("possibly stale", stored["prompt"])
         self.assertEqual(payload["budget"]["used"]["context_bytes"] > 0, True)
+
+
+class MemoryPromotionApiTests(RoundApiFixture):
+    """Memory is proposed by a verified round, then explicitly approved or rejected by the user."""
+
+    def passing_round(self):
+        self.responses = [json.dumps({"summary": "fix the readme", "status": "continue", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "fixed\n"},
+            {"tool": "run_tests", "command": 'python3 -c "print(1)"'}]})]
+        planned = self.plan_round()
+        self.approve(planned["approval_id"])
+        status, executed = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual((status, executed["status"]), (200, "passed"))
+
+    def propose(self, content="Run python3 -m unittest discover -s tests", kind="test-command"):
+        return self.call(f"/api/tasks/{self.task_id}/agent/memory/propose", "POST", {"kind": kind, "content": content})
+
+    def test_memory_requires_a_passing_round_and_explicit_approval(self):
+        status, refused = self.propose()
+        self.assertEqual((status, "passed its checks" in refused["error"]), (409, True), refused)
+        self.passing_round()
+        status, proposal = self.propose()
+        self.assertEqual(status, 201, proposal)
+        self.assertEqual(proposal["evidence"]["round"], 1)
+        self.assertEqual(proposal["evidence"]["exit_code"], 0)
+        self.assertEqual(proposal["evidence"]["changed_files"], ["README.md"])
+
+        status, duplicate = self.propose()
+        self.assertEqual(status, 409, duplicate)
+        self.assertIn("already exists", duplicate["error"])
+        status, bad_kind = self.propose(kind="secret")
+        self.assertEqual(status, 400, bad_kind)
+        status, credential = self.propose(content="api_key = sk-live-abcdefghijk")
+        self.assertEqual(status, 400, credential)
+
+        status, listing = self.call(f"/api/projects/{self.project_id}/memory/proposals")
+        self.assertEqual((status, len(listing["proposals"])), (200, 1))
+        status, decided = self.call(f"/api/memory-proposals/{proposal['id']}/decide", "POST", {"status": "approved"})
+        self.assertEqual(status, 200, decided)
+        self.assertEqual((decided.get("status"), decided.get("source_task_id")), ("approved", self.task_id), decided)
+
+        status, memory = self.call(f"/api/projects/{self.project_id}/memory")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(memory["memory"]), 1)
+        entry = memory["memory"][0]
+        self.assertEqual((entry["source_task_id"], entry["stale"]), (self.task_id, False))
+        self.assertEqual(entry["source"], "round-promotion")
+
+        status, again = self.call(f"/api/memory-proposals/{proposal['id']}/decide", "POST", {"status": "approved"})
+        self.assertEqual(status, 409, again)
+
+        self.responses = [json.dumps({"summary": "read", "status": "continue", "operations": [
+            {"tool": "read_file", "path": "README.md"}]})]
+        self.request_round()
+        prompt = server.STORE.one("SELECT prompt FROM contexts WHERE task_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                                  (self.task_id,))["prompt"]
+        self.assertIn("Run python3 -m unittest discover -s tests", prompt)
+        self.assertIn("verified against a passing round", prompt)
+
+    def test_rejected_proposal_is_never_stored(self):
+        self.passing_round()
+        _, proposal = self.propose(content="Use the auth module for session checks")
+        self.assertEqual(self.call(f"/api/memory-proposals/{proposal['id']}/decide", "POST",
+                                   {"status": "rejected", "reason": "not generally true"})[0], 200)
+        _, memory = self.call(f"/api/projects/{self.project_id}/memory")
+        self.assertEqual(memory["memory"], [])
+        status, invalid = self.call(f"/api/memory-proposals/{proposal['id']}/decide", "POST", {"status": "maybe"})
+        self.assertEqual(status, 400, invalid)
+
+    def test_stale_memory_is_labelled_and_bounded(self):
+        cancelled = server.uid()
+        server.STORE.write("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",
+                           (cancelled, self.project_id, "old task", "cancelled", "[]", 1, 1))
+        server.STORE.write("INSERT INTO memory (id,project_id,kind,content,source,created_at,updated_at,source_task_id,digest) "
+                           "VALUES (?,?,?,?,?,?,?,?,?)",
+                           (server.uid(), self.project_id, "issue", "Session refresh used to drop cookies",
+                            "round-promotion", 1, 1, cancelled, "digest"))
+        _, memory = self.call(f"/api/projects/{self.project_id}/memory")
+        self.assertTrue(memory["memory"][0]["stale"])
+        lines = server.memory_lines(self.project_id, "fix session refresh cookies", max_bytes=10)
+        self.assertEqual(lines, [], "a tiny byte budget must not exceed its cap")
+        lines = server.memory_lines(self.project_id, "fix session refresh cookies")
+        self.assertEqual(len(lines), 1)
+        self.assertIn("possibly stale", lines[0])

@@ -23,8 +23,12 @@
 - [ ] Add streaming response support and audited provider-native tool-call handling.
 - [x] Add a bounded repository context engine (manifest, docs, symbols, ranking, digest).
 - [x] Add a project-memory foundation with CRUD and credential rejection.
+- [x] Add a live-provider diagnostic harness and deterministic coverage for it.
+- [x] Add evidence-backed memory promotion with provenance, staleness and bounded retrieval.
+- [x] Add bounded streaming for Ollama with cancellation and validation.
+- [x] Add provider health/latency metadata and secret-shape error redaction.
 - [ ] Run a live Ollama round on the owner's Mac and record the real failure modes.
-- [ ] Add streaming and provider-native tool calls.
+- [ ] Add OpenAI-compatible streaming and provider-native tool calls.
 - [ ] Promote verified memory entries automatically from completed rounds.
 - [x] Add restart recovery for interrupted rounds: they are marked `interrupted`, their proposals are closed, and the task returns to `needs-another-round`.
 - [x] Add a persisted cancellation checked between tool operations, with partial-result preservation and skipped-operation recording.

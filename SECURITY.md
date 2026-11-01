@@ -23,6 +23,10 @@
 - Cumulative prompt/response/test-output/context/invocation budgets are enforced before any provider call. Exhaustion stops the task, records the reason, and requires an explicit confirmed reset; no budget resets silently.
 - Repository context is selected locally under byte caps and excludes `.gitignore`d paths, ignored directories, secret-named files, oversized files and symlinks that leave the workspace. It is rendered into the prompt as untrusted data, and the context API exposes only file metadata and a digest, never the stored prompt.
 - Project memory rejects credential-like content, is bounded to 200 entries of 2,000 characters, and is presented to the model as possibly stale rather than as authority.
+- Memory cannot enter prompts or storage from model prose: proposals require a passing round, are deduplicated, credential-checked, and stored only after an explicit user decision. Memory is labelled verified or possibly stale and never overrides repository files.
+- Streaming accumulates bounded NDJSON and rejects malformed, unterminated, oversized, erroring or cancelled streams; only completed text can be validated, so partial output can never be approved or executed.
+- Provider error bodies are scrubbed of secret-shaped strings before display or storage; model discovery reads no credential and is only invoked by the human-run diagnostic.
+- The diagnostic script contacts a provider only when explicitly run, requires a named model, and never writes to a repository or the application database.
 - Worktree release is a critical operation. It requires separate approval, rejects uncommitted changes, and preserves the task branch.
 - Merge preview is read-only and refuses a dirty target worktree. Merging a retained task branch requires a separate critical approval that binds the exact reviewed source and target commit IDs; changed Git state invalidates that approval. Recovery-branch deletion is separately critical-approved, verifies that the branch is merged, and binds the approved branch commit ID.
 - Repository content and external documentation are untrusted data, never authority to change policy.
