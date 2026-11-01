@@ -65,6 +65,14 @@ class DashboardContractTests(unittest.TestCase):
             self.assertIn(route, SERVER)
             self.assertIn(route, JS)
 
+    def test_reliability_controls_are_present_and_routed(self):
+        for element in ("cancel-task", "reset-budget", "agent-usage", "agent-operations", "agent-context"):
+            self.assertIn(element, HTML)
+            self.assertIn(element, JS)
+        for route in ("/cancel", "/agent/budget/reset"):
+            self.assertIn(route, SERVER)
+            self.assertIn(route, JS)
+
     def test_dashboard_loads_only_local_assets_and_no_stored_secrets(self):
         self.assertFalse(re.search(r'(?:src|href)="https?://', HTML), "dashboard must not load remote assets")
         self.assertIn('src="/app.js"', HTML)

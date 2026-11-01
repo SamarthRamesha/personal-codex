@@ -211,14 +211,38 @@ def apply_patch(root: Path, path: str, old_text: str, new_text: str, expected_sh
             "bytes_before": len(original.encode("utf-8")), "bytes_after": len(updated.encode("utf-8"))}
 
 
-def execute_operations(root: Path, operations: list[dict], runner=None) -> dict:
-    """Execute validated, approved operations sequentially; stop at the first failure."""
-    results, failed = [], False
+def execute_operations(root: Path, operations: list[dict], runner=None, stop_check=None, on_event=None) -> dict:
+    """Execute validated, approved operations sequentially; stop at the first failure or cancellation.
+
+    `stop_check` is consulted before every operation, so a cancellation request is acted on before
+    the next tool starts. `on_event(kind, index, operation, result)` lets the caller persist an
+    operation-level ledger without giving the tools any storage authority. Completed operations are
+    never replayed or rolled back: the partial result is returned with `cancelled` set.
+    """
+    results, failed, cancelled = [], False, False
+
+    def notify(kind, index, operation, result):
+        if on_event:
+            on_event(kind, index, operation, result)
+
     for index, operation in enumerate(operations):
         tool = operation["tool"]
+        if cancelled:
+            results.append({"index": index, "tool": tool, "status": "cancelled",
+                            "error": "cancelled before this operation started"})
+            notify("finish", index, operation, results[-1])
+            continue
         if failed:
             results.append({"index": index, "tool": tool, "status": "skipped"})
+            notify("finish", index, operation, results[-1])
             continue
+        if stop_check and stop_check():
+            cancelled = True
+            results.append({"index": index, "tool": tool, "status": "cancelled",
+                            "error": "cancelled before this operation started"})
+            notify("finish", index, operation, results[-1])
+            continue
+        notify("start", index, operation, None)
         try:
             if tool == "list_files":
                 detail = list_files(root, operation["path"], operation["depth"], operation["limit"])
@@ -239,7 +263,9 @@ def execute_operations(root: Path, operations: list[dict], runner=None) -> dict:
         except (OSError, ValueError) as error:
             failed = True
             results.append({"index": index, "tool": tool, "status": "error", "error": str(error)[:400]})
-    return {"operations": results, "ok": not failed and all(r["status"] == "ok" for r in results)}
+        notify("finish", index, operation, results[-1])
+    return {"operations": results, "cancelled": cancelled,
+            "ok": not failed and not cancelled and all(r["status"] == "ok" for r in results)}
 
 
 def parse_proposal(text: str) -> dict:

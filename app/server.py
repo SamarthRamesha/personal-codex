@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 try:
-    import providers, tools  # script execution puts app/ on sys.path
+    import context, providers, tools  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import providers, tools
+    from app import context, providers, tools
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -28,8 +28,22 @@ MAX_TIMEOUT_SECONDS = 300
 MAX_OUTPUT_BYTES = 200_000
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_MEMORY_BYTES = 768 * 1024 * 1024
-MAX_ROUNDS = max(1, min(10, int(os.getenv("PERSONAL_CODEX_MAX_ROUNDS", "3") or "3")))
-MAX_TASK_SECONDS = 1800
+def env_int(name: str, default: int, low: int, high: int) -> int:
+    """Conservative, clamped configuration; a malformed value falls back instead of failing startup."""
+    try:
+        value = int(os.getenv(name, str(default)) or default)
+    except ValueError:
+        value = default
+    return max(low, min(high, value))
+
+MAX_ROUNDS = env_int("PERSONAL_CODEX_MAX_ROUNDS", 3, 1, 10)
+MAX_TASK_SECONDS = env_int("PERSONAL_CODEX_MAX_TASK_SECONDS", 1800, 60, 86400)
+MAX_PROMPT_BYTES = env_int("PERSONAL_CODEX_MAX_PROMPT_BYTES", 800_000, 10_000, 10_000_000)
+MAX_RESPONSE_BYTES = env_int("PERSONAL_CODEX_MAX_RESPONSE_BYTES", 300_000, 10_000, 5_000_000)
+MAX_TEST_OUTPUT_BYTES = env_int("PERSONAL_CODEX_MAX_TEST_OUTPUT_BYTES", 300_000, 10_000, 5_000_000)
+MAX_CONTEXT_BYTES = env_int("PERSONAL_CODEX_MAX_CONTEXT_BYTES", 60_000, 2_000, 400_000)
+MAX_INVOCATIONS = env_int("PERSONAL_CODEX_MAX_INVOCATIONS", 12, 1, 100)
+USAGE_FIELDS = ("prompt_bytes", "response_bytes", "test_output_bytes", "context_bytes", "invocations")
 ROUND_ACTIVE = {"awaiting-approval", "executing"}
 PROVIDER_KINDS = {"ollama", "openai-compatible"}
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
@@ -46,6 +60,11 @@ CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, task_id TEXT NOT NUL
 CREATE TABLE IF NOT EXISTS invocations (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, provider_id TEXT NOT NULL, prompt_sha256 TEXT NOT NULL, response TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, workspace_branch TEXT NOT NULL, workspace_path TEXT NOT NULL, summary TEXT NOT NULL, operations TEXT NOT NULL, digest TEXT NOT NULL, status TEXT NOT NULL, results TEXT, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS rounds (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, round_number INTEGER NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, prompt_sha256 TEXT NOT NULL, proposal_id TEXT, proposal_digest TEXT, approval_id TEXT, status TEXT NOT NULL, summary TEXT, operations TEXT, results TEXT, test_result TEXT, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS operations (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, round_id TEXT NOT NULL, round_number INTEGER NOT NULL, op_index INTEGER NOT NULL, tool TEXT NOT NULL, digest TEXT, status TEXT NOT NULL, started_at INTEGER, finished_at INTEGER, summary TEXT, error TEXT, applied INTEGER NOT NULL DEFAULT 0, file_hashes TEXT);
+CREATE TABLE IF NOT EXISTS usage (task_id TEXT PRIMARY KEY, prompt_bytes INTEGER NOT NULL DEFAULT 0, response_bytes INTEGER NOT NULL DEFAULT 0, test_output_bytes INTEGER NOT NULL DEFAULT 0, context_bytes INTEGER NOT NULL DEFAULT 0, invocations INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS cancellations (task_id TEXT PRIMARY KEY, round_id TEXT, requested_at INTEGER NOT NULL, reason TEXT);
+CREATE TABLE IF NOT EXISTS contexts (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, round_id TEXT, round_number INTEGER NOT NULL, digest TEXT NOT NULL, bytes INTEGER NOT NULL, files TEXT NOT NULL, prompt TEXT, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS memory (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, content TEXT NOT NULL, source TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 """
 
 def now() -> int: return int(time.time())
@@ -61,15 +80,19 @@ class Store:
     def recover_interrupted(self):
         """A restart during execution must not leave a round stuck in 'executing' forever."""
         stamp = now()
+        interrupted_ops = self.conn.execute("UPDATE operations SET status='interrupted', finished_at=?, error=? WHERE status='running'",
+                                            (stamp, "service restarted while this operation was running; it was not replayed")).rowcount
         stuck = [dict(x) for x in self.conn.execute("SELECT * FROM rounds WHERE status='executing'").fetchall()]
         for row in stuck:
             self.conn.execute("UPDATE rounds SET status='interrupted', error=?, updated_at=? WHERE id=?",
                               ("service restarted before this round finished; request a new round", stamp, row["id"]))
             if row["proposal_id"]:
                 self.conn.execute("UPDATE proposals SET status='interrupted' WHERE id=? AND status='executing'", (row["proposal_id"],))
+            event = f"Round {row['round_number']} was interrupted by a restart; it cannot be resumed and needs a new proposal."
+            if interrupted_ops:
+                event += f" {interrupted_ops} operation(s) were marked interrupted and will not be replayed."
             self.conn.execute("INSERT INTO events VALUES (?,?,?,?,?,?)",
-                              (uid(), row["task_id"], "orchestrator", "warning",
-                               f"Round {row['round_number']} was interrupted by a restart; it cannot be resumed and needs a new proposal.", stamp))
+                              (uid(), row["task_id"], "orchestrator", "warning", event, stamp))
             task = self.conn.execute("SELECT status FROM tasks WHERE id=?", (row["task_id"],)).fetchone()
             if task and task["status"] == "iterating":
                 self.conn.execute("UPDATE tasks SET status='needs-another-round', updated_at=? WHERE id=?", (stamp, row["task_id"]))
@@ -169,10 +192,12 @@ def round_history_text(rounds: list) -> str:
         lines.append(line)
     return "\n".join(lines)
 
-def build_round_prompt(task: dict, workspace: dict, extra: str = "", rounds: list = ()) -> str:
-    """Deterministic iterative instruction; history is part of the approved prompt bytes."""
+def build_round_prompt(task: dict, workspace: dict, extra: str = "", rounds: list = (), context_text: str = "") -> str:
+    """Deterministic iterative instruction; history and selected context are part of the approved prompt bytes."""
     listing = [entry["path"] for entry in tools.list_files(Path(workspace["path"]), ".", 1, 60)["entries"]]
     prompt = tools.agent_instruction(listing)
+    if context_text:
+        prompt += "\n\n" + context_text
     prompt += ("\n\nRound protocol: reply with JSON only: "
                '{"summary":"one or two sentences","status":"continue|complete|blocked|failed","operations":[...]}'
                "\nUse 'continue' with 1-8 operations for the next change, 'complete' only when the task is finished and the recorded checks pass, "
@@ -203,6 +228,110 @@ def round_budget_error(task_id: str) -> str | None:
     if limits["rounds_used"] >= MAX_ROUNDS: return f"round limit reached ({MAX_ROUNDS}); cancel or start a new task"
     if limits["elapsed_seconds"] > MAX_TASK_SECONDS: return f"task time limit reached ({MAX_TASK_SECONDS}s)"
     return None
+
+# --- cumulative budgets, operation ledger, cancellation and context -------------------------------
+
+def usage_row(task_id: str) -> dict:
+    STORE.write("INSERT OR IGNORE INTO usage VALUES (?,0,0,0,0,0,?)", (task_id, now()))
+    return STORE.one("SELECT * FROM usage WHERE task_id=?", (task_id,))
+
+def add_usage(task_id: str, **deltas) -> dict:
+    """Persist cumulative usage. Missing or unknown counters are ignored, never guessed."""
+    current = usage_row(task_id)
+    values = {name: (current[name] or 0) + max(0, int(deltas.get(name, 0))) for name in USAGE_FIELDS}
+    STORE.write("UPDATE usage SET prompt_bytes=?,response_bytes=?,test_output_bytes=?,context_bytes=?,invocations=?,updated_at=? WHERE task_id=?",
+                (values["prompt_bytes"], values["response_bytes"], values["test_output_bytes"], values["context_bytes"],
+                 values["invocations"], now(), task_id))
+    return values
+
+def budget_state(task_id: str) -> dict:
+    used = usage_row(task_id)
+    limits = {"prompt_bytes": MAX_PROMPT_BYTES, "response_bytes": MAX_RESPONSE_BYTES, "test_output_bytes": MAX_TEST_OUTPUT_BYTES,
+              "context_bytes": MAX_CONTEXT_BYTES, "invocations": MAX_INVOCATIONS}
+    remaining = {name: max(0, limits[name] - (used[name] or 0)) for name in USAGE_FIELDS}
+    exhausted = next((name for name in USAGE_FIELDS if remaining[name] <= 0), None)
+    return {"limits": limits, "used": {name: used[name] or 0 for name in USAGE_FIELDS}, "remaining": remaining, "exhausted": exhausted}
+
+def budget_error(task_id: str, prompt_bytes: int = 0) -> str | None:
+    reason = round_budget_error(task_id)
+    if reason: return reason
+    state = budget_state(task_id)
+    used, limits = state["used"], state["limits"]
+    if used["prompt_bytes"] + max(0, prompt_bytes) > limits["prompt_bytes"]: return f"prompt budget exhausted ({limits['prompt_bytes']} bytes)"
+    if used["invocations"] >= limits["invocations"]: return f"provider invocation budget exhausted ({limits['invocations']})"
+    if used["response_bytes"] >= limits["response_bytes"]: return f"provider response budget exhausted ({limits['response_bytes']} bytes)"
+    return None
+
+def reset_budget(task_id: str) -> dict:
+    """Explicit, recorded budget reset; never automatic and never silent."""
+    STORE.write("UPDATE usage SET prompt_bytes=0,response_bytes=0,test_output_bytes=0,context_bytes=0,invocations=0,updated_at=? WHERE task_id=?", (now(), task_id))
+    task = STORE.one("SELECT * FROM tasks WHERE id=?", (task_id,))
+    if task and task["status"] == "budget-exhausted":
+        STORE.write("UPDATE tasks SET status='needs-another-round', updated_at=? WHERE id=?", (now(), task_id))
+    task_event(task_id, "security", "warning", "Cumulative budget was reset explicitly by the user; a new round still requires fresh approvals.")
+    return budget_state(task_id)
+
+MEMORY_KINDS = {"convention", "decision", "issue", "solved", "relationship", "test-command", "summary"}
+
+def memory_rows(project_id: str, limit: int = 50) -> list:
+    return STORE.rows("SELECT * FROM memory WHERE project_id=? ORDER BY updated_at DESC LIMIT ?", (project_id, limit))
+
+def memory_lines(project_id: str, limit: int = 10) -> list[str]:
+    return [f"[{row['kind']}] {row['content'][:300]}" for row in memory_rows(project_id, limit)]
+
+def round_ledger(round_id: str) -> list:
+    return STORE.rows("SELECT * FROM operations WHERE round_id=? ORDER BY op_index ASC", (round_id,))
+
+def link_context(task_id: str, round_number: int, round_id: str) -> None:
+    """Attach the selection made at request time to the round it produced."""
+    STORE.write("UPDATE contexts SET round_id=? WHERE task_id=? AND round_number=? AND round_id IS NULL", (round_id, task_id, round_number))
+
+def round_context(round_id: str):
+    row = STORE.one("SELECT * FROM contexts WHERE round_id=? ORDER BY created_at DESC LIMIT 1", (round_id,))
+    if not row: return None
+    row["files"] = json.loads(row["files"])
+    return row
+
+def cancellation_row(task_id: str):
+    return STORE.one("SELECT * FROM cancellations WHERE task_id=?", (task_id,))
+
+def cancel_task(task_id: str, reason: str = "cancellation requested") -> dict:
+    """Persist a cancellation. An executing round stops between operations; a pending one is closed now."""
+    active = STORE.one("SELECT * FROM rounds WHERE task_id=? AND status IN ('awaiting-approval','executing') ORDER BY round_number DESC LIMIT 1", (task_id,))
+    STORE.write("INSERT OR REPLACE INTO cancellations VALUES (?,?,?,?)", (task_id, active["id"] if active else None, now(), reason[:200]))
+    if active and active["status"] == "awaiting-approval":
+        STORE.write("UPDATE rounds SET status='cancelled', error=?, updated_at=? WHERE id=?", (reason[:400], now(), active["id"]))
+        STORE.write("UPDATE proposals SET status='cancelled' WHERE id=? AND status IN ('pending','executing')", (active["proposal_id"],))
+    if active and active["approval_id"]:
+        STORE.write("UPDATE approvals SET status='revoked' WHERE id=? AND status='approved'", (active["approval_id"],))
+    STORE.write("UPDATE tasks SET status='cancelled', updated_at=? WHERE id=?", (now(), task_id))
+    task_event(task_id, "orchestrator", "warning",
+               f"Cancellation recorded for round {active['round_number']}; completed operations are preserved and no new operation will start." if active else "Cancellation recorded; no active round was running.")
+    return {"task_id": task_id, "round": active["round_number"] if active else None,
+            "round_status": active["status"] if active else None, "task_status": "cancelled"}
+
+def op_summary(result: dict) -> str:
+    keep = {key: result[key] for key in ("path", "bytes", "truncated", "sha256_before", "sha256_after", "exit_code") if key in result}
+    if "entries" in result: keep["entries"] = len(result["entries"])
+    return json.dumps(keep)[:1000]
+
+def record_operation(task_id: str, round_row: dict, index: int, operation: dict, status: str,
+                     result=None, op_id: str | None = None) -> str:
+    """Insert or update one operation-ledger row; called before and after each tool runs."""
+    stamp = now()
+    if op_id is None:
+        op_id = uid()
+        STORE.write("INSERT INTO operations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (op_id, task_id, round_row["id"], round_row["round_number"], index, operation["tool"],
+                     round_row["proposal_digest"], status, stamp if status == "running" else None,
+                     None if status == "running" else stamp, None, None, 0, None))
+        return op_id
+    applied = 1 if operation["tool"] == "apply_patch" and status == "ok" else 0
+    hashes = {key: result[key] for key in ("sha256_before", "sha256_after") if result and key in result}
+    STORE.write("UPDATE operations SET status=?, finished_at=?, summary=?, error=?, applied=?, file_hashes=? WHERE id=?",
+                (status, stamp, op_summary(result or {}), (result or {}).get("error"), applied,
+                 json.dumps(hashes) if hashes else None, op_id))
+    return op_id
 
 def insert_round(task_id, number, provider, prompt_sha256, status, summary=None, proposal_id=None, proposal_digest=None,
                  approval_id=None, operations=None, results=None, test_result=None, error=None):
@@ -426,11 +555,27 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/tasks/") and route.endswith("/agent/rounds"):
             tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
             if not task: return self.json({"error":"task not found"},404)
-            return self.json({"task_id":tid,"status":task["status"],"limits":round_limits(tid),"rounds":decoded_rounds(tid)})
+            rounds=decoded_rounds(tid)
+            for entry in rounds:
+                entry["ledger"]=round_ledger(entry["id"])
+                entry["context"]=round_context(entry["id"])
+            cancel=cancellation_row(tid)
+            return self.json({"task_id":tid,"status":task["status"],"limits":round_limits(tid),"budget":budget_state(tid),
+                              "cancellation":({"requested_at":cancel["requested_at"],"reason":cancel["reason"],"round_id":cancel["round_id"]} if cancel else None),
+                              "rounds":rounds})
+        if route.startswith("/api/tasks/") and route.endswith("/agent/context"):
+            tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+            if not task: return self.json({"error":"task not found"},404)
+            rows=STORE.rows("SELECT * FROM contexts WHERE task_id=? ORDER BY created_at DESC LIMIT 12",(tid,))
+            for row in rows: row["files"]=json.loads(row["files"])
+            return self.json({"task_id":tid,"contexts":[{key:row[key] for key in ("id","round_id","round_number","digest","bytes","files","created_at")} for row in rows]})
         if route.startswith("/api/tasks/") and route.endswith("/agent/report"):
             tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
             if not task: return self.json({"error":"task not found"},404)
-            return self.json(task_report(tid))
+            report=task_report(tid)
+            report["budget"]=budget_state(tid)
+            report["operations"]=STORE.rows("SELECT * FROM operations WHERE task_id=? ORDER BY started_at ASC, op_index ASC",(tid,))
+            return self.json(report)
         if route.startswith("/api/tasks/") and route.endswith("/agent"):
             tid=route.split("/")[3]; proposal=STORE.one("SELECT * FROM proposals WHERE task_id=? ORDER BY created_at DESC LIMIT 1",(tid,))
             if not proposal: return self.json({"task_id":tid,"status":"absent"})
@@ -438,6 +583,10 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/projects/") and route.endswith("/summary"):
             pid=route.split("/")[3]; p=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             return self.json(repository_summary(Path(p["path"]))) if p else self.json({"error":"not found"},404)
+        if route.startswith("/api/projects/") and route.endswith("/memory"):
+            pid=route.split("/")[3]
+            if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
+            return self.json({"project_id":pid,"kinds":sorted(MEMORY_KINDS),"memory":memory_rows(pid)})
         return self.serve_static(route)
     def serve_static(self, route):
         name="index.html" if route in {"/",""} else route.lstrip("/")
@@ -447,6 +596,28 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            if route.startswith("/api/projects/") and route.endswith("/memory"):
+                pid=route.split("/")[3]
+                if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
+                kind=str(data.get("kind") or ""); content=str(data.get("content") or "").strip()
+                if kind not in MEMORY_KINDS: return self.json({"error":f"memory kind must be one of: {', '.join(sorted(MEMORY_KINDS))}"},400)
+                if not content or len(content) > 2000: return self.json({"error":"memory content must contain 1-2000 characters"},400)
+                if re.search(r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*\S+", content):
+                    return self.json({"error":"memory must not contain credential-like values"},400)
+                if len(memory_rows(pid, 500)) >= 200: return self.json({"error":"project memory limit reached (200 entries)"},409)
+                mid=uid(); stamp=now()
+                STORE.write("INSERT INTO memory VALUES (?,?,?,?,?,?,?)",(mid,pid,kind,content,str(data.get("source") or "manual")[:200],stamp,stamp))
+                return self.json({"id":mid,"kind":kind,"content":content,"status":"recorded"},201)
+            if route.startswith("/api/projects/") and (route.endswith("/memory/delete") or route.endswith("/memory/update")):
+                pid=route.split("/")[3]; mid=str(data.get("id") or ""); row=STORE.one("SELECT * FROM memory WHERE id=? AND project_id=?",(mid,pid))
+                if not row: return self.json({"error":"memory entry not found"},404)
+                if route.endswith("/memory/delete"):
+                    STORE.write("DELETE FROM memory WHERE id=? AND project_id=?",(mid,pid))
+                    return self.json({"id":mid,"status":"deleted"})
+                content=str(data.get("content") or "").strip()
+                if not content or len(content) > 2000: return self.json({"error":"memory content must contain 1-2000 characters"},400)
+                STORE.write("UPDATE memory SET content=?, updated_at=? WHERE id=? AND project_id=?",(content,now(),mid,pid))
+                return self.json({"id":mid,"status":"updated"})
             if route == "/api/projects":
                 path=safe_project_path(data.get("path","")); pid=uid(); name=data.get("name") or path.name
                 STORE.write("INSERT INTO projects VALUES (?,?,?,?)",(pid,name,str(path),now())); return self.json({"id":pid,"name":name,"path":str(path)},201)
@@ -546,19 +717,36 @@ class App(SimpleHTTPRequestHandler):
                 if not task: return self.json({"error":"task not found"},404)
                 workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
                 if not workspace: return self.json({"error":"ready task workspace required"},403)
-                if task["status"] in {"completed","cancelled"}: return self.json({"error":f"task is {task['status']}"},409)
+                if task["status"]=="completed": return self.json({"error":"task is completed"},409)
+                if task["status"]=="cancelled":
+                    STORE.write("DELETE FROM cancellations WHERE task_id=?",(tid,))
+                    task_event(tid,"orchestrator","info","User requested a fresh round after cancellation; prior approvals remain revoked.")
                 provider=provider_row(data.get("provider_id"))
                 if not provider: return self.json({"error":"provider not found"},404)
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
-                budget=round_budget_error(tid)
-                if budget: return self.json({"error":budget,"limits":round_limits(tid)},409)
                 limits=round_limits(tid); number=limits["next_round"]
-                prompt=validate_provider_prompt(build_round_prompt(task,workspace,str(data.get("prompt") or ""),decoded_rounds(tid)))
+                rounds=decoded_rounds(tid); memory=memory_lines(task["project_id"])
+                changed=[path for entry in rounds for path in ((entry.get("test_result") or {}).get("changed_files") or [])]
+                failed=[name for entry in rounds for name in ((entry.get("test_result") or {}).get("failed_tests") or [])]
+                selection=context.select(Path(workspace["path"]), str(task["prompt"]), str(data.get("prompt") or ""),
+                                         changed_files=changed, failed_tests=failed, max_bytes=MAX_CONTEXT_BYTES, memory=memory)
+                context_text=context.prompt_block(selection, memory)
+                prompt=validate_provider_prompt(build_round_prompt(task,workspace,str(data.get("prompt") or ""),rounds,context_text))
+                budget=budget_error(tid, prompt_bytes=len(prompt.encode("utf-8")))
+                if budget:
+                    if task["status"] != "budget-exhausted":
+                        STORE.write("UPDATE tasks SET status='budget-exhausted', updated_at=? WHERE id=?",(now(),tid))
+                    task_event(tid,"security","warning",f"Round {number} refused before any provider call: {budget}")
+                    return self.json({"error":budget,"budget":budget_state(tid),"limits":limits},409)
                 kind=provider_approval_kind(provider); detail=round_invocation_detail(tid,provider,prompt,number); aid=uid()
                 STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
                 prompt_sha=json.loads(detail)["refs"]["prompt_sha256"]
+                context_id=uid()
+                STORE.write("INSERT INTO contexts VALUES (?,?,?,?,?,?,?,?,?)",(context_id,tid,None,number,selection["digest"],len(context_text.encode("utf-8")),json.dumps([{key: snippet[key] for key in ("path","reason","start_line","end_line","sha256")} for snippet in selection["files"]]),prompt,now()))
+                add_usage(tid, prompt_bytes=len(prompt.encode("utf-8")), context_bytes=len(context_text.encode("utf-8")))
                 task_event(tid,"security","warning",f"Round {number} provider request on {provider['model']} requires {kind} approval.")
-                return self.json({"round":number,"approval_id":aid,"status":"pending","kind":kind,"provider_id":provider["id"],"prompt_sha256":prompt_sha,"limits":limits},201)
+                task_event(tid,"planner","info",f"Round {number} selected {len(selection['files'])} context file(s), {len(context_text.encode('utf-8'))} bytes, digest {selection['digest'][:12]}.")
+                return self.json({"round":number,"approval_id":aid,"status":"pending","kind":kind,"provider_id":provider["id"],"prompt_sha256":prompt_sha,"limits":limits,"budget":budget_state(tid),"context":{"id":context_id,"digest":selection["digest"],"bytes":len(context_text.encode("utf-8")),"files":[{"path":snippet["path"],"reason":snippet["reason"],"lines":f"{snippet['start_line']}-{snippet['end_line']}"} for snippet in selection["files"]]}},201)
             if route.startswith("/api/tasks/") and route.endswith("/agent/round/plan"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
@@ -568,14 +756,17 @@ class App(SimpleHTTPRequestHandler):
                 provider=provider_row(data.get("provider_id"))
                 if not provider: return self.json({"error":"provider not found"},404)
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
-                budget=round_budget_error(tid)
-                if budget: return self.json({"error":budget,"limits":round_limits(tid)},409)
                 limits=round_limits(tid); number=limits["next_round"]
-                prompt=validate_provider_prompt(build_round_prompt(task,workspace,str(data.get("prompt") or ""),decoded_rounds(tid)))
+                context_row=STORE.one("SELECT * FROM contexts WHERE task_id=? AND round_number=? AND round_id IS NULL ORDER BY created_at DESC LIMIT 1",(tid,number))
+                if not context_row: return self.json({"error":f"request round {number} approval again; its approved prompt was not found"},409)
+                prompt=validate_provider_prompt(context_row["prompt"] or "")
                 kind=provider_approval_kind(provider); detail=round_invocation_detail(tid,provider,prompt,number)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
                 if not permitted: return self.json({"error":f"approved {kind} request for this exact round {number} prompt required"},403)
+                budget=budget_error(tid)
+                if budget: return self.json({"error":budget,"budget":budget_state(tid),"limits":limits},409)
                 result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"])
+                add_usage(tid, response_bytes=len(result["text"].encode("utf-8")), invocations=1)
                 prompt_sha=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
                 repeated=STORE.one("SELECT id FROM invocations WHERE task_id=? AND response=? LIMIT 1",(tid,result["text"]))
                 if repeated:
@@ -593,6 +784,7 @@ class App(SimpleHTTPRequestHandler):
                     STORE.write("INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?,?,?)",(proposal_id,tid,workspace["branch"],workspace["path"],parsed["summary"],json.dumps(operations),digest,"pending",None,now()))
                     STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(proposal_approval,task["project_id"],"modify",round_proposal_detail(tid,number,workspace,digest,prompt_sha),"pending",now()))
                     rid=insert_round(tid,number,provider,prompt_sha,"awaiting-approval",parsed["summary"],proposal_id,digest,proposal_approval,operations)
+                    link_context(tid,number,rid)
                     STORE.write("UPDATE tasks SET status='iterating', updated_at=? WHERE id=?",(now(),tid))
                     task_event(tid,"planner","info",f"Round {number} proposes {len(operations)} operation(s); digest {digest[:12]}.")
                     task_event(tid,"security","warning",f"Round {number} changes require approval of this exact proposal digest.")
@@ -602,13 +794,16 @@ class App(SimpleHTTPRequestHandler):
                     proven,reason=tools.completion_evidence(rounds)
                     if not proven:
                         rid=insert_round(tid,number,provider,prompt_sha,"rejected-completion",parsed["summary"],error=reason)
+                        link_context(tid,number,rid)
                         task_event(tid,"reviewer","warning",f"Round {number} claimed completion without evidence: {reason}.")
                         return self.json({"error":f"completion rejected: {reason}","round_id":rid,"round":number,"status":"rejected-completion","limits":round_limits(tid)},409)
                     rid=insert_round(tid,number,provider,prompt_sha,"complete",parsed["summary"])
+                    link_context(tid,number,rid)
                     STORE.write("UPDATE tasks SET status='completed', updated_at=? WHERE id=?",(now(),tid))
                     task_event(tid,"reviewer","info",f"Round {number} completed the task with verified evidence: {reason}.")
                     return self.json({"round_id":rid,"round":number,"status":"complete","summary":parsed["summary"],"evidence":reason,"report":task_report(tid)},201)
                 rid=insert_round(tid,number,provider,prompt_sha,parsed["status"],parsed["summary"])
+                link_context(tid,number,rid)
                 STORE.write("UPDATE tasks SET status=?, updated_at=? WHERE id=?",(parsed["status"],now(),tid))
                 task_event(tid,"orchestrator","warning",f"Round {number} is {parsed['status']}: {parsed['summary'][:300]}")
                 return self.json({"round_id":rid,"round":number,"status":parsed["status"],"summary":parsed["summary"],"limits":round_limits(tid)},201)
@@ -628,39 +823,79 @@ class App(SimpleHTTPRequestHandler):
                 detail=round_proposal_detail(tid, round_row["round_number"], workspace, digest, round_row["prompt_sha256"])
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],detail))
                 if not permitted: return self.json({"error":"approved round proposal for this exact digest and workspace required"},403)
+                pending_cancel=cancellation_row(tid)
+                if pending_cancel and pending_cancel["round_id"]==round_row["id"]:
+                    STORE.write("UPDATE rounds SET status='cancelled', error=?, updated_at=? WHERE id=? AND status='awaiting-approval'",("cancelled before execution started",now(),round_row["id"]))
+                    STORE.write("UPDATE proposals SET status='cancelled' WHERE id=? AND status='pending'",(proposal["id"],))
+                    task_event(tid,"orchestrator","warning",f"Round {round_row['round_number']} was cancelled before it started; nothing ran.")
+                    return self.json({"round_id":round_row["id"],"round":round_row["round_number"],"status":"cancelled","ok":False,"results":[],"task_status":"cancelled","ledger":round_ledger(round_row["id"])},409)
                 claim=STORE.conn.execute("UPDATE proposals SET status='executing' WHERE id=? AND status='pending'",(proposal["id"],))
                 if claim.rowcount != 1: STORE.conn.rollback(); return self.json({"error":"Proposal is already being executed"},409)
                 round_claim=STORE.conn.execute("UPDATE rounds SET status='executing', updated_at=? WHERE id=? AND status='awaiting-approval'",(now(),round_row["id"]))
                 STORE.conn.commit()
                 if round_claim.rowcount != 1: return self.json({"error":"Round is already being executed"},409)
-                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout))
+                op_ids={}
+                def on_event(kind,index,operation,result):
+                    """Persist each operation before and after it runs, so a crash leaves a real ledger."""
+                    if kind=="start":
+                        op_ids[index]=record_operation(tid,round_row,index,operation,"running")
+                        return
+                    op_id=op_ids.get(index) or record_operation(tid,round_row,index,operation,"running")
+                    record_operation(tid,round_row,index,operation,(result or {}).get("status","error"),result,op_id)
+                def stop_check():
+                    row=cancellation_row(tid)
+                    return bool(row and row["round_id"] in (None,round_row["id"]))
+                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout), stop_check=stop_check, on_event=on_event)
                 feedback=tools.round_feedback(Path(workspace["path"]), operations, outcome["operations"], redact=redacted)
+                add_usage(tid, test_output_bytes=len(str(feedback.get("test_output") or "").encode("utf-8")))
                 hard_failures=[r for r in outcome["operations"] if r["status"]=="error" and r["tool"]!="run_tests"]
-                if hard_failures:
+                cancel_row=cancellation_row(tid)
+                was_cancelled=bool(outcome.get("cancelled") or (cancel_row and cancel_row["round_id"]==round_row["id"]))
+                cancelled_index=next((r["index"] for r in outcome["operations"] if r["status"]=="cancelled"),None)
+                if was_cancelled:
+                    final="cancelled"; error=f"cancelled before operation {cancelled_index+1}" if cancelled_index is not None else "cancelled"
+                    feedback["cancelled"]=True
+                    feedback["cancelled_at_index"]=cancelled_index
+                    STORE.write("UPDATE proposals SET status='cancelled', results=? WHERE id=?",(json.dumps(outcome["operations"]),proposal["id"]))
+                elif hard_failures:
                     final="failed"; error="; ".join(feedback["errors"])[:400] or "operation failed"
                 elif feedback["tests_ran"] and feedback["test_exit_code"]==0 and outcome["ok"]:
                     final="passed"; error=None
                 else:
                     final="failed-checks"; error="round ran no passing test command" if not feedback["tests_ran"] else f"test command exited {feedback['test_exit_code']}"
-                STORE.write("UPDATE proposals SET status=?, results=? WHERE id=?",("executed" if outcome["ok"] else "failed",json.dumps(outcome["operations"]),proposal["id"]))
+                if not was_cancelled:
+                    STORE.write("UPDATE proposals SET status=?, results=? WHERE id=?",("executed" if outcome["ok"] else "failed",json.dumps(outcome["operations"]),proposal["id"]))
                 STORE.write("UPDATE rounds SET status=?, results=?, test_result=?, error=?, updated_at=? WHERE id=?",(final,json.dumps(outcome["operations"]),json.dumps(feedback),error,now(),round_row["id"]))
                 limits=round_limits(tid)
-                task_status="ready-to-complete" if final=="passed" else ("needs-another-round" if limits["remaining"]>0 else "exhausted")
+                if final=="cancelled":
+                    task_status="cancelled"
+                elif final=="passed":
+                    task_status="ready-to-complete"
+                else:
+                    task_status="needs-another-round" if limits["remaining"]>0 else "exhausted"
                 STORE.write("UPDATE tasks SET status=?, updated_at=? WHERE id=?",(task_status,now(),tid))
                 for entry in outcome["operations"]:
                     task_event(tid,"executor","info" if entry["status"]=="ok" else "warning",f"Round {round_row['round_number']} tool {entry['tool']} #{entry['index']+1}: {entry['status']}{(' — '+entry['error']) if entry.get('error') else ''}.")
+                if was_cancelled:
+                    task_event(tid,"orchestrator","warning",f"Round {round_row['round_number']} stopped by cancellation; completed operations were preserved and the rest were not started.")
                 task_event(tid,"testing","info" if final=="passed" else "warning",f"Round {round_row['round_number']} {final}.")
-                return self.json({"round_id":round_row["id"],"round":round_row["round_number"],"status":final,"ok":outcome["ok"],"results":outcome["operations"],"feedback":feedback,"task_status":task_status,"limits":limits})
+                return self.json({"round_id":round_row["id"],"round":round_row["round_number"],"status":final,"ok":outcome["ok"],"cancelled":was_cancelled,"results":outcome["operations"],"feedback":feedback,"task_status":task_status,"limits":limits,"ledger":round_ledger(round_row["id"]),"budget":budget_state(tid)})
             if route.startswith("/api/tasks/") and route.endswith("/agent/round/cancel"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
                 active=STORE.one("SELECT * FROM rounds WHERE task_id=? AND status IN ('awaiting-approval','executing') ORDER BY round_number DESC LIMIT 1",(tid,))
                 if not active: return self.json({"error":"no active round to cancel"},404)
-                STORE.write("UPDATE rounds SET status='cancelled', updated_at=? WHERE id=? AND status IN ('awaiting-approval','executing')",(now(),active["id"]))
-                STORE.write("UPDATE proposals SET status='cancelled' WHERE id=? AND status IN ('pending','executing')",(active["proposal_id"],))
-                STORE.write("UPDATE tasks SET status='cancelled', updated_at=? WHERE id=?",(now(),tid))
-                task_event(tid,"orchestrator","warning",f"Round {active['round_number']} cancelled; its pending approval cannot execute.")
-                return self.json({"round":active["round_number"],"status":"cancelled","task_status":"cancelled"})
+                result=cancel_task(tid, str(data.get("reason") or "round cancelled by user"))
+                return self.json({**result,"status":"cancelled"})
+            if route.startswith("/api/tasks/") and route.endswith("/cancel"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                return self.json(cancel_task(tid, str(data.get("reason") or "task cancelled by user")),202)
+            if route.startswith("/api/tasks/") and route.endswith("/agent/budget/reset"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                if data.get("confirm") is not True: return self.json({"error":"budget reset must be confirmed explicitly with {\"confirm\": true}"},400)
+                return self.json({"task_id":tid,"budget":reset_budget(tid),"limits":round_limits(tid)})
             if route.startswith("/api/tasks/") and route.endswith("/agent/request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)

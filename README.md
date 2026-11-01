@@ -40,9 +40,13 @@ Python control plane (app/server.py)  ──  SQLite (data/personal_codex.db)
 - Invoke an approved provider and keep a bounded, redacted response ledger.
 - Ask a provider for an **agent proposal** of allowlisted tool calls, review it, approve it, and execute it inside the task worktree.
 - Run an **iterative round loop**: execute an approved proposal, record the test evidence, and send that bounded evidence back to the provider for the next proposal. Every round needs its own approval, at most 3 rounds run by default (`PERSONAL_CODEX_MAX_ROUNDS`, 1–10), and a task cannot be declared complete without a passing executed round that changed files.
+- **Cancel a running task between operations** without losing completed work: the cancellation is persisted, checked before every tool and before every test command, completed operations are kept, skipped ones are recorded, and the cancelled round can never execute with its old approval.
 - Inspect every task's plan, events, executions, provider responses, proposal, round history, test results, final report and diff-facing operation list in the dashboard.
+- See an **operation-level ledger** (status, timing, applied flag, file hashes) for each round and a **cumulative budget meter** (prompt, response, test output, context, invocations).
+- Let the agent select **bounded repository context** locally: manifest, docs, test locations, symbol outlines, task/symbol/changed-file ranking, `.gitignore` and secret exclusion, symlink containment, byte caps, and a stable digest bound to the approved prompt.
+- Record project-scoped **memory** entries (conventions, decisions, known issues, solved problems, test commands) that are inspectable, editable, deletable, bounded, credential-rejected and clearly marked as possibly stale in prompts.
 
-Not implemented yet: provider streaming, provider-native tool calling, project memory/indexer, desktop shell, ZimaOS worker, login/TLS, encrypted secret storage, conflict-resolution tooling, and browser automation tests.
+Not implemented yet: provider streaming, provider-native tool calling, a semantic/vector index, desktop shell, ZimaOS worker, login/TLS, encrypted secret storage, conflict-resolution tooling, and browser automation tests.
 
 ## Requirements
 
@@ -94,10 +98,10 @@ A non-loopback endpoint is accepted only when registered with `cloud_allowed: tr
 
 1. Register a project and create a task describing the change.
 2. Approve `workspace-request`, then create the workspace.
-3. Click **Request round approval** (choose a provider). Personal Codex builds a deterministic prompt from the task, the visible workspace files, the round history, and the tool schema, and queues an approval bound to that prompt's digest and round number.
+3. Click **Request round approval** (choose a provider). Personal Codex selects a bounded repository context (see below), builds a deterministic prompt from the task, that context, the round history and the tool schema, and queues an approval bound to that prompt's digest and round number. The selected files, their reasons, the byte count and the context digest are shown in the dashboard.
 4. Approve it, then click **Propose next round**. The provider must answer with `{"summary", "status", "operations"}`; operations are validated against the closed tool schema and file hashes are bound; a second approval is queued for the round's proposal digest.
 5. Approve that proposal and click **Execute approved round**. The tools run in the task worktree and the test exit code, output tail, changed files, and failed test names are recorded.
-6. Repeat from step 3 — the next prompt contains the previous round's evidence, so a failure can be corrected. Rounds stop at the limit or when the provider returns `blocked`/`failed`; `cancel round` stops the loop and makes its pending approval unusable.
+6. Repeat from step 3 — the next prompt contains the previous round's evidence, so a failure can be corrected. Rounds stop at the round, time, or budget limit, or when the provider returns `blocked`/`failed`. **Cancel round** or **Cancel task** records a cancellation: a pending proposal is closed immediately, an executing round stops before its next operation, completed operations are preserved, and the round's approval is revoked.
 7. A `complete` status is accepted only if the evidence proves it: an executed round with a passing test command and at least one approved file change, and no later failing round. Model prose alone can never mark the task done.
 8. Review execution results, the operation list, and the diff in the worktree; run tests through an approved command if needed.
 9. Release the clean worktree, preview the merge, then merge and (optionally) delete the recovery branch, each with its own approval.
@@ -107,6 +111,47 @@ Allowed tools: `list_files`, `read_file`, `apply_patch` (exact single-match text
 ### Round lifecycle
 
 `round/request` → approval → `round/plan` → proposal approval → `round/execute` → `passed` / `failed-checks` / `failed` → next `round/request`. Each round row persists its provider, model, prompt digest, proposal digest, approval, operations, results, test feedback, error, and timestamps, so a refreshed dashboard reconstructs the whole history. Duplicate provider responses and already-reviewed proposal digests are refused, and the run is limited by rounds, elapsed time, operations, and bounded feedback text. If the service restarts mid-execution, the next start marks the abandoned round `interrupted` (never `passed`), releases the task to `needs-another-round`, and requires a fresh proposal, so a crash can neither fake success nor wedge the loop.
+
+### Cancellation and recovery
+
+Cancellation is a recorded state, not a UI flag. `POST /api/tasks/{id}/cancel` (or the dashboard's **Cancel task**) stores a cancellation row bound to the active round, revokes that round's approved proposal, marks a not-yet-started round `cancelled`, and sets the task to `cancelled`. Execution consults that row before every operation, so a cancelled round stops starting new tools and test commands; operations that already ran keep their results and every skipped index is recorded as `cancelled`. Nothing is rolled back, and no cancelled operation is ever applied later. Requesting a new round after a cancellation is an explicit user action; it clears the cancellation record but still requires fresh provider and proposal approvals.
+
+Each operation also has a ledger row: task, round, index, tool, approved proposal digest, status, start and finish time, result summary, error, whether an edit was applied, and the before/after SHA-256 of the file it touched. Rows are written before and after each tool runs, so a crash leaves a truthful record instead of a gap. On startup, rounds stuck in `executing` become `interrupted`, their proposals close, running operation rows become `interrupted` (they are never replayed), completed rows are preserved, and an `iterating` task moves to `needs-another-round`.
+
+### Resource budgets
+
+Cumulative usage is persisted per task (prompt bytes, provider response bytes, test output bytes, context bytes, invocations) and enforced before a provider call:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PERSONAL_CODEX_MAX_ROUNDS` | `3` | rounds per task (1–10) |
+| `PERSONAL_CODEX_MAX_TASK_SECONDS` | `1800` | wall-clock budget per task |
+| `PERSONAL_CODEX_MAX_PROMPT_BYTES` | `800000` | total prompt bytes sent for the task |
+| `PERSONAL_CODEX_MAX_RESPONSE_BYTES` | `300000` | total provider response bytes |
+| `PERSONAL_CODEX_MAX_TEST_OUTPUT_BYTES` | `300000` | total retained test output |
+| `PERSONAL_CODEX_MAX_CONTEXT_BYTES` | `60000` | repository context per round |
+| `PERSONAL_CODEX_MAX_INVOCATIONS` | `12` | provider calls per task |
+
+When a budget is exhausted the request is refused before any provider call, the task moves to `budget-exhausted`, the reason is written to the event log, and the dashboard shows the meter. Resuming requires an explicit `POST /api/tasks/{id}/agent/budget/reset` with `{"confirm": true}`; nothing resets automatically, and a reset still needs fresh approvals.
+
+### Repository context and memory
+
+`app/context.py` builds a bounded view of the repository without sending it anywhere: a manifest (file counts, extensions, config files, docs, tests, entry points), documentation and manifest prioritisation, a lightweight symbol outline (`ast` for Python, conservative regexes for JavaScript/TypeScript), and a ranked selection driven by task tokens, previously failed tests, changed files and symbol matches. It respects `.gitignore` and built-in ignored directories, refuses secret-named files, refuses symlinks that leave the workspace, caps each file and the whole selection, and returns a stable SHA-256 digest. The selected snippets are rendered into the approved prompt inside a block explicitly marked as untrusted repository data. `GET /api/tasks/{id}/agent/context` shows what was selected; the prompt text itself stays local and the context API never returns it.
+
+Project memory is a foundation, not an authority: `GET/POST /api/projects/{id}/memory` and the `/memory/update` and `/memory/delete` routes store bounded entries (`convention`, `decision`, `issue`, `solved`, `relationship`, `test-command`, `summary`), reject credential-like content, and are injected into prompts under a "possibly stale; verify against the files" heading.
+
+## Live Ollama test
+
+Everything above is verified with a deterministic injected transport. A live model run has **not** been performed here; Ollama is not installed in the development environment and the owner's Mac is not reachable from it. The reproducible procedure is:
+
+1. On the owner's Mac (Apple Silicon, 16 GB): `ollama serve`, then `ollama pull qwen2.5-coder:7b` (or any installed model — do not assume one is present; `ollama list` first).
+2. Start Personal Codex: `python3 app/server.py`, open `http://127.0.0.1:8787`.
+3. Register a disposable Git repository (a scratch copy with at least one test command) and a task such as "fix the failing greeting test".
+4. Register provider kind `ollama`, endpoint `http://127.0.0.1:11434`, model from step 1.
+5. Request round approval, approve it, propose the round, and review the JSON operations and the selected context.
+6. Approve the proposal, execute the round, and check the test exit code, ledger, and context digest.
+7. If it failed, request round 2 and confirm the next prompt contains the failure evidence. Repeat, then request completion and verify the final report.
+8. Record what actually happened (JSON compliance, patch matching, test usefulness) in `DEVELOPMENT_LOG.md`; never report a live run that did not happen.
 
 ## Security model
 
@@ -120,7 +165,9 @@ Allowed tools: `list_files`, `read_file`, `apply_patch` (exact single-match text
 - Model output never executes directly; only validated, approved tool calls run.
 - Every round binds its own approval to the round number, prompt digest, workspace branch/path, proposal digest, and reviewed file hashes; a previous round's approval can never execute a new proposal.
 - Completion claims are checked against recorded evidence, not model confidence, and a cancelled round invalidates its pending proposal.
-- Execution output fed back to the provider is redacted and truncated, and the workspace listing is capped, so a round cannot stream unbounded repository content to a cloud endpoint.
+- Execution output fed back to the provider is redacted and truncated, the workspace listing is capped, and repository context is budgeted and secret-free, so a round cannot stream unbounded or secret repository content to a cloud endpoint.
+- Cancellation is persisted and checked before every operation; a cancelled round cannot reuse its approval, and completed operations are preserved rather than silently rolled back.
+- Cumulative prompt, response, test-output, context and invocation budgets are enforced before a provider call; exhaustion stops the task instead of silently continuing, and only an explicit confirmed reset clears it.
 - Merge and branch deletion are separate critical approvals; a dirty target worktree is refused.
 
 Known limitations: no OS sandboxing, no guaranteed address-space enforcement on every OS, no encrypted secret store, no CSP headers, no authentication, and no TLS.
@@ -128,13 +175,13 @@ Known limitations: no OS sandboxing, no guaranteed address-space enforcement on 
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -v                              # 66 tests; listener-gated ones skipped
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 66 tests, disposable fixtures
-python3 -m py_compile app/server.py app/providers.py app/tools.py
+python3 -m unittest discover -s tests -v                              # 82 tests; listener-gated ones skipped
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 82 tests, disposable fixtures
+python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py
 node --check web/app.js
 ```
 
-`tests/test_server.py` covers repository filtering, planning, approvals, worktree, command execution, release, merge and branch deletion. `tests/test_providers.py` runs both adapters against an ephemeral loopback stub server (malformed JSON, HTTP errors, redirects, refusal, timeout, oversize, credentials). `tests/test_tools.py` covers the tool schema, path/symlink containment, patch hash binding, execution ordering, the full proposal → approval → execution API lifecycle including stale-file rejection, and the iterative round loop: a failing round followed by a corrected passing round and an evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation. `tests/test_ui.py` is a browser-free dashboard contract check (element IDs, wiring, routed API paths, local-only assets). No live model and no external network are used.
+`tests/test_server.py` covers repository filtering, planning, approvals, worktree, command execution, release, merge and branch deletion. `tests/test_providers.py` runs both adapters against an ephemeral loopback stub server (malformed JSON, HTTP errors, redirects, refusal, timeout, oversize, credentials). `tests/test_tools.py` covers the tool schema, path/symlink containment, patch hash binding, execution ordering, the full proposal → approval → execution API lifecycle including stale-file rejection, and the iterative round loop: a failing round followed by a corrected passing round and an evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation. `tests/test_ui.py` is a browser-free dashboard contract check (element IDs, wiring, routed API paths, local-only assets). `tests/test_context.py` covers the context engine (manifest, `.gitignore` and secret exclusion, symlink containment, ranking and determinism, byte and file caps, Python/JS outlines, untrusted-data framing) and the project-memory API (scoping, credential rejection, edit, delete). The round suite also covers cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted operations not being replayed, invocation and prompt budget refusal, explicit budget reset, and context visibility/digest binding. No live model and no external network are used.
 
 ## Project documents
 
@@ -142,7 +189,8 @@ node --check web/app.js
 
 ## Roadmap
 
-1. Streaming and provider-native tool calls.
-2. Project memory from manifests, docs, and parsed symbols.
-3. Tauri desktop shell over the loopback API.
-4. Mutually authenticated ZimaOS worker on a private network.
+1. A verified live Ollama round on the owner's machine (the immediate priority).
+2. Streaming and provider-native tool calls.
+3. Semantic retrieval and memory promotion from verified rounds.
+4. Tauri desktop shell over the loopback API.
+5. Mutually authenticated ZimaOS worker on a private network.

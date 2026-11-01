@@ -2,6 +2,12 @@
 
 ## 2026-11-01
 
+Started Milestone 4 from a verified `cc334d1`. Implemented the repository context engine first because it determines prompt budget and approval binding: `app/context.py` with deterministic ranking, `.gitignore`/secret exclusion, symlink containment and digest. The round request now stores the exact approved prompt with its context so `round/plan` reproduces the approved bytes instead of rebuilding them (rebuilding would have silently broken the digest check).
+
+Added cancellation as persisted state bound to a round, with a `stop_check` consulted before every operation and a `round_feedback` cancellation record; added an operation ledger written through tool callbacks so `app/tools.py` keeps no storage authority; added cumulative budgets with clamped environment variables and an explicit reset. The dashboard gained cancel, budget meter, ledger, and context panels.
+
+One real bug was caught by the tests: `GET /agent/context` was initially added to the POST dispatcher, so it fell through to the static handler and returned HTML. Moving it to the GET dispatcher fixed it. Verification: 82 tests with HTTP integration enabled, `OK`; compilation and `node --check` pass.
+
 Implemented the multi-round iterative engine on top of the existing single-cycle dispatcher. The new `rounds` table and endpoints were added without changing the existing proposal lifecycle. The first test run of the new suite exposed three missing imports in the test module and one real design bug: a non-zero test exit marked the whole round `failed` instead of `failed-checks`, which would have hidden test evidence from the feedback loop. Fixed by classifying only non-`run_tests` tool errors as hard failures, then confirming all 64 tests pass with the HTTP integration enabled. Updated the dashboard with round controls, history, and a final report, and added contract checks for the new element ids and routes. Added restart recovery so an interrupted round is marked `interrupted` instead of blocking the loop, plus a single in-flight guard in the dashboard; the suite is now 66 tests.
 
 Environment discovered: Apple Silicon macOS (Darwin 25.6.0), Python 3.13.9, Node 24.22.1, Git 2.50.1, SQLite CLI, SSH client; Docker and Rust/Cargo were not found on PATH. Workspace volume had approximately 76 GiB free. The visible Mac address was 192.168.1.11. ZimaOS was not inspected because no server endpoint or authorization was available.

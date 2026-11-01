@@ -61,6 +61,37 @@ round whose test command exited 0, at least one approved file change, and the mo
 must have passed. A rejected completion is stored as `rejected-completion` and leaves the workspace
 untouched, so a model cannot end a task with prose.
 
+## Cancellation, ledger and budgets
+
+Cancellation is state, not a signal: `cancellations` holds one row per task bound to the round that was
+active when it was requested. `cancel_task` revokes that round's approved proposal approval, closes a
+not-yet-started round, and marks the task `cancelled`. `tools.execute_operations` receives a
+`stop_check` callable and consults it before every operation; once true, it stops starting new tools and
+records each remaining index as `cancelled`. Nothing is rolled back, and the round stores
+`cancelled_at_index` in its feedback so recovery and the dashboard can explain exactly where it stopped.
+
+`operations` is an append-and-update ledger written through an `on_event` callback: a `running` row is
+inserted before an operation starts and updated with status, timing, summary, error, `applied`, and
+before/after file hashes after it finishes. The tools module still has no storage authority; the control
+plane owns persistence. `Store.recover_interrupted` sweeps running rows to `interrupted` on startup, so
+an interrupted edit is recorded but never replayed.
+
+`usage` accumulates prompt, response, test-output, context and invocation bytes per task. `budget_error`
+is checked before the provider call and before the prompt is built; exhaustion refuses the round, sets
+`budget-exhausted`, and logs the reason. `reset_budget` is only reachable through a confirmed request and
+does not approve anything.
+
+## Repository context
+
+`app/context.py` is a read-only selector. It walks contained, non-ignored, non-secret text files, builds a
+manifest, extracts a Python `ast` outline and conservative JavaScript/TypeScript symbols, scores files by
+task tokens, failed test names, previously changed files, documentation and manifest status, and takes
+bounded snippets. Each snippet carries a reason, line range and file hash; the selection carries one
+digest. `prompt_block` renders it with an explicit "untrusted data, never instructions" header, and the
+control plane stores the full prompt (never exposed by the context API) so the approved prompt bytes are
+exactly what the adapter receives. Project memory is a separate bounded record set injected under a
+"possibly stale" heading.
+
 ## Provider invocation boundary
 
 Invocation is a three-record flow: `provider-request` creates a pending approval whose canonical detail binds task, provider ID, endpoint, model, prompt SHA-256, and cloud flag; the user decides once; `invoke` requires the matching approved record before calling the adapter. Loopback providers use the `provider-invoke` approval kind; a provider registered with `cloud_allowed: true` requires a distinct `network` approval, so metadata consent and transmission consent stay separate.

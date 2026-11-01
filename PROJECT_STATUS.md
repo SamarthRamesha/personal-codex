@@ -2,7 +2,7 @@
 
 Updated: 2026-11-01 (Asia/Kolkata)
 
-## Current milestone: persistent multi-round coding loop with test feedback
+## Current milestone: execution reliability, budgets and repository intelligence
 
 Continuity protocol: `NEXT_SESSION_PROMPT.md` is a permanent, ready-to-use cross-account handoff. It is regenerated after each meaningful verified milestone, on user request, and before usage exhaustion; it must embed the recursive continuation protocol for the next account.
 
@@ -33,6 +33,12 @@ Implemented and verified:
 - Loop safety: duplicate provider responses and already-reviewed proposal digests are refused, a round can execute at most once, cancellation invalidates its pending proposal, and a failing test run is distinguished from a failed tool operation.
 - Crash recovery: on start, any round still marked `executing` becomes `interrupted` with an event and its proposal is closed, so a restart cannot leave a task stuck or a half-applied round looking passed.
 - Dashboard rounds panel: round count/limits/elapsed, per-round status with test exit codes and failed test names, errors, and a final report with changed files and bounded diff stat. Action buttons ignore repeated clicks while a request is in flight.
+- Cancellation: `POST /api/tasks/{id}/cancel` persists a cancellation bound to the active round, revokes its approved proposal, and is consulted before every tool operation. Completed operations are preserved, skipped ones are marked `cancelled`, and a cancelled round cannot execute with its old approval.
+- Operation ledger (`operations` table): task, round, index, tool, proposal digest, status, timing, summary, error, applied flag, and before/after file hashes, written before and after each operation. Startup marks running rows `interrupted` and never replays them.
+- Cumulative budgets (`usage` table): prompt bytes, response bytes, test output bytes, context bytes and invocations, with seven clamped environment variables. Exhaustion refuses the next provider call, records the reason, sets `budget-exhausted`, and requires an explicit confirmed reset.
+- Repository context engine (`app/context.py`): manifest, doc/manifest prioritisation, Python `ast` and JS symbol outlines, token/failed-test/changed-file ranking, `.gitignore` and secret exclusion, symlink containment, per-file and total byte caps, stable digest, and an explicitly untrusted prompt block.
+- Project memory foundation (`memory` table): seven kinds, bounded content, credential-pattern rejection, project-scoped CRUD, and a "possibly stale" prompt section.
+- Dashboard: cancel task, explicit budget reset, budget meter, operation ledger, and selected-context panel with reasons, line ranges and digest.
 - Browser-free dashboard contract tests (`tests/test_ui.py`) assert that scripted element IDs exist, every button is wired, every `/api/...` path used by the script is routed, gated actions are all present, and only local assets are loaded without browser-stored secrets.
 - Provider adapter tests (`tests/test_providers.py`) run against an ephemeral loopback stub server: request shape and path, response extraction, malformed JSON, HTTP errors, redirect refusal, connection refusal, timeout, oversized response, unexpected structure, invalid endpoints, non-loopback refusal, credential handling, and transport selection. No external network or real model is used.
 - Agent tests (`tests/test_tools.py`): schema and argument validation, path/symlink/secret containment, patch hash binding, duplicate-match refusal, stop-on-failure execution, runner failure handling, digest binding, and an opt-in HTTP lifecycle where an approved proposal edits the worktree, runs a test command, refuses a second execution, and rejects a stale file with the file preserved.
@@ -40,9 +46,9 @@ Implemented and verified:
 
 Verification completed (2026-11-01, this session):
 
-- `python3 -m unittest discover -s tests -v` — 66 tests, `OK (skipped=9)`: the listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 66 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation.
-- `python3 -m py_compile app/server.py app/providers.py app/tools.py` — passed.
+- `python3 -m unittest discover -s tests -v` — 82 tests, `OK (skipped=14)`: the listener-gated tests are correctly skipped unless explicitly enabled.
+- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 82 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
+- `python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py` — passed.
 - `node --check web/app.js` — passed.
 - `node --check web/app.js` — passed.
 - Earlier loopback smoke test confirmed health, dashboard provider controls, 403 before approval, bound approval detail, and rejection of a cloud endpoint without consent; later transport coverage replaced the fail-closed-only check with the stub-server adapter suite above.

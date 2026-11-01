@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -277,8 +278,8 @@ class RoundProposalUnitTests(unittest.TestCase):
 
 
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
-class MultiRoundApiTests(unittest.TestCase):
-    """Iterative rounds: execute, feed evidence back, require fresh approvals, verify completion."""
+class RoundApiFixture(unittest.TestCase):
+    """Shared fixture: disposable repo, stub transport, workspace and loopback control plane."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -337,6 +338,9 @@ class MultiRoundApiTests(unittest.TestCase):
         status, payload = self.call(f"/api/tasks/{self.task_id}/agent/round/plan", "POST", {"provider_id": self.provider["id"]})
         self.assertEqual(status, expected, payload)
         return payload
+
+class MultiRoundApiTests(RoundApiFixture):
+    """Iterative rounds: execute, feed evidence back, require fresh approvals, verify completion."""
 
     def test_two_rounds_self_correct_then_verified_completion(self):
         self.responses = [
@@ -469,3 +473,122 @@ class RoundRecoveryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReliabilityApiTests(RoundApiFixture):
+    """Cancellation, partial-result persistence, crash recovery and cumulative budgets."""
+
+    def test_cancellation_between_operations_preserves_partial_work(self):
+        self.responses = [json.dumps({"summary": "long round", "status": "continue", "operations": [
+            {"tool": "run_tests", "command": 'python3 -c "import time; time.sleep(1.0)"'},
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "cancelled\n"},
+            {"tool": "run_tests", "command": 'python3 -c "print(2)"'}]})]
+        planned = self.plan_round()
+        self.approve(planned["approval_id"])
+        result = {}
+        worker = threading.Thread(target=lambda: result.update(
+            value=self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})), daemon=True)
+        worker.start()
+        time.sleep(0.4)
+        status, cancel = self.call(f"/api/tasks/{self.task_id}/cancel", "POST", {"reason": "test cancellation"})
+        self.assertEqual(status, 202, cancel)
+        worker.join(timeout=30)
+        status, executed = result["value"]
+        self.assertEqual((status, executed["status"], executed["task_status"]), (200, "cancelled", "cancelled"))
+        self.assertTrue(executed["cancelled"])
+        self.assertEqual([entry["status"] for entry in executed["results"]], ["ok", "cancelled", "cancelled"])
+        self.assertEqual((self.workspace / "README.md").read_text(), "hi\n", "a cancelled operation must not be applied")
+        self.assertEqual([row["status"] for row in executed["ledger"]], ["ok", "cancelled", "cancelled"])
+        status, rounds = self.call(f"/api/tasks/{self.task_id}/agent/rounds")
+        self.assertIsNotNone(rounds["cancellation"])
+        self.assertEqual(rounds["rounds"][0]["status"], "cancelled")
+        approval = server.STORE.one("SELECT * FROM approvals WHERE id=?", (planned["approval_id"],))
+        self.assertEqual(approval["status"], "revoked")
+        status, _ = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual(status, 404, "a cancelled round must not execute with its old approval")
+        status, fresh = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})
+        self.assertEqual(status, 201, fresh)
+        self.assertEqual(fresh["round"], 2)
+
+    def test_partial_results_are_persisted_and_interrupted_operations_are_not_replayed(self):
+        self.responses = [json.dumps({"summary": "partial", "status": "continue", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "one\n"},
+            {"tool": "apply_patch", "path": "README.md", "old_text": "missing text", "new_text": "x\n"},
+            {"tool": "run_tests", "command": 'python3 -c "print(1)"'}]})]
+        planned = self.plan_round()
+        self.approve(planned["approval_id"])
+        status, executed = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual((status, executed["status"]), (200, "failed"))
+        ledger = executed["ledger"]
+        self.assertEqual([row["status"] for row in ledger], ["ok", "error", "skipped"])
+        self.assertEqual(ledger[0]["applied"], 1)
+        self.assertIn("sha256_before", ledger[0]["file_hashes"])
+        self.assertEqual((self.workspace / "README.md").read_text(), "one\n")
+
+        server.STORE.write("UPDATE rounds SET status='executing' WHERE id=?", (planned["round_id"],))
+        server.STORE.write("UPDATE operations SET status='running' WHERE id=?", (ledger[1]["id"],))
+        server.STORE.write("UPDATE proposals SET status='executing' WHERE id=?", (planned["proposal_id"],))
+        restarted = server.Store()
+        try:
+            self.assertEqual(restarted.one("SELECT status FROM operations WHERE id=?", (ledger[1]["id"],))["status"], "interrupted")
+            self.assertEqual(restarted.one("SELECT status FROM operations WHERE id=?", (ledger[0]["id"],))["status"], "ok",
+                             "completed operations must survive recovery")
+            self.assertEqual(restarted.one("SELECT status FROM rounds WHERE id=?", (planned["round_id"],))["status"], "interrupted")
+            self.assertEqual((self.workspace / "README.md").read_text(), "one\n", "recovery must never replay a modification")
+        finally:
+            restarted.conn.close()
+
+    def test_invocation_budget_blocks_new_rounds_and_requires_explicit_reset(self):
+        original = server.MAX_INVOCATIONS
+        server.MAX_INVOCATIONS = 1
+        try:
+            self.responses = [json.dumps({"summary": "patch", "status": "continue", "operations": [
+                {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "budget\n"}]})]
+            planned = self.plan_round()
+            self.approve(planned["approval_id"])
+            self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+            status, payload = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})
+            self.assertEqual(status, 409, payload)
+            self.assertIn("invocation budget", payload["error"])
+            self.assertEqual(payload["budget"]["used"]["invocations"], 1)
+            _, tasks = self.call("/api/tasks")
+            self.assertEqual(next(t for t in tasks if t["id"] == self.task_id)["status"], "budget-exhausted")
+            status, _ = self.call(f"/api/tasks/{self.task_id}/agent/budget/reset", "POST", {})
+            self.assertEqual(status, 400, "a budget reset must be explicit")
+            status, reset = self.call(f"/api/tasks/{self.task_id}/agent/budget/reset", "POST", {"confirm": True})
+            self.assertEqual((status, reset["budget"]["used"]["invocations"]), (200, 0))
+            self.responses = [json.dumps({"summary": "again", "status": "continue", "operations": [
+                {"tool": "read_file", "path": "README.md"}]})]
+            status, fresh = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})
+            self.assertEqual(status, 201, fresh)
+        finally:
+            server.MAX_INVOCATIONS = original
+
+    def test_prompt_budget_refusal_records_why_execution_stopped(self):
+        original = server.MAX_PROMPT_BYTES
+        server.MAX_PROMPT_BYTES = 1000
+        try:
+            status, payload = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})
+            self.assertEqual(status, 409, payload)
+            self.assertIn("prompt budget", payload["error"])
+            _, events = self.call(f"/api/tasks/{self.task_id}/events")
+            self.assertTrue(any("refused before any provider call" in event["message"] for event in events))
+        finally:
+            server.MAX_PROMPT_BYTES = original
+
+    def test_selected_context_is_visible_and_digest_bound_to_the_round(self):
+        self.responses = [json.dumps({"summary": "read", "status": "continue", "operations": [
+            {"tool": "read_file", "path": "README.md"}]})]
+        planned = self.plan_round()
+        self.approve(planned["approval_id"])
+        self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        status, rounds = self.call(f"/api/tasks/{self.task_id}/agent/rounds")
+        self.assertEqual(status, 200)
+        entry = rounds["rounds"][0]
+        self.assertIsNotNone(entry["context"])
+        self.assertEqual(len(entry["context"]["digest"]), 64)
+        self.assertTrue(entry["context"]["files"])
+        self.assertGreater(rounds["budget"]["used"]["prompt_bytes"], 0)
+        status, contexts = self.call(f"/api/tasks/{self.task_id}/agent/context")
+        self.assertEqual((status, len(contexts["contexts"])), (200, 1))
+        self.assertNotIn("prompt", contexts["contexts"][0])
