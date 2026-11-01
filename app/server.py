@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 try:
-    import providers  # script execution puts app/ on sys.path
+    import providers, tools  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import providers
+    from app import providers, tools
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS providers (id TEXT PRIMARY KEY, kind TEXT NOT NULL, e
 CREATE TABLE IF NOT EXISTS workspaces (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, path TEXT NOT NULL UNIQUE, branch TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, argv TEXT NOT NULL, exit_code INTEGER, output TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS invocations (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, provider_id TEXT NOT NULL, prompt_sha256 TEXT NOT NULL, response TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS proposals (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, workspace_branch TEXT NOT NULL, workspace_path TEXT NOT NULL, summary TEXT NOT NULL, operations TEXT NOT NULL, digest TEXT NOT NULL, status TEXT NOT NULL, results TEXT, created_at INTEGER NOT NULL);
 """
 
 def now() -> int: return int(time.time())
@@ -107,6 +108,16 @@ def active_provider_transport(provider: dict):
     """Resolve the transport per invocation so credentials are read only at call time."""
     if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
     return providers.transport_for(provider, provider.get("secret_ref") or "")
+
+def provider_row(provider_id):
+    return STORE.one("SELECT id,kind,endpoint,model,cloud_allowed,enabled,secret_ref FROM providers WHERE id=?",(provider_id,))
+
+def build_agent_prompt(task: dict, workspace: dict, extra: str = "") -> str:
+    """Deterministic agent instruction so an approval binds one exact prompt."""
+    listing=[entry["path"] for entry in tools.list_files(Path(workspace["path"]), ".", 1, 60)["entries"]]
+    prompt=tools.agent_instruction(listing)+f"\nTask: {str(task['prompt'])[:2000]}"
+    if extra: prompt+=f"\nExtra instructions: {extra[:2000]}"
+    return prompt
 
 def invoke_provider(provider: dict, prompt: str, transport) -> dict:
     """Adapter seam for approved callers; transport is injected so tests perform no I/O."""
@@ -296,6 +307,10 @@ class App(SimpleHTTPRequestHandler):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM executions WHERE task_id=? ORDER BY created_at DESC",(tid,)))
         if route.startswith("/api/tasks/") and route.endswith("/invocations"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT id,task_id,provider_id,prompt_sha256,response,created_at FROM invocations WHERE task_id=? ORDER BY created_at DESC",(tid,)))
+        if route.startswith("/api/tasks/") and route.endswith("/agent"):
+            tid=route.split("/")[3]; proposal=STORE.one("SELECT * FROM proposals WHERE task_id=? ORDER BY created_at DESC LIMIT 1",(tid,))
+            if not proposal: return self.json({"task_id":tid,"status":"absent"})
+            return self.json({**proposal,"operations":json.loads(proposal["operations"]),"results":json.loads(proposal["results"] or "[]")})
         if route.startswith("/api/projects/") and route.endswith("/summary"):
             pid=route.split("/")[3]; p=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             return self.json(repository_summary(Path(p["path"]))) if p else self.json({"error":"not found"},404)
@@ -402,6 +417,64 @@ class App(SimpleHTTPRequestHandler):
                 delete_merged_branch(project["path"],workspace["branch"],branch_oid)
                 STORE.write("UPDATE workspaces SET status='complete' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info","Merged recovery branch deleted after critical approval.")
                 return self.json({"task_id":tid,"status":"complete","branch_deleted":True})
+            if route.startswith("/api/tasks/") and route.endswith("/agent/request"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
+                if not workspace: return self.json({"error":"ready task workspace required"},403)
+                provider=provider_row(data.get("provider_id"))
+                if not provider: return self.json({"error":"provider not found"},404)
+                if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
+                prompt=validate_provider_prompt(build_agent_prompt(task, workspace, str(data.get("prompt") or "")))
+                kind=provider_approval_kind(provider); detail=provider_invocation_detail(tid,provider,prompt); aid=uid()
+                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
+                task_event(tid,"security","warning",f"Agent proposal generation on {provider['model']} requires {kind} approval.")
+                return self.json({"approval_id":aid,"status":"pending","kind":kind,"provider_id":provider["id"],"cloud_allowed":bool(provider["cloud_allowed"]),"detail":json.loads(detail)},201)
+            if route.startswith("/api/tasks/") and route.endswith("/agent/plan"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
+                if not workspace: return self.json({"error":"ready task workspace required"},403)
+                provider=provider_row(data.get("provider_id"))
+                if not provider: return self.json({"error":"provider not found"},404)
+                if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
+                prompt=validate_provider_prompt(build_agent_prompt(task, workspace, str(data.get("prompt") or "")))
+                kind=provider_approval_kind(provider); detail=provider_invocation_detail(tid,provider,prompt)
+                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
+                if not permitted: return self.json({"error":f"approved {kind} request for this exact workspace, provider, and prompt required"},403)
+                result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"])
+                digest_prompt=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
+                STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest_prompt,result["text"],now()))
+                parsed=tools.parse_proposal(result["text"])
+                operations=tools.bind_hashes(Path(workspace["path"]), parsed["operations"])
+                digest=tools.proposal_digest(tid, workspace["branch"], operations); proposal_id=uid()
+                STORE.write("INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?,?,?)",(proposal_id,tid,workspace["branch"],workspace["path"],parsed["summary"],json.dumps(operations),digest,"pending",None,now()))
+                approval_detail_value=approval_detail("agent-proposal", tid, workspace=workspace["branch"], workspace_path=workspace["path"], proposal=digest)
+                approval_id=uid(); STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(approval_id,task["project_id"],"modify",approval_detail_value,"pending",now()))
+                task_event(tid,"planner","info",f"Agent proposal contains {len(operations)} operation(s); summary digest {digest[:12]}.")
+                task_event(tid,"security","warning","Proposed file modifications and test commands require explicit approval before they run.")
+                return self.json({"proposal_id":proposal_id,"digest":digest,"summary":parsed["summary"],"operations":operations,"approval_id":approval_id,"invocation_id":iid},201)
+            if route.startswith("/api/tasks/") and route.endswith("/agent/execute"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                proposal=STORE.one("SELECT * FROM proposals WHERE task_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1",(tid,))
+                if not proposal: return self.json({"error":"pending agent proposal not found"},404)
+                operations=json.loads(proposal["operations"]); digest=tools.proposal_digest(tid, proposal["workspace_branch"], operations)
+                if digest != proposal["digest"]: return self.json({"error":"Stored proposal was modified after review; request a new proposal"},409)
+                workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
+                if not workspace or workspace["branch"] != proposal["workspace_branch"] or workspace["path"] != proposal["workspace_path"]:
+                    return self.json({"error":"Workspace changed since approval; request a new proposal"},409)
+                detail=approval_detail("agent-proposal", tid, workspace=proposal["workspace_branch"], workspace_path=proposal["workspace_path"], proposal=digest)
+                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],detail))
+                if not permitted: return self.json({"error":"approved agent proposal for this exact workspace and digest required"},403)
+                claim=STORE.conn.execute("UPDATE proposals SET status='executing' WHERE id=? AND status='pending'",(proposal["id"],)); STORE.conn.commit()
+                if claim.rowcount != 1: return self.json({"error":"Proposal is already being executed"},409)
+                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout))
+                final="executed" if outcome["ok"] else "failed"
+                STORE.write("UPDATE proposals SET status=?, results=? WHERE id=?",(final,json.dumps(outcome["operations"]),proposal["id"]))
+                for entry in outcome["operations"]:
+                    task_event(tid,"executor","info" if entry["status"]=="ok" else "warning",f"Tool {entry['tool']} #{entry['index']+1}: {entry['status']}{(' — '+entry['error']) if entry.get('error') else ''}.")
+                return self.json({"proposal_id":proposal["id"],"status":final,"ok":outcome["ok"],"results":outcome["operations"]})
             if route.startswith("/api/tasks/") and route.endswith("/provider-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)

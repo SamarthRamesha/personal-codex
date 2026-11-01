@@ -18,3 +18,8 @@
 - OpenAI-compatible credentials are resolved from the named environment variable only at call time and never stored or logged; cloud providers require a secret reference.
 - Added a provider adapter test suite against an ephemeral loopback stub server plus a no-override API integration test.
 - Added dashboard provider transport-policy hint and duplicate-invocation guard.
+- Added `app/tools.py`: strict closed-schema agent tool proposals (`list_files`, `read_file`, `apply_patch`, `run_tests`), workspace containment with symlink-escape refusal, secret exclusion, hash-bound patches, bounded execution with stop-on-failure semantics.
+- Added approval-gated agent lifecycle API: `/agent/request` (deterministic prompt approval), `/agent/plan` (validated provider proposal + file hashes), `/agent/execute` (approved digest only, single execution), and `GET /agent` for the latest proposal.
+- Added agent proposal and execution-result panels to the dashboard with approval-bound execute control.
+- Added `tests/test_tools.py` covering schema rejection, path and symlink escapes, secret paths, patch hash binding, stale-file rejection, runner failure handling, and the full HTTP proposal → approval → execution lifecycle.
+- Rewrote `README.md` as a complete project guide covering architecture, providers, the agent workflow, security model, and tests.

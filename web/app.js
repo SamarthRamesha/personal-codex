@@ -21,6 +21,7 @@ async function refresh(){
   providerCache=providers;
   $('#provider-select').innerHTML=providers.length?providers.map(p=>`<option value="${p.id}">${esc(p.model)} — ${esc(p.kind)}${p.cloud_allowed?' · cloud':''}</option>`).join(''):'<option value="">No providers configured</option>';
   $('#request-provider-invoke').disabled=!providers.length; $('#invoke-provider').disabled=!providers.length;
+  $('#request-agent-plan').disabled=!providers.length; $('#build-agent-plan').disabled=!providers.length;
   $('#provider-select').onchange=updateProviderHint; updateProviderHint();
   $('#approval-count').textContent=approvals.length;
   if(selectedId) await renderSelected();
@@ -33,7 +34,8 @@ async function renderSelected(){
  $('#selected-title').textContent=task.prompt; $('#task-actions').hidden=false;
  const plan=JSON.parse(task.plan); $('#task-plan').className='plan'; $('#task-plan').innerHTML=plan.map((s,i)=>`<div class=plan-step><strong>${i+1}. ${esc(s.agent)} — ${esc(s.action)}</strong><br><span class=muted>${esc(s.detail)}</span></div>`).join('');
  try{
-  const [workspace,events,executions,invocations]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`),api(`/api/tasks/${task.id}/invocations`)]);
+  const [workspace,events,executions,invocations,proposal]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`),api(`/api/tasks/${task.id}/invocations`),api(`/api/tasks/${task.id}/agent`)]);
+  renderProposal(proposal);
   const ready=workspace.status==='ready'; $('#workspace-state').textContent=ready?workspace.branch:workspace.status;
   const released=workspace.status==='released', merged=workspace.status==='merged';
   $('#create-workspace').disabled=ready; $('#request-workspace').disabled=ready;
@@ -54,6 +56,16 @@ $('#request-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace-r
 $('#create-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace`,{},d=>`Workspace ready on ${d.branch}.`);
 $('#request-command').onclick=()=>action(`/api/tasks/${selectedId}/execution-request`,{command:$('#command').value},()=> 'Exact command approval queued.');
 $('#run-command').onclick=()=>action(`/api/tasks/${selectedId}/execute`,{command:$('#command').value},d=>`Command finished with exit code ${d.exit_code}.`);
+function renderProposal(p){
+ if(!p||p.status==='absent'){ $('#agent-proposal').innerHTML='<div class=empty>No agent proposal for this task.</div>'; $('#execute-agent-plan').disabled=true; return }
+ const ops=(p.operations||[]).map((op,i)=>`<div class=item><span class=tag>${esc(op.tool)}</span><strong>${esc(op.path||op.command||'')}</strong>${op.tool==='apply_patch'?`<div class=output>- ${esc((op.old_text||'').slice(0,300))}\n+ ${esc((op.new_text||'').slice(0,300))}</div>`:''}${op.tool==='run_tests'?`<small class=muted>timeout ${op.timeout}s</small>`:''}</div>`).join('');
+ const results=(p.results||[]).map(r=>`<div class=item><span class=tag>${esc(r.status)}</span><strong>${esc(r.tool)}</strong>${r.error?`<small class=muted>${esc(r.error)}</small>`:''}</div>`).join('');
+ $('#agent-proposal').innerHTML=`<div class=item><span class=tag>${esc(p.status)}</span><strong>${esc(p.summary||'Proposed operations')}</strong><small class=muted>digest ${esc((p.digest||'').slice(0,16))} · ${esc(p.workspace_branch)}</small></div>${ops}${results?'<h3>Execution results</h3>'+results:''}`;
+ $('#execute-agent-plan').disabled=p.status!=='pending';
+}
+$('#request-agent-plan').onclick=()=>action(`/api/tasks/${selectedId}/agent/request`,{provider_id:$('#provider-select').value,prompt:$('#agent-extra').value},d=>`Agent plan approval queued (${d.kind}).`);
+$('#build-agent-plan').onclick=()=>action(`/api/tasks/${selectedId}/agent/plan`,{provider_id:$('#provider-select').value,prompt:$('#agent-extra').value},d=>`Proposal ready: ${d.operations.length} operation(s); approve it in the queue.`);
+$('#execute-agent-plan').onclick=()=>action(`/api/tasks/${selectedId}/agent/execute`,{},d=>`Agent run ${d.status}.`);
 $('#request-provider-invoke').onclick=()=>action(`/api/tasks/${selectedId}/provider-request`,{provider_id:$('#provider-select').value,prompt:$('#provider-prompt').value},d=>`${d.kind} approval queued for ${d.detail.refs.model}.`);
 $('#invoke-provider').onclick=async()=>{
  if(invoking)return; invoking=true; $('#invoke-provider').disabled=true;

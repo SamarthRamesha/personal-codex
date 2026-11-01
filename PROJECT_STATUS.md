@@ -2,7 +2,7 @@
 
 Updated: 2026-11-01 (Asia/Kolkata)
 
-## Current milestone: real approval-gated provider transports
+## Current milestone: bounded, approval-gated agent tool execution
 
 Continuity protocol: `NEXT_SESSION_PROMPT.md` is a permanent, ready-to-use cross-account handoff. It is regenerated after each meaningful verified milestone, on user request, and before usage exhaustion; it must embed the recursive continuation protocol for the next account.
 
@@ -25,18 +25,22 @@ Implemented and verified:
 - OpenAI-compatible credentials are resolved from the named environment variable inside the transport at call time, placed only in the `Authorization` header, and never stored or logged. A cloud provider without a secret reference is refused, and a missing credential fails before any request.
 - `server.PROVIDER_TRANSPORT` remains the injection seam: `None` selects the built-in adapters, a callable overrides them, and `unavailable_provider_transport` restores a hard fail-closed service.
 - Dashboard wiring for provider invocation: provider select with a transport-policy hint, approval request, invoke action with duplicate-submission guard, and a provider-response ledger.
+- Agent tool layer (`app/tools.py`): closed-schema proposals over `list_files`, `read_file`, `apply_patch`, and `run_tests`; unknown tools/arguments, oversized values, absolute paths, `..`, ignored directories, secret-named files, and symlink escapes are rejected; patches must match exactly once and re-verify the reviewed SHA-256; execution stops at the first failure and marks later operations skipped.
+- Agent lifecycle API: `POST /agent/request` (deterministic prompt + approval), `POST /agent/plan` (approved invocation → validated proposal → file hashes → proposal approval), `POST /agent/execute` (approved digest only, atomically claimed once, runs inside the task worktree), and `GET /agent` for the latest proposal and results.
+- Dashboard agent panel: extra instructions, request/build/execute controls, proposal operations with patch previews, digest and branch binding, and execution results.
 - Browser-free dashboard contract tests (`tests/test_ui.py`) assert that scripted element IDs exist, every button is wired, every `/api/...` path used by the script is routed, gated actions are all present, and only local assets are loaded without browser-stored secrets.
 - Provider adapter tests (`tests/test_providers.py`) run against an ephemeral loopback stub server: request shape and path, response extraction, malformed JSON, HTTP errors, redirect refusal, connection refusal, timeout, oversized response, unexpected structure, invalid endpoints, non-loopback refusal, credential handling, and transport selection. No external network or real model is used.
+- Agent tests (`tests/test_tools.py`): schema and argument validation, path/symlink/secret containment, patch hash binding, duplicate-match refusal, stop-on-failure execution, runner failure handling, digest binding, and an opt-in HTTP lifecycle where an approved proposal edits the worktree, runs a test command, refuses a second execution, and rejects a stale file with the file preserved.
 - Resource-aware execution: 1–300 second wall timeout; child CPU, file-size, descriptor, address-space limits where supported; 50 MiB child-file cap; 200 kB retained redacted output cap.
 
 Verification completed (2026-11-01, this session):
 
-- `python3 -m unittest discover -s tests -v` — 40 tests, `OK (skipped=2)`: the two listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 40 tests passed, including the provider invocation lifecycle and a no-override API test that reaches the built-in Ollama adapter through a stub model server.
-- `python3 -m py_compile app/server.py app/providers.py` — passed.
+- `python3 -m unittest discover -s tests -v` — 56 tests, `OK (skipped=4)`: the listener-gated tests are correctly skipped unless explicitly enabled.
+- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 56 tests passed, including the agent proposal → approval → execution lifecycle and stale-file rejection.
+- `python3 -m py_compile app/server.py app/providers.py app/tools.py` — passed.
 - `node --check web/app.js` — passed.
 - Earlier loopback smoke test confirmed health, dashboard provider controls, 403 before approval, bound approval detail, and rejection of a cloud endpoint without consent; later transport coverage replaced the fail-closed-only check with the stub-server adapter suite above.
 
 Environment note: this cloud workspace ran Python 3.12.3 and Node 26.13.0; the owner's Mac has Python 3.13.9 and Node 24.22.1.
 
-Not implemented: provider streaming and tool calls, a real multi-agent executor, native desktop shell, server connector, indexer/LSP, encrypted secrets, auth/TLS remote protocol, conflict-resolution tooling, and browser-automation UI tests. No live model has been exercised: all adapter tests use a local stub server.
+Not implemented: multi-round agent loops, provider streaming and native tool calling, project memory/indexer, native desktop shell, server connector, encrypted secrets, auth/TLS remote protocol, conflict-resolution tooling, and browser-automation UI tests. No live model has been exercised: all adapter and agent tests use injected transports or a local stub server, so a real Ollama/macOS run remains outstanding.

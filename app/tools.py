@@ -1,0 +1,286 @@
+"""Strict, allowlisted agent tool calls confined to one task workspace.
+
+The model never receives filesystem or process authority. It returns a JSON
+proposal, this module validates it against a closed schema, the control plane
+binds an approval to the exact digest and file hashes, and only then does an
+approved execution touch the workspace. `run_tests` is delegated to the
+control plane's existing command executor, so no new execution capability is
+introduced here.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import tempfile
+from pathlib import Path
+
+MAX_OPERATIONS = 8
+MAX_READ_BYTES = 20_000
+MAX_LIST_ENTRIES = 100
+MAX_LIST_DEPTH = 3
+MAX_PATCH_TEXT = 60_000
+MAX_SUMMARY = 2_000
+IGNORED_PARTS = {".git", "node_modules", ".venv", "venv", "dist", "build", "target", "__pycache__"}
+SECRET_NAMES = {".env", ".env.local", ".env.production", ".env.development", "id_rsa", "id_ed25519", "credentials.json"}
+
+TOOL_SPECS = {
+    "list_files": ({"path"}, {"depth", "limit"}),
+    "read_file": ({"path"}, {"max_bytes"}),
+    "apply_patch": ({"path", "old_text", "new_text"}, {"expected_sha256"}),
+    "run_tests": ({"command"}, {"timeout"}),
+}
+
+
+class ToolCallError(ValueError):
+    """A rejected or failed tool call; safe to show to the operator."""
+
+
+def _is_secret(name: str) -> bool:
+    return name in SECRET_NAMES or name.startswith(".env.")
+
+
+def resolve_in_workspace(root: Path, relative) -> Path:
+    """Resolve a model-supplied path, refusing escapes, symlink escapes, and secrets."""
+    if not isinstance(relative, str) or not relative.strip():
+        raise ToolCallError("Tool path must be a non-empty relative path")
+    if relative.startswith("/") or relative.startswith("~"):
+        raise ToolCallError("Tool paths must be relative to the task workspace")
+    parts = Path(relative).parts
+    if ".." in parts:
+        raise ToolCallError("Tool paths must not contain '..'")
+    if any(part in IGNORED_PARTS for part in parts):
+        raise ToolCallError("Tool path targets an excluded directory")
+    if any(_is_secret(part) for part in parts):
+        raise ToolCallError("Tool path targets a secret-named file")
+    root = Path(root).resolve()
+    candidate = (root / relative).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ToolCallError("Tool path escapes the task workspace")
+    return candidate
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def proposal_digest(task_id: str, workspace_branch: str, operations: list) -> str:
+    canonical = json.dumps({"task_id": task_id, "workspace_branch": workspace_branch, "operations": operations},
+                           sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _require_str(op: dict, key: str, limit: int) -> str:
+    value = op.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ToolCallError(f"{op.get('tool')} requires a non-empty string '{key}'")
+    if len(value) > limit:
+        raise ToolCallError(f"{op.get('tool')} '{key}' exceeds {limit} characters")
+    return value
+
+
+def _require_int(op: dict, key: str, low: int, high: int, default):
+    value = op.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ToolCallError(f"{op.get('tool')} '{key}' must be an integer")
+    if not low <= value <= high:
+        raise ToolCallError(f"{op.get('tool')} '{key}' must be between {low} and {high}")
+    return value
+
+
+def validate_operations(operations) -> list[dict]:
+    """Validate a closed-schema tool proposal; return normalised operations."""
+    if not isinstance(operations, list) or not operations:
+        raise ToolCallError("A proposal must contain a non-empty 'operations' list")
+    if len(operations) > MAX_OPERATIONS:
+        raise ToolCallError(f"A proposal may contain at most {MAX_OPERATIONS} operations")
+    normalised = []
+    for index, operation in enumerate(operations):
+        if not isinstance(operation, dict):
+            raise ToolCallError(f"Operation {index + 1} must be a JSON object")
+        tool = operation.get("tool")
+        if tool not in TOOL_SPECS:
+            raise ToolCallError(f"Operation {index + 1} uses an unsupported tool")
+        required, optional = TOOL_SPECS[tool]
+        keys = set(operation) - {"tool"}
+        unknown = keys - required - optional
+        if unknown:
+            raise ToolCallError(f"{tool} does not accept: {', '.join(sorted(unknown))}")
+        missing = required - keys
+        if missing:
+            raise ToolCallError(f"{tool} requires: {', '.join(sorted(missing))}")
+        entry = {"tool": tool}
+        if tool == "list_files":
+            entry["path"] = _require_str(operation, "path", 400)
+            entry["depth"] = _require_int(operation, "depth", 0, MAX_LIST_DEPTH, 1)
+            entry["limit"] = _require_int(operation, "limit", 1, MAX_LIST_ENTRIES, 50)
+        elif tool == "read_file":
+            entry["path"] = _require_str(operation, "path", 400)
+            entry["max_bytes"] = _require_int(operation, "max_bytes", 1, MAX_READ_BYTES, MAX_READ_BYTES)
+        elif tool == "apply_patch":
+            entry["path"] = _require_str(operation, "path", 400)
+            entry["old_text"] = _require_str(operation, "old_text", MAX_PATCH_TEXT)
+            entry["new_text"] = operation.get("new_text")
+            if not isinstance(entry["new_text"], str):
+                raise ToolCallError("apply_patch requires a string 'new_text'")
+            if len(entry["new_text"]) > MAX_PATCH_TEXT:
+                raise ToolCallError(f"apply_patch 'new_text' exceeds {MAX_PATCH_TEXT} characters")
+            if entry["old_text"] == entry["new_text"]:
+                raise ToolCallError("apply_patch must actually change the file")
+            expected = operation.get("expected_sha256")
+            if expected is not None and (not isinstance(expected, str) or len(expected) != 64):
+                raise ToolCallError("apply_patch 'expected_sha256' must be a 64-character digest")
+            entry["expected_sha256"] = expected
+        elif tool == "run_tests":
+            entry["command"] = _require_str(operation, "command", 500)
+            entry["timeout"] = _require_int(operation, "timeout", 1, 300, 120)
+        normalised.append(entry)
+    return normalised
+
+
+def bind_hashes(root: Path, operations: list[dict]) -> list[dict]:
+    """Attach the current digest of every file an apply_patch would modify."""
+    bound = []
+    for operation in operations:
+        if operation["tool"] == "apply_patch":
+            target = resolve_in_workspace(root, operation["path"])
+            if not target.is_file():
+                raise ToolCallError(f"apply_patch target does not exist: {operation['path']}")
+            operation = {**operation, "expected_sha256": file_sha256(target)}
+        bound.append(operation)
+    return bound
+
+
+def list_files(root: Path, path: str, depth: int, limit: int) -> dict:
+    base = resolve_in_workspace(root, path)
+    if not base.is_dir():
+        raise ToolCallError("list_files path is not a directory")
+    entries, truncated = [], False
+    for current, directories, files in os.walk(base):
+        current_path = Path(current)
+        depth_here = len(current_path.relative_to(base).parts)
+        directories[:] = sorted(d for d in directories if d not in IGNORED_PARTS)
+        if depth_here >= depth:
+            directories[:] = []
+        for name in sorted(files):
+            if _is_secret(name):
+                continue
+            target = current_path / name
+            if not target.is_file() or target.is_symlink():
+                continue
+            if len(entries) >= limit:
+                truncated = True
+                break
+            entries.append({"path": str(target.relative_to(Path(root).resolve())), "bytes": target.stat().st_size})
+        if truncated:
+            break
+    return {"path": path, "entries": entries, "truncated": truncated}
+
+
+def read_file(root: Path, path: str, max_bytes: int) -> dict:
+    target = resolve_in_workspace(root, path)
+    if not target.is_file():
+        raise ToolCallError(f"read_file target does not exist: {path}")
+    size = target.stat().st_size
+    data = target.read_bytes()[:max_bytes]
+    return {"path": path, "bytes": size, "truncated": size > len(data), "sha256": file_sha256(target),
+            "text": data.decode("utf-8", errors="replace")}
+
+
+def apply_patch(root: Path, path: str, old_text: str, new_text: str, expected_sha256: str) -> dict:
+    target = resolve_in_workspace(root, path)
+    if not target.is_file():
+        raise ToolCallError(f"apply_patch target does not exist: {path}")
+    before = file_sha256(target)
+    if expected_sha256 and before != expected_sha256:
+        raise ToolCallError("File changed after review; request a new proposal and approval")
+    original = target.read_bytes().decode("utf-8", errors="replace")
+    occurrences = original.count(old_text)
+    if occurrences != 1:
+        raise ToolCallError(f"apply_patch expected exactly one match in {path}, found {occurrences}")
+    updated = original.replace(old_text, new_text, 1)
+    directory = target.parent
+    handle, temporary = tempfile.mkstemp(dir=str(directory), prefix=".codex-patch-")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(updated)
+        os.replace(temporary, target)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return {"path": path, "sha256_before": before, "sha256_after": file_sha256(target),
+            "bytes_before": len(original.encode("utf-8")), "bytes_after": len(updated.encode("utf-8"))}
+
+
+def execute_operations(root: Path, operations: list[dict], runner=None) -> dict:
+    """Execute validated, approved operations sequentially; stop at the first failure."""
+    results, failed = [], False
+    for index, operation in enumerate(operations):
+        tool = operation["tool"]
+        if failed:
+            results.append({"index": index, "tool": tool, "status": "skipped"})
+            continue
+        try:
+            if tool == "list_files":
+                detail = list_files(root, operation["path"], operation["depth"], operation["limit"])
+            elif tool == "read_file":
+                detail = read_file(root, operation["path"], operation["max_bytes"])
+            elif tool == "apply_patch":
+                detail = apply_patch(root, operation["path"], operation["old_text"], operation["new_text"],
+                                     operation.get("expected_sha256", ""))
+            elif tool == "run_tests":
+                if runner is None:
+                    raise ToolCallError("No command runner is configured for this execution")
+                detail = runner(operation["command"], operation["timeout"])
+                if detail.get("exit_code") != 0:
+                    failed = True
+            else:
+                raise ToolCallError("Unsupported tool")
+            results.append({"index": index, "tool": tool, "status": "error" if failed else "ok", **detail})
+        except (OSError, ValueError) as error:
+            failed = True
+            results.append({"index": index, "tool": tool, "status": "error", "error": str(error)[:400]})
+    return {"operations": results, "ok": not failed and all(r["status"] == "ok" for r in results)}
+
+
+def parse_proposal(text: str) -> dict:
+    """Extract and validate the strict JSON proposal returned by a provider."""
+    if not isinstance(text, str) or not text.strip():
+        raise ToolCallError("Provider returned an empty agent proposal")
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        lines = candidate.splitlines()
+        lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        candidate = "\n".join(lines).strip()
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        raise ToolCallError("Provider output was not valid JSON; no operations were accepted")
+    if not isinstance(payload, dict):
+        raise ToolCallError("Provider proposal must be a JSON object")
+    unknown = set(payload) - {"summary", "operations"}
+    if unknown:
+        raise ToolCallError(f"Provider proposal has unsupported keys: {', '.join(sorted(unknown))}")
+    summary = payload.get("summary", "")
+    if not isinstance(summary, str) or len(summary) > MAX_SUMMARY:
+        raise ToolCallError("Provider proposal 'summary' must be a string of at most 2000 characters")
+    return {"summary": summary, "operations": validate_operations(payload.get("operations"))}
+
+
+def agent_instruction(workspace_files: list[str]) -> str:
+    """Deterministic instruction block; the approval binds the resulting prompt digest."""
+    listing = ", ".join(workspace_files[:60]) if workspace_files else "(empty workspace)"
+    return (
+        "You are the developer stage of a local coding agent. Propose the smallest safe change.\n"
+        "Reply with JSON only, no prose, in this exact shape:\n"
+        '{"summary":"one or two sentences","operations":[{"tool":"list_files","path":"."},'
+        '{"tool":"read_file","path":"relative/path"},'
+        '{"tool":"apply_patch","path":"relative/path","old_text":"exact existing text",'
+        '"new_text":"replacement text"},{"tool":"run_tests","command":"python3 -m unittest discover -s tests"}]}\n'
+        f"Allowed tools only: list_files, read_file, apply_patch, run_tests. At most {MAX_OPERATIONS} operations.\n"
+        "Paths are relative to the task workspace. Never use absolute paths, '..', .git, .env, or secrets.\n"
+        "apply_patch must match exactly once in the current file and must state the exact existing text.\n"
+        "run_tests must use an allowlisted development command and will only run after human approval.\n"
+        f"Visible workspace files: {listing}"
+    )

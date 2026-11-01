@@ -13,13 +13,15 @@
 - [x] Implement a real Ollama HTTP transport behind the injected seam, approval-gated, loopback-only without cloud consent, verified against a local stub server.
 - [x] Implement an OpenAI-compatible `/chat/completions` transport whose key is read only from the named environment variable at call time.
 - [x] Harden the shared transport: no redirects, no proxy-env use, bounded timeout/size, sanitised errors, missing-credential failure before sending.
-- [ ] Replace placeholder plan-only workflow with an agent-engine adapter that supports streaming and tool calls.
+- [x] Implement the first bounded developer-agent cycle: strict allowlisted tool-call schema, approval-gated patch application in the task worktree, and test-result recording.
+- [x] Add the agent lifecycle API and dashboard proposal/execute controls.
+- [ ] Replace placeholder plan-only workflow with a multi-round agent engine that feeds bounded test results back to the provider.
 
 ## Next
 
-- [ ] Add streaming response support and audited tool-call handling to the invocation ledger.
-- [ ] Implement the first bounded developer-agent cycle: allowlisted tool-call schema, approval-gated file edits in a task workspace, test-result recording.
-- [ ] Run one live Ollama invocation on the owner's Mac with a locally pulled model (requires the owner's machine and an installed Ollama).
+- [ ] Implement the bounded multi-round loop: send redacted test output back to the provider, cap rounds/time/operations, and require a fresh approval per proposal.
+- [ ] Add streaming response support and audited provider-native tool-call handling.
+- [ ] Run one live Ollama agent cycle on the owner's Mac with a locally pulled model (requires the owner's machine and an installed Ollama).
 - [ ] Implement project memory rebuild from manifests, docs, and parsed symbols.
 - [ ] Design and implement mutually authenticated ZimaOS worker registration after actual server discovery credentials are supplied.
 - [ ] Package a Tauri desktop shell only after the local API is covered by integration tests.

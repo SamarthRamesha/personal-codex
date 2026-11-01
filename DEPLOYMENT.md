@@ -14,6 +14,11 @@ Provider invocation now reaches a real adapter per invocation. To probe a local 
 
 For an OpenAI-compatible local server (llama.cpp, LM Studio, vLLM), register endpoint `http://127.0.0.1:<port>/v1` and, if the server needs a key, a `secret_ref` naming the environment variable that holds it. The key is read only at call time and is never stored. A cloud endpoint additionally requires `cloud_allowed: true` at registration and a separate `network` approval before each distinct invocation, and its `secret_ref` is mandatory.
 
+The agent workflow adds no new deployment step: create a task, approve its workspace, request an
+agent plan approval, approve it, build the plan, approve the proposal digest, then execute. The
+dashboard shows the operation list and results. Releasing, previewing, merging, and deleting the
+recovery branch keep their existing separate approvals.
+
 If no transport should be available at all, set `server.PROVIDER_TRANSPORT = unavailable_provider_transport`; every invocation then fails closed with a clear message.
 
 ## ZimaOS

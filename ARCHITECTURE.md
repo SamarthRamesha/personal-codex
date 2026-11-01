@@ -12,6 +12,23 @@ After a clean workspace release, its task branch is a recovery checkpoint. The u
 
 Provider registration is an adapter-metadata boundary, not a network client. The supported descriptors are `ollama` and `openai-compatible`; endpoints must be absolute HTTP(S) URLs with no embedded credentials. A provider is loopback-only by default. A non-loopback endpoint is accepted only with a JSON boolean `cloud_allowed: true`; registration still does not read the named environment variable or contact the endpoint. The capability endpoint advertises the future invocation interface and states that invocation needs approval.
 
+## Agent tool boundary
+
+`app/tools.py` defines the only way model output can affect a workspace. A proposal is JSON with a
+`summary` and 1–8 operations in a closed schema: `list_files`, `read_file`, `apply_patch`, and
+`run_tests`. Every key is checked, every string and integer is bounded, and `apply_patch` requires
+the exact existing text plus the reviewed SHA-256 of the file. Paths are resolved inside the task
+worktree, so absolute paths, `..`, ignored directories, secret-named files, and symlink escapes are
+refused. Execution is sequential and stops at the first failure; `run_tests` is handed to the
+existing allowlisted command executor rather than gaining its own process authority.
+
+Approvals bind two distinct things: the agent prompt digest (approving a provider call for exactly
+that deterministic instruction) and the proposal digest plus workspace branch and path (approving
+the exact file changes and commands). `POST /agent/execute` recomputes the digest from stored
+operations, refuses a mismatch, requires the approved record, and atomically claims the proposal so
+it can run at most once. A file edited after review fails the hash check instead of being
+overwritten.
+
 ## Provider invocation boundary
 
 Invocation is a three-record flow: `provider-request` creates a pending approval whose canonical detail binds task, provider ID, endpoint, model, prompt SHA-256, and cloud flag; the user decides once; `invoke` requires the matching approved record before calling the adapter. Loopback providers use the `provider-invoke` approval kind; a provider registered with `cloud_allowed: true` requires a distinct `network` approval, so metadata consent and transmission consent stay separate.
@@ -40,5 +57,6 @@ Only bounded, redacted response text and the prompt digest are persisted in `inv
 - `providers`: endpoint/model metadata plus an environment secret reference, never the secret value.
 - `workspaces`: task-owned path, recovery branch, and lifecycle state (`ready`, `released`, `merged`, or `complete`).
 - `invocations`: approved provider responses, keyed by task and provider, with the prompt digest instead of the prompt.
+- `proposals`: validated agent proposals with their digest, workspace branch/path, status (`pending`, `executing`, `executed`, `failed`), and per-operation results.
 
 SQLite is appropriate for a single-user Mac control plane. A remote worker should own its own durable queue rather than share the SQLite file across a network filesystem.
