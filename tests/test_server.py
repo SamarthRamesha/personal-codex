@@ -50,9 +50,9 @@ class SecurityAndPlanningTests(unittest.TestCase):
     result=invoke_provider(provider,'hello',lambda request: seen.append(request) or {'text':'deterministic reply'})
     self.assertEqual(result['text'],'deterministic reply'); self.assertNotIn('secret_ref',seen[0])
     self.assertNotEqual(provider_invocation_detail('task-1',provider,'hello'),provider_invocation_detail('task-1',provider,'changed'))
-  def test_default_provider_transport_fails_closed_without_network(self):
+  def test_fail_closed_transport_and_prompt_guards(self):
     provider={'id':'provider-1','kind':'ollama','endpoint':'http://127.0.0.1:11434','model':'fixture','cloud_allowed':0}
-    self.assertIs(server.PROVIDER_TRANSPORT, unavailable_provider_transport)
+    self.assertIsNone(server.PROVIDER_TRANSPORT)
     with self.assertRaises(ValueError): invoke_provider(provider,'hello',unavailable_provider_transport)
     with self.assertRaises(ValueError): invoke_provider(provider,'   ',lambda request: {'text':'unreachable'})
     with self.assertRaises(ValueError): validate_provider_prompt('x'*20_001)

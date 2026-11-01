@@ -9,6 +9,15 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+try:
+    import providers  # script execution puts app/ on sys.path
+    from providers import ProviderTransportError
+    from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
+except ImportError:  # imported as app.server
+    from app import providers
+    from app.providers import ProviderTransportError
+    from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 DB_PATH = DATA / "personal_codex.db"
@@ -87,15 +96,22 @@ def provider_approval_kind(provider: dict) -> str:
     return "network" if provider["cloud_allowed"] else "provider-invoke"
 
 def unavailable_provider_transport(request: dict) -> dict:
-    """Fail closed: no real provider client exists yet, so nothing leaves this machine."""
+    """Optional fail-closed transport for tests and hardened deployments."""
     raise ValueError("No approved provider transport is configured; real network invocation is not implemented")
 
-PROVIDER_TRANSPORT = unavailable_provider_transport
+# None means: use the built-in Ollama/OpenAI-compatible adapters in app/providers.py.
+# Set to a callable to inject a deterministic transport (tests, offline deployments).
+PROVIDER_TRANSPORT = None
+
+def active_provider_transport(provider: dict):
+    """Resolve the transport per invocation so credentials are read only at call time."""
+    if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
+    return providers.transport_for(provider, provider.get("secret_ref") or "")
 
 def invoke_provider(provider: dict, prompt: str, transport) -> dict:
     """Adapter seam for approved callers; transport is injected so tests perform no I/O."""
     validate_provider_prompt(prompt)
-    request = {"kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt}
+    request = {"kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt, "cloud_allowed": bool(provider.get("cloud_allowed"))}
     response = transport(request)
     if not isinstance(response, dict) or not isinstance(response.get("text"), str): raise ValueError("Provider transport returned an invalid response")
     return {"text": response["text"][:MAX_OUTPUT_BYTES], "model": provider["model"], "provider_id": provider["id"]}
@@ -401,14 +417,14 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/tasks/") and route.endswith("/invoke"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
-                provider=STORE.one("SELECT id,kind,endpoint,model,cloud_allowed,enabled FROM providers WHERE id=?",(data.get("provider_id"),))
+                provider=STORE.one("SELECT id,kind,endpoint,model,cloud_allowed,enabled,secret_ref FROM providers WHERE id=?",(data.get("provider_id"),))
                 if not provider: return self.json({"error":"provider not found"},404)
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
                 prompt=validate_provider_prompt(data.get("prompt")); kind=provider_approval_kind(provider)
                 detail=provider_invocation_detail(tid,provider,prompt)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
                 if not permitted: return self.json({"error":f"approved {kind} request for this exact provider, endpoint, model, and prompt required"},403)
-                result=invoke_provider(provider,prompt,PROVIDER_TRANSPORT); result["text"]=redacted(result["text"])
+                result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"])
                 digest=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
                 STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest,result["text"],now()))
                 transmission="cloud" if provider["cloud_allowed"] else "loopback"
