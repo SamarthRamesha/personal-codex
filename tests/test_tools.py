@@ -11,9 +11,9 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import app.server as server
-from app.tools import (MAX_OPERATIONS, ToolCallError, apply_patch, bind_hashes, execute_operations,
-                       file_sha256, list_files, parse_proposal, proposal_digest, read_file,
-                       resolve_in_workspace, validate_operations)
+from app.tools import (MAX_OPERATIONS, ToolCallError, apply_patch, bind_hashes, completion_evidence,
+                       execute_operations, file_sha256, list_files, parse_proposal, parse_round_proposal,
+                       proposal_digest, read_file, resolve_in_workspace, round_feedback, validate_operations)
 
 
 class ToolValidationTests(unittest.TestCase):
@@ -236,6 +236,209 @@ class AgentApiTests(unittest.TestCase):
         status, executed = self.call(f"/api/tasks/{task_id}/agent/execute", "POST", {})
         self.assertEqual((status, executed["status"], executed["ok"]), (200, "failed", False))
         self.assertEqual((Path(workspace["path"]) / "README.md").read_text(), "changed after review\n")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class RoundProposalUnitTests(unittest.TestCase):
+    def test_round_status_and_operations_are_strict(self):
+        parsed = parse_round_proposal('{"summary":"fix","status":"continue","operations":[{"tool":"list_files","path":"."}]}')
+        self.assertEqual((parsed["status"], len(parsed["operations"])), ("continue", 1))
+        with self.assertRaises(ToolCallError):
+            parse_round_proposal('{"status":"finish","operations":[]}')
+        with self.assertRaises(ToolCallError):
+            parse_round_proposal('{"status":"complete","operations":[{"tool":"list_files","path":"."}]}')
+        with self.assertRaises(ToolCallError):
+            parse_round_proposal('{"status":"continue"}')
+        self.assertEqual(parse_round_proposal('{"status":"blocked","summary":"need a key"}')["operations"], [])
+
+    def test_feedback_reports_tests_changes_and_errors(self):
+        operations = [{"tool": "apply_patch", "path": "a.py"}, {"tool": "run_tests", "command": "python3 -m unittest"}]
+        results = [{"index": 0, "tool": "apply_patch", "status": "ok"},
+                   {"index": 1, "tool": "run_tests", "status": "error", "exit_code": 1, "output": "FAIL: test_x\nboom"}]
+        feedback = round_feedback(Path("."), operations, results)
+        self.assertEqual((feedback["test_exit_code"], feedback["changed_files"]), (1, ["a.py"]))
+        self.assertEqual(feedback["failed_tests"], ["FAIL: test_x"])
+        self.assertFalse(feedback["ok"])
+
+    def test_completion_needs_executed_work_and_passing_tests(self):
+        self.assertFalse(completion_evidence([])[0])
+        incomplete = [{"status": "passed", "test_result": {"tests_ran": False, "changed_files": ["a"]}}]
+        self.assertFalse(completion_evidence(incomplete)[0])
+        no_change = [{"status": "passed", "test_result": {"tests_ran": True, "test_exit_code": 0, "changed_files": []}}]
+        self.assertFalse(completion_evidence(no_change)[0])
+        stale = [{"status": "passed", "test_result": {"tests_ran": True, "test_exit_code": 0, "changed_files": ["a"]}},
+                 {"status": "failed-checks", "test_result": {"tests_ran": True, "test_exit_code": 1, "changed_files": ["b"]}}]
+        self.assertFalse(completion_evidence(stale)[0])
+        proven = [{"status": "passed", "test_result": {"tests_ran": True, "test_exit_code": 0, "changed_files": ["a"]}}]
+        self.assertTrue(completion_evidence(proven)[0])
+
+
+@unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
+class MultiRoundApiTests(unittest.TestCase):
+    """Iterative rounds: execute, feed evidence back, require fresh approvals, verify completion."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.old = (server.DATA, server.DB_PATH, server.STORE, server.PROVIDER_TRANSPORT, server.MAX_ROUNDS)
+        server.DATA, server.DB_PATH = base / "control-data", base / "control-data" / "test.db"
+        server.STORE = server.Store()
+        self.repo = base / "repo"
+        self.repo.mkdir()
+        for args in (["git", "init"], ["git", "config", "user.email", "t@example.invalid"], ["git", "config", "user.name", "T"]):
+            subprocess.run(args, cwd=self.repo, check=True, capture_output=True)
+        (self.repo / "README.md").write_text("hi\n")
+        subprocess.run(["git", "add", "README.md"], cwd=self.repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "base"], cwd=self.repo, check=True, capture_output=True)
+        self.responses = []
+        server.PROVIDER_TRANSPORT = lambda request: {"text": self.responses.pop(0)}
+        self.http = ThreadingHTTPServer(("127.0.0.1", 0), server.App)
+        self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.http.server_port}"
+        _, project = self.call("/api/projects", "POST", {"name": "fixture", "path": str(self.repo)})
+        _, self.provider = self.call("/api/providers", "POST", {"kind": "ollama", "endpoint": "http://127.0.0.1:11434", "model": "stub"})
+        _, task = self.call("/api/tasks", "POST", {"project_id": project["id"], "prompt": "make the readme correct"})
+        self.task_id = task["id"]
+        _, approval = self.call(f"/api/tasks/{self.task_id}/workspace-request", "POST", {})
+        self.call(f"/api/approvals/{approval['id']}", "PATCH", {"status": "approved"})
+        _, workspace = self.call(f"/api/tasks/{self.task_id}/workspace", "POST", {})
+        self.workspace = Path(workspace["path"])
+
+    def tearDown(self):
+        self.http.shutdown(); self.http.server_close(); self.thread.join()
+        server.STORE.conn.close()
+        server.DATA, server.DB_PATH, server.STORE, server.PROVIDER_TRANSPORT, server.MAX_ROUNDS = self.old
+        self.tmp.cleanup()
+
+    def call(self, path, method="GET", data=None):
+        body = json.dumps(data).encode() if data is not None else None
+        request = Request(self.base + path, data=body, method=method, headers={"Content-Type": "application/json"})
+        try:
+            with urlopen(request, timeout=10) as response:
+                return response.status, json.loads(response.read())
+        except HTTPError as error:
+            return error.code, json.loads(error.read())
+
+    def approve(self, approval_id):
+        return self.call(f"/api/approvals/{approval_id}", "PATCH", {"status": "approved"})[0]
+
+    def request_round(self):
+        status, payload = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})
+        self.assertEqual(status, 201, payload)
+        self.assertEqual(self.approve(payload["approval_id"]), 200)
+        return payload
+
+    def plan_round(self, expected=201):
+        self.request_round()
+        status, payload = self.call(f"/api/tasks/{self.task_id}/agent/round/plan", "POST", {"provider_id": self.provider["id"]})
+        self.assertEqual(status, expected, payload)
+        return payload
+
+    def test_two_rounds_self_correct_then_verified_completion(self):
+        self.responses = [
+            json.dumps({"summary": "first attempt", "status": "continue", "operations": [
+                {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "attempt one\n"},
+                {"tool": "run_tests", "command": 'python3 -c "import sys; sys.exit(1)"'}]}),
+            json.dumps({"summary": "fix the check", "status": "continue", "operations": [
+                {"tool": "apply_patch", "path": "README.md", "old_text": "attempt one\n", "new_text": "final\n"},
+                {"tool": "run_tests", "command": 'python3 -c "print(\'ok\')"'}]}),
+            json.dumps({"summary": "task finished", "status": "complete"}),
+        ]
+        first = self.plan_round()
+        self.assertEqual((first["round"], first["status"]), (1, "awaiting-approval"))
+        self.approve(first["approval_id"])
+        status, executed = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual((status, executed["status"], executed["task_status"]), (200, "failed-checks", "needs-another-round"))
+        self.assertEqual((executed["feedback"]["test_exit_code"], executed["feedback"]["changed_files"]), (1, ["README.md"]))
+
+        second = self.plan_round()
+        self.assertEqual(second["round"], 2)
+        self.approve(second["approval_id"])
+        status, executed = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual((status, executed["status"], executed["task_status"]), (200, "passed", "ready-to-complete"))
+        self.assertEqual((self.workspace / "README.md").read_text(), "final\n")
+
+        third = self.plan_round()
+        self.assertEqual((third["round"], third["status"]), (3, "complete"))
+        self.assertIn("round", third["evidence"])
+        self.assertEqual(third["report"]["changed_files"], ["README.md"])
+        self.assertEqual([test["exit_code"] for test in third["report"]["tests"]], [1, 0])
+        self.assertEqual(third["report"]["status"], "completed")
+
+        status, rounds = self.call(f"/api/tasks/{self.task_id}/agent/rounds")
+        self.assertEqual(status, 200)
+        self.assertEqual([r["status"] for r in rounds["rounds"]], ["failed-checks", "passed", "complete"])
+        self.assertEqual(rounds["limits"]["remaining"], 0)
+        _, events = self.call(f"/api/tasks/{self.task_id}/events")
+        self.assertTrue(any("Round 2 passed" in e["message"] for e in events))
+
+    def test_each_round_needs_its_own_approval_and_stale_files_fail(self):
+        self.responses = [json.dumps({"summary": "patch", "status": "continue", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "changed\n"},
+            {"tool": "run_tests", "command": 'python3 -c "print(1)"'}]})]
+        status, request = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})
+        self.assertEqual(status, 201)
+        status, denied = self.call(f"/api/tasks/{self.task_id}/agent/round/plan", "POST", {"provider_id": self.provider["id"]})
+        self.assertEqual(status, 403)
+        self.approve(request["approval_id"])
+        _, planned = self.call(f"/api/tasks/{self.task_id}/agent/round/plan", "POST", {"provider_id": self.provider["id"]})
+        status, denied = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual(status, 403)
+        (self.workspace / "README.md").write_text("external edit\n")
+        self.approve(planned["approval_id"])
+        status, executed = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual((status, executed["status"]), (200, "failed"))
+        self.assertEqual((self.workspace / "README.md").read_text(), "external edit\n")
+        status, again = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual(status, 404)
+
+    def test_false_completion_is_rejected(self):
+        self.responses = [json.dumps({"summary": "trust me", "status": "complete"})]
+        self.request_round()
+        status, refused = self.call(f"/api/tasks/{self.task_id}/agent/round/plan", "POST", {"provider_id": self.provider["id"]})
+        self.assertEqual(status, 409)
+        self.assertIn("completion rejected", refused["error"])
+        self.assertEqual(refused["status"], "rejected-completion")
+        status, rounds = self.call(f"/api/tasks/{self.task_id}/agent/rounds")
+        self.assertEqual([r["status"] for r in rounds["rounds"]], ["rejected-completion"])
+        _, task = self.call(f"/api/tasks")
+        self.assertNotEqual(next(t for t in task if t["id"] == self.task_id)["status"], "completed")
+
+    def test_duplicate_provider_response_is_refused(self):
+        proposal = json.dumps({"summary": "patch", "status": "continue", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "once\n"},
+            {"tool": "run_tests", "command": 'python3 -c "print(1)"'}]})
+        self.responses = [proposal]
+        planned = self.plan_round()
+        self.approve(planned["approval_id"])
+        status, executed = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual((status, executed["status"]), (200, "passed"))
+        self.responses = [proposal]
+        self.request_round()
+        status, refused = self.call(f"/api/tasks/{self.task_id}/agent/round/plan", "POST", {"provider_id": self.provider["id"]})
+        self.assertEqual(status, 409)
+        self.assertIn("identical response", refused["error"])
+
+    def test_round_limit_cancellation_and_recovery_state(self):
+        server.MAX_ROUNDS = 1
+        self.responses = [json.dumps({"summary": "one round only", "status": "continue", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "done\n"},
+            {"tool": "run_tests", "command": 'python3 -c "print(1)"'}]})]
+        planned = self.plan_round()
+        status, limited = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})
+        self.assertEqual(status, 409)
+        self.assertIn("round limit", limited["error"])
+        status, cancelled = self.call(f"/api/tasks/{self.task_id}/agent/round/cancel", "POST", {})
+        self.assertEqual((status, cancelled["status"], cancelled["task_status"]), (200, "cancelled", "cancelled"))
+        status, after = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+        self.assertEqual(status, 404)
+        status, rounds = self.call(f"/api/tasks/{self.task_id}/agent/rounds")
+        self.assertEqual((status, rounds["status"]), (200, "cancelled"))
+        self.assertEqual(rounds["rounds"][0]["status"], "cancelled")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 — 2026-11-01
+
+- Added a persistent multi-round agent loop: `rounds` table plus `/api/tasks/{id}/agent/round/{request,plan,execute,cancel}`, `GET /agent/rounds`, and `GET /agent/report`.
+- Every round requires a fresh provider approval bound to its round number and prompt digest, and a fresh proposal approval bound to the proposal digest, workspace branch/path, and reviewed file hashes.
+- Added bounded test feedback: each round records the test command, exit code, redacted output tail, failed test names, changed files, and errors, and the next prompt embeds that evidence.
+- Added strict round status validation (`continue`, `complete`, `blocked`, `failed`) and server-verified completion evidence; false completion claims are stored as `rejected-completion` without touching the workspace.
+- Added loop safety: round, elapsed-time, and operation limits; single-use rounds; duplicate-response and duplicate-digest refusal; cancellation; and a distinction between a failing test run and a failed tool operation.
+- Added dashboard round history with limits, elapsed time, per-round test results, errors, and a final report of changed files, test runs, and diff summary.
+- Added five opt-in HTTP tests covering self-correction, evidence-checked completion, per-round approvals, duplicate refusal, the round limit, and cancellation, plus round unit tests and dashboard contract checks.
+
 ## 0.1.0 — 2026-11-01
 
 - Created local-first Personal Codex control-plane foundation.

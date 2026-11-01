@@ -2,7 +2,7 @@
 
 Updated: 2026-11-01 (Asia/Kolkata)
 
-## Current milestone: bounded, approval-gated agent tool execution
+## Current milestone: persistent multi-round coding loop with test feedback
 
 Continuity protocol: `NEXT_SESSION_PROMPT.md` is a permanent, ready-to-use cross-account handoff. It is regenerated after each meaningful verified milestone, on user request, and before usage exhaustion; it must embed the recursive continuation protocol for the next account.
 
@@ -28,6 +28,10 @@ Implemented and verified:
 - Agent tool layer (`app/tools.py`): closed-schema proposals over `list_files`, `read_file`, `apply_patch`, and `run_tests`; unknown tools/arguments, oversized values, absolute paths, `..`, ignored directories, secret-named files, and symlink escapes are rejected; patches must match exactly once and re-verify the reviewed SHA-256; execution stops at the first failure and marks later operations skipped.
 - Agent lifecycle API: `POST /agent/request` (deterministic prompt + approval), `POST /agent/plan` (approved invocation → validated proposal → file hashes → proposal approval), `POST /agent/execute` (approved digest only, atomically claimed once, runs inside the task worktree), and `GET /agent` for the latest proposal and results.
 - Dashboard agent panel: extra instructions, request/build/execute controls, proposal operations with patch previews, digest and branch binding, and execution results.
+- Multi-round engine: `rounds` table plus `/api/tasks/{id}/agent/round/{request,plan,execute,cancel}`, `GET /agent/rounds`, and `GET /agent/report`. Each round binds a fresh provider and proposal approval to its round number; the next prompt embeds bounded, redacted evidence from previous rounds (test command, exit code, output tail, failed test names, changed files, errors). Default limits are 3 rounds (`PERSONAL_CODEX_MAX_ROUNDS`), 30 minutes per task, and 8 operations per round.
+- Objective completion: a `complete` status is rejected unless a passing executed round recorded both a zero-exit test command and an approved file change, and the latest executed round passed. False claims are stored as `rejected-completion` without changing the workspace.
+- Loop safety: duplicate provider responses and already-reviewed proposal digests are refused, a round can execute at most once, cancellation invalidates its pending proposal, and a failing test run is distinguished from a failed tool operation.
+- Dashboard rounds panel: round count/limits/elapsed, per-round status with test exit codes and failed test names, errors, and a final report with changed files and bounded diff stat.
 - Browser-free dashboard contract tests (`tests/test_ui.py`) assert that scripted element IDs exist, every button is wired, every `/api/...` path used by the script is routed, gated actions are all present, and only local assets are loaded without browser-stored secrets.
 - Provider adapter tests (`tests/test_providers.py`) run against an ephemeral loopback stub server: request shape and path, response extraction, malformed JSON, HTTP errors, redirect refusal, connection refusal, timeout, oversized response, unexpected structure, invalid endpoints, non-loopback refusal, credential handling, and transport selection. No external network or real model is used.
 - Agent tests (`tests/test_tools.py`): schema and argument validation, path/symlink/secret containment, patch hash binding, duplicate-match refusal, stop-on-failure execution, runner failure handling, digest binding, and an opt-in HTTP lifecycle where an approved proposal edits the worktree, runs a test command, refuses a second execution, and rejects a stale file with the file preserved.
@@ -35,12 +39,13 @@ Implemented and verified:
 
 Verification completed (2026-11-01, this session):
 
-- `python3 -m unittest discover -s tests -v` — 56 tests, `OK (skipped=4)`: the listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 56 tests passed, including the agent proposal → approval → execution lifecycle and stale-file rejection.
+- `python3 -m unittest discover -s tests -v` — 65 tests, `OK (skipped=9)`: the listener-gated tests are correctly skipped unless explicitly enabled.
+- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 65 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation.
 - `python3 -m py_compile app/server.py app/providers.py app/tools.py` — passed.
+- `node --check web/app.js` — passed.
 - `node --check web/app.js` — passed.
 - Earlier loopback smoke test confirmed health, dashboard provider controls, 403 before approval, bound approval detail, and rejection of a cloud endpoint without consent; later transport coverage replaced the fail-closed-only check with the stub-server adapter suite above.
 
 Environment note: this cloud workspace ran Python 3.12.3 and Node 26.13.0; the owner's Mac has Python 3.13.9 and Node 24.22.1.
 
-Not implemented: multi-round agent loops, provider streaming and native tool calling, project memory/indexer, native desktop shell, server connector, encrypted secrets, auth/TLS remote protocol, conflict-resolution tooling, and browser-automation UI tests. No live model has been exercised: all adapter and agent tests use injected transports or a local stub server, so a real Ollama/macOS run remains outstanding.
+Not implemented: provider streaming and native tool calling, project memory/indexer, native desktop shell, server connector, encrypted secrets, auth/TLS remote protocol, conflict-resolution tooling, and browser-automation UI tests. No live model has been exercised: all adapter and agent tests use injected transports or a local stub server, so a real Ollama/macOS run remains outstanding.

@@ -24,3 +24,7 @@ If no transport should be available at all, set `server.PROVIDER_TRANSPORT = una
 ## ZimaOS
 
 Do not deploy anything to ZimaOS yet. First collect an authorized, read-only inventory (OS, Docker availability, storage, services, open ports, and CPU/RAM) and choose a non-conflicting port. The eventual worker must be private-network only, authenticated, encrypted, and separately backed up.
+
+## Iterative rounds
+
+`PERSONAL_CODEX_MAX_ROUNDS` sets the per-task round budget (1–10, default 3). Rounds share one 1 800-second task budget and keep the 8-operations-per-round cap. Nothing new is exposed: the round endpoints are part of the same loopback API, so the service still binds `127.0.0.1` only. A cloud provider still needs its per-invocation `network` approval before any round prompt leaves the machine.

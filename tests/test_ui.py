@@ -55,6 +55,16 @@ class DashboardContractTests(unittest.TestCase):
             self.assertIn(element, HTML)
             self.assertIn(element, JS)
 
+    def test_round_history_controls_are_present_and_routed(self):
+        for element in ("request-agent-round", "plan-agent-round", "execute-agent-round",
+                        "cancel-agent-round", "agent-rounds", "agent-report"):
+            self.assertIn(element, HTML)
+            self.assertIn(element, JS)
+        for route in ("/agent/rounds", "/agent/report", "/round/request", "/round/plan",
+                      "/round/execute", "/round/cancel"):
+            self.assertIn(route, SERVER)
+            self.assertIn(route, JS)
+
     def test_dashboard_loads_only_local_assets_and_no_stored_secrets(self):
         self.assertFalse(re.search(r'(?:src|href)="https?://', HTML), "dashboard must not load remote assets")
         self.assertIn('src="/app.js"', HTML)

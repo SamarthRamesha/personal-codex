@@ -29,6 +29,38 @@ operations, refuses a mismatch, requires the approved record, and atomically cla
 it can run at most once. A file edited after review fails the hash check instead of being
 overwritten.
 
+## Multi-round loop
+
+`rounds` is a separate table from `proposals`, so existing agent behaviour is unchanged. A round row
+holds task, round number, provider, model, prompt digest, proposal id/digest, approval id, status,
+summary, operations, results, test result, error, and start/finish stamps. `GET /agent/rounds`
+reconstructs the loop from SQLite, so a refreshed dashboard recovers it without client state.
+
+The cycle is `round/request` → approval → `round/plan` → proposal approval → `round/execute`.
+`round/request` builds a deterministic prompt from the task, the capped workspace listing (60 paths),
+the bounded round history, and the round protocol, then queues a `provider-invoke` approval that also
+binds the round number. `round/plan` requires the matching approved invocation record, calls the
+adapter once, refuses a byte-identical response already seen for the task, parses the strict
+`{"summary","status","operations"}` JSON, and queues a second approval for `agent-round-proposal` bound
+to round number, workspace branch/path, proposal digest, and prompt digest. `round/execute` recomputes
+the digest, verifies file hashes, runs the tools through the existing dispatcher, and writes the round
+status. A round executes at most once; a cancelled or superseded round keeps its row for audit.
+
+Round status is derived from recorded evidence, not from the model: a non-`run_tests` tool error is
+`failed`; otherwise a zero-exit test command is `passed`; anything else is `failed-checks`. A failing
+test run is therefore distinguishable from a tool failure. Each status maps to a task status
+(`iterating`, `needs-another-round`, `ready-to-complete`, `completed`, `blocked`, `failed`, `cancelled`).
+The next prompt embeds `round_feedback`: test command, exit code, redacted 2 000-character output tail,
+failed test names, changed files, and errors. It also lists prior summaries so the model can avoid
+repeating a failed change.
+
+Limits are enforced server-side: 1–10 rounds (`PERSONAL_CODEX_MAX_ROUNDS`, default 3), 1 800 seconds per
+task, 8 operations per round, one provider call per round, and the adapter's existing 1 MB response cap.
+`complete` is validated by `completion_evidence`: there must be an executed round, at least one executed
+round whose test command exited 0, at least one approved file change, and the most recent executed round
+must have passed. A rejected completion is stored as `rejected-completion` and leaves the workspace
+untouched, so a model cannot end a task with prose.
+
 ## Provider invocation boundary
 
 Invocation is a three-record flow: `provider-request` creates a pending approval whose canonical detail binds task, provider ID, endpoint, model, prompt SHA-256, and cloud flag; the user decides once; `invoke` requires the matching approved record before calling the adapter. Loopback providers use the `provider-invoke` approval kind; a provider registered with `cloud_allowed: true` requires a distinct `network` approval, so metadata consent and transmission consent stay separate.

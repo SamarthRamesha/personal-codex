@@ -2,6 +2,8 @@
 
 ## 2026-11-01
 
+Implemented the multi-round iterative engine on top of the existing single-cycle dispatcher. The new `rounds` table and endpoints were added without changing the existing proposal lifecycle. The first test run of the new suite exposed three missing imports in the test module and one real design bug: a non-zero test exit marked the whole round `failed` instead of `failed-checks`, which would have hidden test evidence from the feedback loop. Fixed by classifying only non-`run_tests` tool errors as hard failures, then confirming all 64 tests pass with the HTTP integration enabled. Updated the dashboard with round controls, history, and a final report, and added contract checks for the new element ids and routes.
+
 Environment discovered: Apple Silicon macOS (Darwin 25.6.0), Python 3.13.9, Node 24.22.1, Git 2.50.1, SQLite CLI, SSH client; Docker and Rust/Cargo were not found on PATH. Workspace volume had approximately 76 GiB free. The visible Mac address was 192.168.1.11. ZimaOS was not inspected because no server endpoint or authorization was available.
 
 Created an isolated Git repository in this deliverable. Used no third-party runtime dependencies. Unit tests passed (4/4). A listener smoke test failed at bind time with sandbox `PermissionError`; it was not retried because policy changed neither the port nor the permission model.

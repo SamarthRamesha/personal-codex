@@ -22,6 +22,7 @@ async function refresh(){
   $('#provider-select').innerHTML=providers.length?providers.map(p=>`<option value="${p.id}">${esc(p.model)} — ${esc(p.kind)}${p.cloud_allowed?' · cloud':''}</option>`).join(''):'<option value="">No providers configured</option>';
   $('#request-provider-invoke').disabled=!providers.length; $('#invoke-provider').disabled=!providers.length;
   $('#request-agent-plan').disabled=!providers.length; $('#build-agent-plan').disabled=!providers.length;
+  $('#request-agent-round').disabled=!providers.length; $('#plan-agent-round').disabled=!providers.length;
   $('#provider-select').onchange=updateProviderHint; updateProviderHint();
   $('#approval-count').textContent=approvals.length;
   if(selectedId) await renderSelected();
@@ -34,8 +35,9 @@ async function renderSelected(){
  $('#selected-title').textContent=task.prompt; $('#task-actions').hidden=false;
  const plan=JSON.parse(task.plan); $('#task-plan').className='plan'; $('#task-plan').innerHTML=plan.map((s,i)=>`<div class=plan-step><strong>${i+1}. ${esc(s.agent)} — ${esc(s.action)}</strong><br><span class=muted>${esc(s.detail)}</span></div>`).join('');
  try{
-  const [workspace,events,executions,invocations,proposal]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`),api(`/api/tasks/${task.id}/invocations`),api(`/api/tasks/${task.id}/agent`)]);
+  const [workspace,events,executions,invocations,proposal,rounds,report]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`),api(`/api/tasks/${task.id}/invocations`),api(`/api/tasks/${task.id}/agent`),api(`/api/tasks/${task.id}/agent/rounds`),api(`/api/tasks/${task.id}/agent/report`)]);
   renderProposal(proposal);
+  renderRounds(rounds,report);
   const ready=workspace.status==='ready'; $('#workspace-state').textContent=ready?workspace.branch:workspace.status;
   const released=workspace.status==='released', merged=workspace.status==='merged';
   $('#create-workspace').disabled=ready; $('#request-workspace').disabled=ready;
@@ -63,6 +65,17 @@ function renderProposal(p){
  $('#agent-proposal').innerHTML=`<div class=item><span class=tag>${esc(p.status)}</span><strong>${esc(p.summary||'Proposed operations')}</strong><small class=muted>digest ${esc((p.digest||'').slice(0,16))} · ${esc(p.workspace_branch)}</small></div>${ops}${results?'<h3>Execution results</h3>'+results:''}`;
  $('#execute-agent-plan').disabled=p.status!=='pending';
 }
+function renderRounds(d,report){
+ const rounds=(d&&d.rounds)||[];
+ const header=d&&d.limits?`<div class=item><span class=tag>${esc(d.status)}</span><strong>Round ${d.limits.rounds_used} of ${d.limits.max_rounds}</strong><small class=muted>${d.limits.remaining} remaining · ${d.limits.elapsed_seconds}s elapsed</small></div>`:'';
+ const items=rounds.map(r=>{const t=r.test_result||{};return `<div class=item><span class=tag>${esc(r.status)}</span><strong>Round ${r.round_number}</strong><small class=muted>${esc(r.summary||'')}</small>${t.tests_ran?`<div class=output>${esc(t.test_command)} → exit ${esc(t.test_exit_code)}${t.failed_tests&&t.failed_tests.length?'\n'+esc(t.failed_tests.join('\n')):''}</div>`:''}${r.error?`<small class=muted>${esc(r.error)}</small>`:''}</div>`}).join('');
+ $('#agent-rounds').innerHTML=header+(items||'<div class=empty>No rounds yet.</div>');
+ $('#agent-report').innerHTML=report&&report.tests&&report.tests.length?`<h3>Final report</h3><div class=list><div class=item><span class=tag>${esc(report.status)}</span><strong>${report.changed_files.length} file(s) · ${report.tests.length} test run(s)</strong><small class=muted>${esc((report.changed_files||[]).join(', '))}</small></div>${report.diff_summary?`<div class=item><span class=tag>diff</span><div class=output>${esc(report.diff_summary)}</div></div>`:''}</div>`:'';
+}
+$('#request-agent-round').onclick=()=>action(`/api/tasks/${selectedId}/agent/round/request`,{provider_id:$('#provider-select').value,prompt:$('#agent-extra').value},d=>`Round ${d.round} approval queued (${d.kind}).`);
+$('#plan-agent-round').onclick=()=>action(`/api/tasks/${selectedId}/agent/round/plan`,{provider_id:$('#provider-select').value,prompt:$('#agent-extra').value},d=>`Round ${d.round}: ${d.status}.`);
+$('#execute-agent-round').onclick=()=>action(`/api/tasks/${selectedId}/agent/round/execute`,{},d=>`Round ${d.round} ${d.status}.`);
+$('#cancel-agent-round').onclick=()=>action(`/api/tasks/${selectedId}/agent/round/cancel`,{},d=>`Round ${d.round} ${d.status}.`);
 $('#request-agent-plan').onclick=()=>action(`/api/tasks/${selectedId}/agent/request`,{provider_id:$('#provider-select').value,prompt:$('#agent-extra').value},d=>`Agent plan approval queued (${d.kind}).`);
 $('#build-agent-plan').onclick=()=>action(`/api/tasks/${selectedId}/agent/plan`,{provider_id:$('#provider-select').value,prompt:$('#agent-extra').value},d=>`Proposal ready: ${d.operations.length} operation(s); approve it in the queue.`);
 $('#execute-agent-plan').onclick=()=>action(`/api/tasks/${selectedId}/agent/execute`,{},d=>`Agent run ${d.status}.`);

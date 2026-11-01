@@ -284,3 +284,89 @@ def agent_instruction(workspace_files: list[str]) -> str:
         "run_tests must use an allowlisted development command and will only run after human approval.\n"
         f"Visible workspace files: {listing}"
     )
+
+
+ROUND_STATUSES = {"continue", "complete", "blocked", "failed"}
+FEEDBACK_TAIL = 2000
+
+
+def parse_round_proposal(text: str) -> dict:
+    """Validate a round proposal: a completion status plus optional tool operations."""
+    if not isinstance(text, str) or not text.strip():
+        raise ToolCallError("Provider returned an empty agent proposal")
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        lines = candidate.splitlines()[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        candidate = "\n".join(lines).strip()
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        raise ToolCallError("Provider output was not valid JSON; no operations were accepted")
+    if not isinstance(payload, dict):
+        raise ToolCallError("Provider proposal must be a JSON object")
+    unknown = set(payload) - {"summary", "status", "operations"}
+    if unknown:
+        raise ToolCallError(f"Provider proposal has unsupported keys: {', '.join(sorted(unknown))}")
+    status = payload.get("status", "continue")
+    if status not in ROUND_STATUSES:
+        raise ToolCallError("Provider 'status' must be one of: continue, complete, blocked, failed")
+    summary = payload.get("summary", "")
+    if not isinstance(summary, str) or len(summary) > MAX_SUMMARY:
+        raise ToolCallError("Provider proposal 'summary' must be a string of at most 2000 characters")
+    raw = payload.get("operations")
+    if status == "continue":
+        return {"status": status, "summary": summary, "operations": validate_operations(raw)}
+    if raw not in (None, []):
+        raise ToolCallError("A terminal round status must not carry operations")
+    return {"status": status, "summary": summary, "operations": []}
+
+
+def round_feedback(root: Path, operations: list, results: list, redact=None) -> dict:
+    """Summarise what a round actually did so the next round can react to evidence."""
+    redact = redact or (lambda value: value)
+    tests, changed, errors = [], [], []
+    for result in results:
+        index = result.get("index", 0)
+        operation = operations[index] if 0 <= index < len(operations) else {}
+        if result["tool"] == "run_tests":
+            tests.append({"command": operation.get("command", ""), "exit_code": result.get("exit_code"),
+                          "output": redact(str(result.get("output", "")))[-FEEDBACK_TAIL:]})
+        if result["tool"] == "apply_patch" and result["status"] == "ok":
+            changed.append(operation.get("path", ""))
+        if result["status"] != "ok":
+            errors.append(f"{result['tool']}: {str(result.get('error') or 'exit ' + str(result.get('exit_code')))[:200]}")
+    last = tests[-1] if tests else None
+    failed_names = []
+    if last:
+        for line in str(last["output"]).splitlines():
+            stripped = line.strip()
+            if stripped.startswith(("FAIL:", "FAILED ", "ERROR:")):
+                failed_names.append(stripped[:160])
+    return {
+        "test_command": last["command"] if last else None,
+        "test_exit_code": last["exit_code"] if last else None,
+        "test_output": last["output"] if last else "",
+        "tests_ran": bool(tests),
+        "changed_files": changed,
+        "failed_tests": failed_names[:10],
+        "errors": errors[:8],
+        "ok": all(result["status"] == "ok" for result in results),
+    }
+
+
+def completion_evidence(rounds: list) -> tuple[bool, str]:
+    """A model may not declare success without executed work and a passing test run."""
+    executed = [r for r in rounds if r["status"] in {"passed", "failed-checks"}]
+    if not executed:
+        return False, "no executed round with recorded evidence yet"
+    passing = [r for r in rounds if r["status"] == "passed" and r.get("test_result")]
+    if not any(r["test_result"].get("tests_ran") and r["test_result"].get("test_exit_code") == 0 for r in passing):
+        return False, "completion requires at least one executed round with a passing test command"
+    if not any(r["test_result"].get("changed_files") for r in passing):
+        return False, "completion requires at least one approved file change"
+    latest = executed[-1]
+    if latest["status"] != "passed":
+        return False, "the most recent executed round did not pass its checks"
+    return True, "latest executed round passed with recorded file changes"

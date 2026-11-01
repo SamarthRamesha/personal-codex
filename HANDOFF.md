@@ -1,8 +1,10 @@
 # Handoff
 
-The repository is recoverable without chat history. Start with `PROJECT_STATUS.md`, then verify with `git status`, `README.md`, and the unit-test command. The approval-gated worktree command runner, recovery-branch lifecycle, provider metadata validation, approval-gated invocation lifecycle, and real Ollama/OpenAI-compatible HTTP transports are implemented. No live model or external provider has been exercised — adapter tests use a loopback stub — and there is still no agent engine, so do not claim autonomous code modification.
+The repository is recoverable without chat history. Start with `PROJECT_STATUS.md`, then verify with `git status`, `README.md`, and the unit-test command. The approval-gated worktree command runner, recovery-branch lifecycle, provider metadata validation, approval-gated invocation lifecycle, real Ollama/OpenAI-compatible transports, the single-cycle agent tool dispatcher, and the persistent multi-round loop are implemented. No live model or external provider has been exercised — adapter and round tests use an injected loopback transport — so do not claim verified autonomous coding by a real model.
 
-Current highest-priority task: the bounded multi-round agent loop — feed redacted test results back to the provider, cap rounds/time, and require a fresh approval for every new proposal. The single-cycle dispatcher, proposal approval binding, and dashboard controls are implemented and tested. No live model has been exercised yet, so a real Ollama run on the owner's Mac remains outstanding.
+Current highest-priority task: the first real Ollama round on the owner's Mac (Python 3.13.9, Apple Silicon), because every round so far was driven by a deterministic injected transport. Then add streaming, project memory (manifest/docs/symbols) for better bounded context, and a resume path for a round interrupted mid-execution.
+
+The multi-round loop is `round/request` → approval → `round/plan` → proposal approval → `round/execute`, capped at 3 rounds (`PERSONAL_CODEX_MAX_ROUNDS`), 1 800 seconds per task, and 8 operations per round. Every round gets a fresh approval bound to its round number, prompt digest, workspace branch/path, and proposal digest; file hashes are re-verified at execution, duplicate provider responses are refused, and completion is only accepted with a passing test run plus an approved file change.
 
 Never add server access or cloud credentials to the repository. Update all checkpoint documents after every meaningful milestone.
 
