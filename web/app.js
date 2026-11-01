@@ -14,6 +14,8 @@ async function refresh(){
   $('#approvals').innerHTML=approvals.length?approvals.map(a=>`<div class=item><span class=tag>${esc(a.kind)}</span><strong>${esc(a.detail)}</strong><div class=approval-buttons><button class=approve data-approval="${a.id}" data-status="approved">Approve</button><button class=reject data-approval="${a.id}" data-status="rejected">Reject</button></div></div>`).join(''):'<div class=empty>No pending approvals.</div>';
   document.querySelectorAll('[data-approval]').forEach(el=>el.onclick=()=>decide(el.dataset.approval,el.dataset.status));
   $('#providers').innerHTML=providers.length?providers.map(p=>`<div class=item><strong>${esc(p.model)}</strong><small>${esc(p.kind)} · ${p.cloud_allowed?'cloud allowed':'local-only'}</small></div>`).join(''):'<div class=empty>No model providers configured.</div>';
+  $('#provider-select').innerHTML=providers.length?providers.map(p=>`<option value="${p.id}">${esc(p.model)} — ${esc(p.kind)}${p.cloud_allowed?' · cloud':''}</option>`).join(''):'<option value="">No providers configured</option>';
+  $('#request-provider-invoke').disabled=!providers.length; $('#invoke-provider').disabled=!providers.length;
   $('#approval-count').textContent=approvals.length;
   if(selectedId) await renderSelected();
  }catch(e){console.error(e)}
@@ -25,7 +27,7 @@ async function renderSelected(){
  $('#selected-title').textContent=task.prompt; $('#task-actions').hidden=false;
  const plan=JSON.parse(task.plan); $('#task-plan').className='plan'; $('#task-plan').innerHTML=plan.map((s,i)=>`<div class=plan-step><strong>${i+1}. ${esc(s.agent)} — ${esc(s.action)}</strong><br><span class=muted>${esc(s.detail)}</span></div>`).join('');
  try{
-  const [workspace,events,executions]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`)]);
+  const [workspace,events,executions,invocations]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`),api(`/api/tasks/${task.id}/invocations`)]);
   const ready=workspace.status==='ready'; $('#workspace-state').textContent=ready?workspace.branch:workspace.status;
   const released=workspace.status==='released', merged=workspace.status==='merged';
   $('#create-workspace').disabled=ready; $('#request-workspace').disabled=ready;
@@ -35,6 +37,8 @@ async function renderSelected(){
   $('#request-branch-delete').disabled=!merged; $('#delete-branch').disabled=!merged;
   const log=[...events.map(e=>`<div class=item><strong>${esc(e.agent)} · ${esc(e.level)}</strong><small>${esc(e.message)}</small></div>`),...executions.map(x=>`<div class=item><span class=tag>exit ${x.exit_code}</span><strong>${esc(x.argv)}</strong><div class=output>${esc(x.output)}</div></div>` )];
   $('#task-events').innerHTML=log.length?log.join(''):'<div class=empty>No activity yet.</div>';
+  const responses=invocations.map(x=>`<div class=item><span class=tag>sha ${esc(x.prompt_sha256.slice(0,12))}</span><strong>${esc(x.provider_id)}</strong><div class=output>${esc(x.response)}</div></div>`);
+  $('#task-invocations').innerHTML=responses.length?responses.join(''):'<div class=empty>No provider responses yet.</div>';
  }catch(e){msg($('#action-result'),e.message,true)}
 }
 async function action(path,body,success){try{const d=await api(path,{method:'POST',body:JSON.stringify(body||{})});msg($('#action-result'),success(d));await refresh()}catch(e){msg($('#action-result'),e.message,true)}}
@@ -44,6 +48,8 @@ $('#request-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace-r
 $('#create-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace`,{},d=>`Workspace ready on ${d.branch}.`);
 $('#request-command').onclick=()=>action(`/api/tasks/${selectedId}/execution-request`,{command:$('#command').value},()=> 'Exact command approval queued.');
 $('#run-command').onclick=()=>action(`/api/tasks/${selectedId}/execute`,{command:$('#command').value},d=>`Command finished with exit code ${d.exit_code}.`);
+$('#request-provider-invoke').onclick=()=>action(`/api/tasks/${selectedId}/provider-request`,{provider_id:$('#provider-select').value,prompt:$('#provider-prompt').value},d=>`${d.kind} approval queued for ${d.detail.refs.model}.`);
+$('#invoke-provider').onclick=()=>action(`/api/tasks/${selectedId}/invoke`,{provider_id:$('#provider-select').value,prompt:$('#provider-prompt').value},d=>`${d.model} responded (${d.text.length} characters).`);
 $('#request-release').onclick=()=>action(`/api/tasks/${selectedId}/workspace-release-request`,{},()=> 'Critical workspace-release request queued for approval.');
 $('#release-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace-release`,{},d=>`Workspace released; ${d.branch} remains for recovery.`);
 $('#preview-merge').onclick=async()=>{try{const d=await api(`/api/tasks/${selectedId}/merge-preview`);msg($('#action-result'),d.can_merge?`Conflict-free merge into ${d.target}.`:`Merge cannot proceed: ${d.detail}`,!d.can_merge)}catch(e){msg($('#action-result'),e.message,true)}};

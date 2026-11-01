@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import app.server as server
-from app.server import execute_in_workspace, invoke_provider, merge_preview, parse_command, plan_for, provider_invocation_detail, redacted, repository_summary, safe_project_path, validate_provider_config, visible_files
+from app.server import execute_in_workspace, invoke_provider, merge_preview, parse_command, plan_for, provider_approval_kind, provider_invocation_detail, redacted, repository_summary, safe_project_path, unavailable_provider_transport, validate_provider_config, validate_provider_prompt, visible_files
 
 class SecurityAndPlanningTests(unittest.TestCase):
   def test_secret_named_files_not_visible(self):
@@ -50,6 +50,19 @@ class SecurityAndPlanningTests(unittest.TestCase):
     result=invoke_provider(provider,'hello',lambda request: seen.append(request) or {'text':'deterministic reply'})
     self.assertEqual(result['text'],'deterministic reply'); self.assertNotIn('secret_ref',seen[0])
     self.assertNotEqual(provider_invocation_detail('task-1',provider,'hello'),provider_invocation_detail('task-1',provider,'changed'))
+  def test_default_provider_transport_fails_closed_without_network(self):
+    provider={'id':'provider-1','kind':'ollama','endpoint':'http://127.0.0.1:11434','model':'fixture','cloud_allowed':0}
+    self.assertIs(server.PROVIDER_TRANSPORT, unavailable_provider_transport)
+    with self.assertRaises(ValueError): invoke_provider(provider,'hello',unavailable_provider_transport)
+    with self.assertRaises(ValueError): invoke_provider(provider,'   ',lambda request: {'text':'unreachable'})
+    with self.assertRaises(ValueError): validate_provider_prompt('x'*20_001)
+  def test_provider_approval_binds_endpoint_and_cloud_transmission_kind(self):
+    local={'id':'p1','kind':'ollama','endpoint':'http://127.0.0.1:11434','model':'m','cloud_allowed':0}
+    cloud={'id':'p2','kind':'openai-compatible','endpoint':'https://provider.example/v1','model':'m','cloud_allowed':1}
+    self.assertEqual(provider_approval_kind(local),'provider-invoke'); self.assertEqual(provider_approval_kind(cloud),'network')
+    local_detail=json.loads(provider_invocation_detail('task-1',local,'hello'))
+    moved_detail=json.loads(provider_invocation_detail('task-1',{**local,'endpoint':'http://127.0.0.1:11435'},'hello'))
+    self.assertNotEqual(local_detail['refs'],moved_detail['refs']); self.assertIs(local_detail['refs']['cloud_allowed'],False)
 
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
 class HttpLifecycleTests(unittest.TestCase):
@@ -57,13 +70,14 @@ class HttpLifecycleTests(unittest.TestCase):
   def setUp(self):
     self.tmp=tempfile.TemporaryDirectory(); base=Path(self.tmp.name)
     self.old_data, self.old_db, self.old_store=server.DATA, server.DB_PATH, server.STORE
+    self.old_transport=server.PROVIDER_TRANSPORT
     server.DATA=base/'control-data'; server.DB_PATH=server.DATA/'test.db'; server.STORE=server.Store()
     self.repo=base/'repo'; self.repo.mkdir()
     for args in (["git","init"],["git","config","user.email","test@example.invalid"],["git","config","user.name","Test"],): subprocess.run(args,cwd=self.repo,check=True,capture_output=True)
     (self.repo/'README.md').write_text('# fixture\n'); subprocess.run(["git","add","README.md"],cwd=self.repo,check=True,capture_output=True); subprocess.run(["git","commit","-m","fixture"],cwd=self.repo,check=True,capture_output=True)
     self.http=ThreadingHTTPServer(('127.0.0.1',0),server.App); self.thread=threading.Thread(target=self.http.serve_forever,daemon=True); self.thread.start(); self.base=f'http://127.0.0.1:{self.http.server_port}'
   def tearDown(self):
-    self.http.shutdown(); self.http.server_close(); self.thread.join(); server.STORE.conn.close(); server.DATA, server.DB_PATH, server.STORE=self.old_data,self.old_db,self.old_store; self.tmp.cleanup()
+    self.http.shutdown(); self.http.server_close(); self.thread.join(); server.STORE.conn.close(); server.DATA, server.DB_PATH, server.STORE, server.PROVIDER_TRANSPORT=self.old_data,self.old_db,self.old_store,self.old_transport; self.tmp.cleanup()
   def request(self,path,method='GET',data=None):
     body=json.dumps(data).encode() if data is not None else None; request=Request(self.base+path,data=body,method=method,headers={'Content-Type':'application/json'})
     try:
@@ -76,6 +90,20 @@ class HttpLifecycleTests(unittest.TestCase):
     status,capabilities=self.request(f"/api/providers/{provider['id']}/capabilities"); self.assertEqual((status,capabilities['invocation_requires_approval']),(200,True))
     status,cloud_denied=self.request('/api/providers','POST',{'kind':'openai-compatible','endpoint':'https://provider.example/v1','model':'fixture','secret_ref':'API_KEY'}); self.assertEqual(status,400)
     status,task=self.request('/api/tasks','POST',{'project_id':project['id'],'prompt':'run a safe check'}); self.assertEqual(status,201); task_id=task['id']
+    prompt='review the fixture without leaving this machine'
+    status,denied=self.request(f'/api/tasks/{task_id}/invoke','POST',{'provider_id':provider['id'],'prompt':prompt}); self.assertEqual(status,403)
+    status,approval=self.request(f'/api/tasks/{task_id}/provider-request','POST',{'provider_id':provider['id'],'prompt':prompt}); self.assertEqual(status,201); self.assertEqual(approval['kind'],'provider-invoke'); self.assertFalse(approval['cloud_allowed'])
+    server.PROVIDER_TRANSPORT=lambda request: {'text':'deterministic reply from '+request['model']}
+    self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
+    status,invoked=self.request(f'/api/tasks/{task_id}/invoke','POST',{'provider_id':provider['id'],'prompt':prompt}); self.assertEqual(status,200); self.assertTrue(invoked['text'].startswith('deterministic reply')); self.assertEqual(len(invoked['prompt_sha256']),64); self.assertFalse(invoked['cloud_allowed'])
+    status,changed_prompt=self.request(f'/api/tasks/{task_id}/invoke','POST',{'provider_id':provider['id'],'prompt':prompt+' changed'}); self.assertEqual(status,403)
+    status,invocations=self.request(f'/api/tasks/{task_id}/invocations'); self.assertEqual((status,len(invocations)),(200,1)); self.assertNotIn(prompt,invocations[0]['response']); self.assertIn('deterministic reply',invocations[0]['response'])
+    status,cloud_provider=self.request('/api/providers','POST',{'kind':'openai-compatible','endpoint':'https://provider.example/v1','model':'fixture-cloud','secret_ref':'PROVIDER_API_KEY','cloud_allowed':True}); self.assertEqual(status,201)
+    status,cloud_request=self.request(f'/api/tasks/{task_id}/provider-request','POST',{'provider_id':cloud_provider['id'],'prompt':prompt}); self.assertEqual((status,cloud_request['kind'],cloud_request['cloud_allowed']),(201,'network',True))
+    status,cloud_denied=self.request(f'/api/tasks/{task_id}/invoke','POST',{'provider_id':cloud_provider['id'],'prompt':prompt}); self.assertEqual(status,403); self.assertIn('network',cloud_denied['error'])
+    self.assertEqual(self.request(f"/api/approvals/{cloud_request['id']}",'PATCH',{'status':'approved'})[0],200)
+    status,cloud_invoked=self.request(f'/api/tasks/{task_id}/invoke','POST',{'provider_id':cloud_provider['id'],'prompt':prompt}); self.assertEqual(status,200); self.assertTrue(cloud_invoked['cloud_allowed']); self.assertEqual(cloud_invoked['prompt_sha256'],invoked['prompt_sha256'])
+    status,invocations=self.request(f'/api/tasks/{task_id}/invocations'); self.assertEqual((status,len(invocations)),(200,2))
     status,denied=self.request(f'/api/tasks/{task_id}/workspace','POST',{}); self.assertEqual(status,403); self.assertIn('approved',denied['error'])
     status,approval=self.request(f'/api/tasks/{task_id}/workspace-request','POST',{}); self.assertEqual(status,201)
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)

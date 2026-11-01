@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, project_id TEXT NOT N
 CREATE TABLE IF NOT EXISTS providers (id TEXT PRIMARY KEY, kind TEXT NOT NULL, endpoint TEXT, model TEXT, secret_ref TEXT, cloud_allowed INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS workspaces (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, path TEXT NOT NULL UNIQUE, branch TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, argv TEXT NOT NULL, exit_code INTEGER, output TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS invocations (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, provider_id TEXT NOT NULL, prompt_sha256 TEXT NOT NULL, response TEXT NOT NULL, created_at INTEGER NOT NULL);
 """
 
 def now() -> int: return int(time.time())
@@ -71,14 +72,29 @@ def provider_capabilities(provider: dict) -> dict:
     """Describe the adapter boundary without invoking a provider or reading a secret."""
     return {"id": provider["id"], "kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "cloud_allowed": bool(provider["cloud_allowed"]), "supports_streaming": True, "supports_tool_calls": provider["kind"] == "openai-compatible", "invocation_requires_approval": True}
 
+def validate_provider_prompt(prompt) -> str:
+    """Reject empty or oversized provider requests before any approval or transport use."""
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 20_000: raise ValueError("Provider prompt must contain 1–20000 characters")
+    return prompt
+
 def provider_invocation_detail(task_id: str, provider: dict, prompt: str) -> str:
-    """Bind a future approval to exact non-secret provider metadata and request bytes."""
+    """Bind an approval to exact non-secret provider metadata and request bytes."""
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-    return approval_detail("provider-invoke", task_id, provider_id=provider["id"], model=provider["model"], prompt_sha256=digest, cloud_allowed=str(bool(provider["cloud_allowed"])))
+    return approval_detail("provider-invoke", task_id, provider_id=provider["id"], endpoint=provider["endpoint"], model=provider["model"], prompt_sha256=digest, cloud_allowed=bool(provider["cloud_allowed"]))
+
+def provider_approval_kind(provider: dict) -> str:
+    """A cloud transmission needs its own network consent; a loopback call needs invocation approval only."""
+    return "network" if provider["cloud_allowed"] else "provider-invoke"
+
+def unavailable_provider_transport(request: dict) -> dict:
+    """Fail closed: no real provider client exists yet, so nothing leaves this machine."""
+    raise ValueError("No approved provider transport is configured; real network invocation is not implemented")
+
+PROVIDER_TRANSPORT = unavailable_provider_transport
 
 def invoke_provider(provider: dict, prompt: str, transport) -> dict:
     """Adapter seam for approved callers; transport is injected so tests perform no I/O."""
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 20_000: raise ValueError("Provider prompt must contain 1–20000 characters")
+    validate_provider_prompt(prompt)
     request = {"kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt}
     response = transport(request)
     if not isinstance(response, dict) or not isinstance(response.get("text"), str): raise ValueError("Provider transport returned an invalid response")
@@ -164,7 +180,7 @@ def ref_oid(root: str, ref: str) -> str:
     if result.returncode != 0: raise ValueError(f"Git reference is unavailable: {ref}")
     return result.stdout.strip()
 
-def approval_detail(action: str, task_id: str, **refs: str) -> str:
+def approval_detail(action: str, task_id: str, **refs) -> str:
     """Canonical, immutable description of the exact Git state a user reviewed."""
     return json.dumps({"action": action, "refs": refs, "task_id": task_id}, sort_keys=True, separators=(",", ":"))
 
@@ -262,6 +278,8 @@ class App(SimpleHTTPRequestHandler):
             project=STORE.one("SELECT * FROM projects WHERE id=?",(workspace["project_id"],)); return self.json(merge_preview(project["path"],workspace["branch"]))
         if route.startswith("/api/tasks/") and route.endswith("/executions"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM executions WHERE task_id=? ORDER BY created_at DESC",(tid,)))
+        if route.startswith("/api/tasks/") and route.endswith("/invocations"):
+            tid=route.split("/")[3]; return self.json(STORE.rows("SELECT id,task_id,provider_id,prompt_sha256,response,created_at FROM invocations WHERE task_id=? ORDER BY created_at DESC",(tid,)))
         if route.startswith("/api/projects/") and route.endswith("/summary"):
             pid=route.split("/")[3]; p=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             return self.json(repository_summary(Path(p["path"]))) if p else self.json({"error":"not found"},404)
@@ -368,6 +386,34 @@ class App(SimpleHTTPRequestHandler):
                 delete_merged_branch(project["path"],workspace["branch"],branch_oid)
                 STORE.write("UPDATE workspaces SET status='complete' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info","Merged recovery branch deleted after critical approval.")
                 return self.json({"task_id":tid,"status":"complete","branch_deleted":True})
+            if route.startswith("/api/tasks/") and route.endswith("/provider-request"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                provider=STORE.one("SELECT id,kind,endpoint,model,cloud_allowed,enabled FROM providers WHERE id=?",(data.get("provider_id"),))
+                if not provider: return self.json({"error":"provider not found"},404)
+                if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
+                prompt=validate_provider_prompt(data.get("prompt"))
+                kind=provider_approval_kind(provider); detail=provider_invocation_detail(tid,provider,prompt); aid=uid()
+                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
+                transmission="cloud transmission" if provider["cloud_allowed"] else "loopback invocation"
+                task_event(tid,"security","warning",f"Approved {transmission} on model {provider['model']} requires {kind} approval; prompt stays local until then.")
+                return self.json({"id":aid,"status":"pending","kind":kind,"cloud_allowed":bool(provider["cloud_allowed"]),"detail":json.loads(detail)},201)
+            if route.startswith("/api/tasks/") and route.endswith("/invoke"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                provider=STORE.one("SELECT id,kind,endpoint,model,cloud_allowed,enabled FROM providers WHERE id=?",(data.get("provider_id"),))
+                if not provider: return self.json({"error":"provider not found"},404)
+                if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
+                prompt=validate_provider_prompt(data.get("prompt")); kind=provider_approval_kind(provider)
+                detail=provider_invocation_detail(tid,provider,prompt)
+                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
+                if not permitted: return self.json({"error":f"approved {kind} request for this exact provider, endpoint, model, and prompt required"},403)
+                result=invoke_provider(provider,prompt,PROVIDER_TRANSPORT); result["text"]=redacted(result["text"])
+                digest=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
+                STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest,result["text"],now()))
+                transmission="cloud" if provider["cloud_allowed"] else "loopback"
+                task_event(tid,"provider","info",f"Approved {transmission} provider invocation completed on model {provider['model']} for prompt sha256 {digest[:12]}.")
+                return self.json({"id":iid,"task_id":tid,"provider_id":provider["id"],"model":result["model"],"text":result["text"],"prompt_sha256":digest,"cloud_allowed":bool(provider["cloud_allowed"])})
             if route.startswith("/api/tasks/") and route.endswith("/execution-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); command=str(data.get("command","")).strip()
                 if not task: return self.json({"error":"task not found"},404)

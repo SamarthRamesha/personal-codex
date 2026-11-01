@@ -12,6 +12,12 @@ After a clean workspace release, its task branch is a recovery checkpoint. The u
 
 Provider registration is an adapter-metadata boundary, not a network client. The supported descriptors are `ollama` and `openai-compatible`; endpoints must be absolute HTTP(S) URLs with no embedded credentials. A provider is loopback-only by default. A non-loopback endpoint is accepted only with a JSON boolean `cloud_allowed: true`; registration still does not read the named environment variable or contact the endpoint. The capability endpoint advertises the future invocation interface and states that invocation needs approval.
 
+## Provider invocation boundary
+
+Invocation is a three-record flow: `provider-request` creates a pending approval whose canonical detail binds task, provider ID, endpoint, model, prompt SHA-256, and cloud flag; the user decides once; `invoke` requires the matching approved record before calling the adapter. Loopback providers use the `provider-invoke` approval kind; a provider registered with `cloud_allowed: true` requires a distinct `network` approval, so metadata consent and transmission consent stay separate.
+
+The adapter itself only receives a request object of kind, endpoint, model, and prompt. It never receives the environment-variable reference or any secret value. The transport is an injected callable; the shipped default refuses every call, so the control plane performs no provider network I/O. Only bounded, redacted response text and the prompt digest are persisted in `invocations`; the prompt is not stored there.
+
 ## Intended progression
 
 1. Keep this control-plane API stable.
@@ -28,5 +34,6 @@ Provider registration is an adapter-metadata boundary, not a network client. The
 - `approvals`: permission gates for execution, network, or critical actions.
 - `providers`: endpoint/model metadata plus an environment secret reference, never the secret value.
 - `workspaces`: task-owned path, recovery branch, and lifecycle state (`ready`, `released`, `merged`, or `complete`).
+- `invocations`: approved provider responses, keyed by task and provider, with the prompt digest instead of the prompt.
 
 SQLite is appropriate for a single-user Mac control plane. A remote worker should own its own durable queue rather than share the SQLite file across a network filesystem.

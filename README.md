@@ -17,7 +17,10 @@ The service binds loopback only unless `PERSONAL_CODEX_HOST` is deliberately cha
 ```sh
 python3 -m unittest discover -s tests -v
 python3 -m py_compile app/server.py
+node --check web/app.js
 ```
+
+`tests/test_server.py` covers security, planning, Git lifecycle, and provider boundaries; `tests/test_ui.py` checks the dashboard contract (element IDs, button wiring, routed API paths, local-only assets) without a browser.
 
 To run the full disposable HTTP lifecycle test in an environment that permits loopback listeners:
 
@@ -40,3 +43,5 @@ Approved commands run in task-owned worktrees only. They are constrained to 1–
 For a released task branch, the dashboard offers a read-only merge preview. A conflict-free merge needs a critical approval tied to the exact reviewed source and target commits. The retained recovery branch can be deleted only by a separate critical approval after it is merged.
 
 Provider records support `ollama` and `openai-compatible` metadata. Local providers must use loopback endpoints; a cloud endpoint needs explicit `cloud_allowed: true`. Registration stores only a validated environment-variable reference and never contacts the provider.
+
+Provider invocation is approval-gated and bound to the exact provider, endpoint, model, prompt digest, and cloud flag. A loopback provider needs a `provider-invoke` approval; a cloud-consented provider additionally needs a `network` approval. The shipped transport is intentionally not a network client — it refuses every call, so nothing leaves the machine until a real adapter is added deliberately.
