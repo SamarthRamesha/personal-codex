@@ -29,6 +29,7 @@ async function renderSelected(){
   const ready=workspace.status==='ready'; $('#workspace-state').textContent=ready?workspace.branch:workspace.status;
   $('#create-workspace').disabled=ready; $('#request-workspace').disabled=ready;
   $('#run-command').disabled=!ready; $('#request-command').disabled=!ready;
+  $('#request-release').disabled=!ready; $('#release-workspace').disabled=!ready;
   const log=[...events.map(e=>`<div class=item><strong>${esc(e.agent)} · ${esc(e.level)}</strong><small>${esc(e.message)}</small></div>`),...executions.map(x=>`<div class=item><span class=tag>exit ${x.exit_code}</span><strong>${esc(x.argv)}</strong><div class=output>${esc(x.output)}</div></div>` )];
   $('#task-events').innerHTML=log.length?log.join(''):'<div class=empty>No activity yet.</div>';
  }catch(e){msg($('#action-result'),e.message,true)}
@@ -40,4 +41,6 @@ $('#request-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace-r
 $('#create-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace`,{},d=>`Workspace ready on ${d.branch}.`);
 $('#request-command').onclick=()=>action(`/api/tasks/${selectedId}/execution-request`,{command:$('#command').value},()=> 'Exact command approval queued.');
 $('#run-command').onclick=()=>action(`/api/tasks/${selectedId}/execute`,{command:$('#command').value},d=>`Command finished with exit code ${d.exit_code}.`);
+$('#request-release').onclick=()=>action(`/api/tasks/${selectedId}/workspace-release-request`,{},()=> 'Critical workspace-release request queued for approval.');
+$('#release-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace-release`,{},d=>`Workspace released; ${d.branch} remains for recovery.`);
 $('#refresh').onclick=refresh;refresh();

@@ -2,7 +2,7 @@
 """Personal Codex local control plane. Standard-library only by design for v0."""
 from __future__ import annotations
 
-import json, os, re, shlex, sqlite3, subprocess, sys, time, uuid
+import json, os, re, resource, shlex, signal, sqlite3, subprocess, sys, tempfile, time, uuid
 from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +15,10 @@ DB_PATH = DATA / "personal_codex.db"
 WEB = ROOT / "web"
 SECRET_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519", "credentials.json"}
 ALLOWED_COMMANDS = {"git", "python", "python3", "pytest", "npm", "node", "cargo", "rustc", "go", "make"}
+MAX_TIMEOUT_SECONDS = 300
+MAX_OUTPUT_BYTES = 200_000
+MAX_FILE_BYTES = 50 * 1024 * 1024
+MAX_MEMORY_BYTES = 768 * 1024 * 1024
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
@@ -85,7 +89,7 @@ def parse_command(command: str) -> list[str]:
 
 def redacted(text: str) -> str:
     text = re.sub(r'(?i)(api[_-]?key|token|password|secret)\s*[=:]\s*[^\s]+', r'\1=[REDACTED]', text)
-    return text[:200_000]
+    return text[:MAX_OUTPUT_BYTES]
 
 def workspace_path(task_id: str) -> Path:
     return (DATA / "workspaces" / task_id).resolve()
@@ -101,15 +105,54 @@ def create_task_workspace(task_id: str, project_path: str) -> dict:
     if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "worktree creation failed"))
     return {"path":str(target), "branch":branch}
 
+def workspace_clean(path: str) -> bool:
+    result = subprocess.run(["git", "-C", path, "status", "--porcelain"], text=True, capture_output=True, timeout=20, check=False)
+    if result.returncode != 0: raise ValueError(redacted(result.stderr or "Unable to inspect workspace status"))
+    return not result.stdout.strip()
+
+def release_task_workspace(project_path: str, path: str) -> None:
+    """Remove only a clean worktree. Its branch remains as the recovery checkpoint."""
+    root, target = Path(project_path).resolve(), Path(path).resolve()
+    if DATA.resolve() not in target.parents: raise ValueError("Workspace is outside the controlled storage root")
+    if not workspace_clean(str(target)): raise ValueError("Workspace has uncommitted changes; preserve or commit them before release")
+    result = subprocess.run(["git", "-C", str(root), "worktree", "remove", str(target)], text=True, capture_output=True, timeout=45, check=False)
+    if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "worktree release failed"))
+
+def child_limits(timeout: int):
+    """Apply limits that the host OS accepts; unsupported limits remain documented."""
+    def cap(limit, wanted):
+        try:
+            _, hard = resource.getrlimit(limit)
+            ceiling = min(wanted, hard)
+            resource.setrlimit(limit, (ceiling, ceiling))
+        except (OSError, ValueError):
+            pass
+    cap(resource.RLIMIT_CPU, min(timeout + 5, MAX_TIMEOUT_SECONDS + 5))
+    cap(resource.RLIMIT_FSIZE, MAX_FILE_BYTES)
+    cap(resource.RLIMIT_NOFILE, 64)
+    if hasattr(resource, "RLIMIT_AS"): cap(resource.RLIMIT_AS, MAX_MEMORY_BYTES)
+
 def execute_in_workspace(path: str, command: str, timeout=120) -> dict:
+    try: timeout=int(timeout)
+    except (TypeError, ValueError): raise ValueError("Timeout must be an integer")
+    if not 1 <= timeout <= MAX_TIMEOUT_SECONDS: raise ValueError(f"Timeout must be between 1 and {MAX_TIMEOUT_SECONDS} seconds")
     argv=parse_command(command); root=Path(path).resolve()
     if not root.is_dir() or DATA.resolve() not in root.parents: raise ValueError("Execution must use a Personal Codex task workspace")
     env={"PATH":os.environ.get("PATH", ""), "HOME":str(root), "LANG":"C", "LC_ALL":"C"}
+    runtime = DATA / "runtime"; runtime.mkdir(exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w+b", dir=runtime, delete=False) as output_file:
+        output_path=Path(output_file.name)
     try:
-        result=subprocess.run(argv, cwd=root, env=env, text=True, capture_output=True, timeout=min(max(int(timeout),1),300), check=False)
-        return {"argv":argv,"exit_code":result.returncode,"output":redacted((result.stdout or "")+(result.stderr or ""))}
-    except subprocess.TimeoutExpired as e:
-        return {"argv":argv,"exit_code":124,"output":redacted((e.stdout or "")+(e.stderr or "")+"\nTimed out.")}
+        with output_path.open("ab") as output_file:
+            process=subprocess.Popen(argv, cwd=root, env=env, stdout=output_file, stderr=subprocess.STDOUT, preexec_fn=lambda: child_limits(timeout), start_new_session=True)
+            try: exit_code=process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL); process.wait(); exit_code=124
+        output=output_path.read_bytes()[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
+        if exit_code == 124: output += "\nTimed out."
+        return {"argv":argv,"exit_code":exit_code,"output":redacted(output)}
+    finally:
+        output_path.unlink(missing_ok=True)
 
 class App(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args): print("[personal-codex] " + fmt % args)
@@ -129,6 +172,12 @@ class App(SimpleHTTPRequestHandler):
         if route == "/api/providers": return self.json(STORE.rows("SELECT id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at FROM providers ORDER BY created_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/workspace"):
             tid=route.split("/")[3]; return self.json(STORE.one("SELECT * FROM workspaces WHERE task_id=?",(tid,)) or {"task_id":tid,"status":"absent"})
+        if route.startswith("/api/tasks/") and route.endswith("/workspace-recovery"):
+            tid=route.split("/")[3]; workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=?",(tid,))
+            if not workspace: return self.json({"error":"workspace not found"},404)
+            present=Path(workspace["path"]).is_dir()
+            clean=workspace_clean(workspace["path"]) if present else None
+            return self.json({**workspace,"present":present,"clean":clean,"branch_preserved":True})
         if route.startswith("/api/tasks/") and route.endswith("/executions"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM executions WHERE task_id=? ORDER BY created_at DESC",(tid,)))
         if route.startswith("/api/projects/") and route.endswith("/summary"):
@@ -183,6 +232,21 @@ class App(SimpleHTTPRequestHandler):
                 STORE.write("INSERT INTO workspaces VALUES (?,?,?,?,?,?)",(tid,task["project_id"],workspace["path"],workspace["branch"],"ready",now()))
                 task_event(tid,"orchestrator","info",f"Isolated workspace created on branch {workspace['branch']}.")
                 return self.json(workspace,201)
+            if route.startswith("/api/tasks/") and route.endswith("/workspace-release-request"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
+                if not task or not workspace: return self.json({"error":"ready workspace not found"},404)
+                aid=uid(); detail=f"release:{tid}"
+                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
+                task_event(tid,"security","warning","Clean worktree release requires critical-operation approval; branch will be retained.")
+                return self.json({"id":aid,"status":"pending","detail":detail},201)
+            if route.startswith("/api/tasks/") and route.endswith("/workspace-release"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
+                if not task or not workspace: return self.json({"error":"ready workspace not found"},404)
+                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],f"release:{tid}"))
+                if not permitted: return self.json({"error":"approved workspace release request required"},403)
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); release_task_workspace(project["path"],workspace["path"])
+                STORE.write("UPDATE workspaces SET status='released' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info",f"Clean workspace released; recovery branch {workspace['branch']} was retained.")
+                return self.json({"task_id":tid,"status":"released","branch":workspace["branch"],"branch_preserved":True})
             if route.startswith("/api/tasks/") and route.endswith("/execution-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); command=str(data.get("command","")).strip()
                 if not task: return self.json({"error":"task not found"},404)

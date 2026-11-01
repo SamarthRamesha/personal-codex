@@ -34,3 +34,5 @@ PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v
 - Keep execution and external operations represented as approvals rather than silently running them.
 
 This is a working foundation, not yet the complete desktop/distributed product. See `PROJECT_STATUS.md` and `TASKS.md`.
+
+Approved commands run in task-owned worktrees only. They are constrained to 1–300 seconds, with child CPU, file-size, descriptor, and supported address-space limits. A clean worktree can be released only through a separate critical approval; its branch is retained for recovery.

@@ -13,3 +13,5 @@ Completed UI wiring for the approval and execution workflow. Approval decisions 
 Ran the updated unit, Python compilation, JavaScript syntax, and loopback asset smoke checks successfully. The loopback server was stopped after verification.
 
 Added an opt-in in-process HTTP integration test. It creates an initialised temporary Git fixture and switches the app to temporary SQLite/workspace storage, asserts both denied pre-approval operations and allowed post-approval operations, then shuts down the server and removes temporary data. With `PERSONAL_CODEX_HTTP_TESTS=1`, all seven tests passed in 0.646 seconds.
+
+Added execution resource caps and critical-approval clean-worktree release. The initial strict resource setup failed in this macOS environment during child-process startup; corrected it by capping each resource independently and ignoring only OS-rejected limit types. The full lifecycle suite then passed 8/8 in 0.674 seconds, including release/recovery verification. No branch merge or deletion was implemented.

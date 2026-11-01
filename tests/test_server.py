@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import app.server as server
-from app.server import parse_command, plan_for, redacted, repository_summary, safe_project_path, visible_files
+from app.server import execute_in_workspace, parse_command, plan_for, redacted, repository_summary, safe_project_path, visible_files
 
 class SecurityAndPlanningTests(unittest.TestCase):
   def test_secret_named_files_not_visible(self):
@@ -24,6 +24,8 @@ class SecurityAndPlanningTests(unittest.TestCase):
     with self.assertRaises(ValueError): parse_command('pytest && curl example.com')
   def test_output_secrets_are_redacted(self):
     self.assertIn('[REDACTED]', redacted('API_KEY=abc123 failure'))
+  def test_timeout_range_is_enforced_before_execution(self):
+    with self.assertRaises(ValueError): execute_in_workspace('/tmp', 'python3 -c "print(1)"', 301)
 
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
 class HttpLifecycleTests(unittest.TestCase):
@@ -58,5 +60,10 @@ class HttpLifecycleTests(unittest.TestCase):
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
     status,execution=self.request(f'/api/tasks/{task_id}/execute','POST',{'command':command}); self.assertEqual(status,200); self.assertEqual(execution['exit_code'],0); self.assertIn('42',execution['output'])
     status,events=self.request(f'/api/tasks/{task_id}/events'); self.assertEqual(status,200); self.assertGreaterEqual(len(events),4)
+    status,recovery=self.request(f'/api/tasks/{task_id}/workspace-recovery'); self.assertEqual((status,recovery['clean']),(200,True))
+    status,approval=self.request(f'/api/tasks/{task_id}/workspace-release-request','POST',{}); self.assertEqual(status,201)
+    self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
+    status,released=self.request(f'/api/tasks/{task_id}/workspace-release','POST',{}); self.assertEqual((status,released['branch_preserved']),(200,True))
+    status,recovery=self.request(f'/api/tasks/{task_id}/workspace-recovery'); self.assertEqual((status,recovery['present'],recovery['clean']),(200,False,None))
 
 if __name__ == '__main__': unittest.main()

@@ -8,3 +8,4 @@
 - Added approval-gated task workspaces and exact command execution boundary.
 - Added dashboard controls to inspect and decide approvals, request isolated workspaces, request exact command approval, and inspect task events/output.
 - Added disposable, opt-in HTTP integration coverage for the approval-gated workspace and command lifecycle.
+- Added resource-limited execution and critical-approval clean-workspace release with retained recovery branches.
