@@ -4,6 +4,8 @@ Updated: 2026-11-01 (Asia/Kolkata)
 
 ## Current milestone: local control-plane vertical slice
 
+Continuity protocol: `NEXT_SESSION_PROMPT.md` is a permanent, ready-to-use cross-account handoff. It is regenerated after each meaningful verified milestone, on user request, and before usage exhaustion; it must embed the recursive continuation protocol for the next account.
+
 Implemented and verified:
 
 - Python local service with SQLite persistence (`app/server.py`).

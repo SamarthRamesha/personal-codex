@@ -2,6 +2,8 @@
 
 ## Highest priority
 
+- [x] Establish permanent cross-account continuation protocol and regenerate the ready-to-use prompt after verified milestones.
+
 - [x] Build capability-gated command executor: worktree-only CWD, allowlisted commands, output redaction, timeout, approval lookup, and audit event.
 - [x] Add basic Git worktree lifecycle with per-task ownership.
 - [x] Add clean workspace release/recovery controls and resource limits beyond timeout.
