@@ -44,4 +44,11 @@ For a released task branch, the dashboard offers a read-only merge preview. A co
 
 Provider records support `ollama` and `openai-compatible` metadata. Local providers must use loopback endpoints; a cloud endpoint needs explicit `cloud_allowed: true`. Registration stores only a validated environment-variable reference and never contacts the provider.
 
-Provider invocation is approval-gated and bound to the exact provider, endpoint, model, prompt digest, and cloud flag. A loopback provider needs a `provider-invoke` approval; a cloud-consented provider additionally needs a `network` approval. The shipped transport is intentionally not a network client — it refuses every call, so nothing leaves the machine until a real adapter is added deliberately.
+Provider invocation is approval-gated and bound to the exact provider, endpoint, model, prompt digest, and cloud flag. A loopback provider needs a `provider-invoke` approval; a cloud-consented provider additionally needs a `network` approval.
+
+Two real adapters ship in `app/providers.py`, standard library only:
+
+- Ollama: register endpoint `http://127.0.0.1:11434` and a pulled model name; calls `/api/chat` (or `/api/generate` if that path is given).
+- OpenAI-compatible: register endpoint `http://127.0.0.1:<port>/v1` and, if needed, `secret_ref` naming an environment variable. Calls `/chat/completions` with the key read only at call time.
+
+Adapters ignore proxy environment variables, never follow redirects, enforce a timeout and a 1 MB response cap, refuse non-loopback hosts unless the provider is cloud-consented, and return sanitised errors. `python3 -m unittest discover -s tests` exercises both against a stub server, so no model download is required.

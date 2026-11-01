@@ -1,8 +1,8 @@
 # Handoff
 
-The repository is recoverable without chat history. Start with `PROJECT_STATUS.md`, then verify with `git status`, `README.md`, and the unit-test command. The approval-gated worktree command runner and recovery-branch lifecycle are implemented. Provider metadata validation and the approval-gated invocation lifecycle are implemented, but the shipped transport fails closed: no real Ollama or OpenAI-compatible network client exists yet, so do not claim autonomous code modification or live model execution before an agent engine and a real transport exist.
+The repository is recoverable without chat history. Start with `PROJECT_STATUS.md`, then verify with `git status`, `README.md`, and the unit-test command. The approval-gated worktree command runner, recovery-branch lifecycle, provider metadata validation, approval-gated invocation lifecycle, and real Ollama/OpenAI-compatible HTTP transports are implemented. No live model or external provider has been exercised — adapter tests use a loopback stub — and there is still no agent engine, so do not claim autonomous code modification.
 
-Current highest-priority task: implement a real Ollama transport behind the existing injected seam (still approval-gated, still loopback-only without `network` consent), verified first against a local stub server. Never send a prompt to a cloud endpoint without the recorded `network` approval.
+Current highest-priority task: implement the first bounded developer-agent cycle — a strict allowlisted tool-call schema produced from an approved provider response, an approval-gated file-edit tool confined to the task worktree, and test-result recording. Never send a prompt to a cloud endpoint without the recorded `network` approval, and never let model output execute outside the allowlist.
 
 Never add server access or cloud credentials to the repository. Update all checkpoint documents after every meaningful milestone.
 

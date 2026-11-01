@@ -16,15 +16,20 @@ Provider registration is an adapter-metadata boundary, not a network client. The
 
 Invocation is a three-record flow: `provider-request` creates a pending approval whose canonical detail binds task, provider ID, endpoint, model, prompt SHA-256, and cloud flag; the user decides once; `invoke` requires the matching approved record before calling the adapter. Loopback providers use the `provider-invoke` approval kind; a provider registered with `cloud_allowed: true` requires a distinct `network` approval, so metadata consent and transmission consent stay separate.
 
-The adapter itself only receives a request object of kind, endpoint, model, and prompt. It never receives the environment-variable reference or any secret value. The transport is an injected callable; the shipped default refuses every call, so the control plane performs no provider network I/O. Only bounded, redacted response text and the prompt digest are persisted in `invocations`; the prompt is not stored there.
+The adapter itself only receives a request object of kind, endpoint, model, prompt, and cloud flag. It never receives the environment-variable reference or any secret value. `active_provider_transport` resolves the adapter per invocation: `app/providers.py` supplies the built-in Ollama and OpenAI-compatible adapters, while setting `server.PROVIDER_TRANSPORT` injects a deterministic transport for tests or offline use.
+
+`app/providers.py` is standard-library only: `http.client` requests (no `urllib` opener, so proxy environment variables are ignored and redirects are never followed), a fixed connection timeout, a 1 MB response cap, JSON shape validation, and sanitised error text. Loopback-only enforcement is repeated inside the adapter, so a local provider cannot be redirected to an external host. OpenAI-compatible credentials are resolved from the named environment variable at call time inside a closure and placed only in the request header.
+
+Only bounded, redacted response text and the prompt digest are persisted in `invocations`; the prompt is not stored there.
 
 ## Intended progression
 
 1. Keep this control-plane API stable.
-2. Add a native Tauri + React shell that talks to the loopback service.
-3. Introduce explicit capability tokens and a command/worktree runner operating only in assigned workspaces.
-4. Add provider adapters behind a routing interface; local-only remains a first-class policy.
-5. Add a mutually authenticated ZimaOS worker protocol over a private network; never expose an unauthenticated worker.
+2. Add streaming and audited tool-call handling on top of the provider adapters.
+3. Add a native Tauri + React shell that talks to the loopback service.
+4. Introduce explicit capability tokens and a command/worktree runner operating only in assigned workspaces.
+5. Add an agent-engine loop that turns an approved provider completion into allowlisted, approval-gated tool calls inside a task workspace.
+6. Add a mutually authenticated ZimaOS worker protocol over a private network; never expose an unauthenticated worker.
 
 ## Data model
 

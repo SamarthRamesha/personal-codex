@@ -14,3 +14,7 @@
 - Added approval-gated provider invocation: bound approvals over task, provider, endpoint, model, prompt digest, and cloud flag; a separate `network` approval for cloud-consented providers; a fail-closed default transport; and a bounded, redacted invocation ledger.
 - Added dashboard provider-invocation controls and a provider-response ledger.
 - Added browser-free dashboard contract tests for element IDs, button wiring, routed API paths, gated controls, and local-only assets.
+- Added real provider transports: Ollama `/api/chat`/`/api/generate` and OpenAI-compatible `/chat/completions`, standard-library only, with redirect refusal, proxy-free requests, timeouts, response caps, sanitised errors, and loopback enforcement.
+- OpenAI-compatible credentials are resolved from the named environment variable only at call time and never stored or logged; cloud providers require a secret reference.
+- Added a provider adapter test suite against an ephemeral loopback stub server plus a no-override API integration test.
+- Added dashboard provider transport-policy hint and duplicate-invocation guard.

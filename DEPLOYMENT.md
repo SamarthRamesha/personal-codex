@@ -10,7 +10,11 @@ The dashboard supports a release → preview → critical-approved merge → sep
 
 Provider registration is safe to use during local setup because it validates metadata only. It does not probe an Ollama instance, contact a cloud endpoint, or retrieve an environment-variable secret.
 
-Provider invocation is approval-gated but not yet wired to a real network client. Requesting an invocation creates a pending approval bound to the exact provider, endpoint, model, prompt digest, and cloud flag; invoking with that approval then fails closed with `No approved provider transport is configured` and writes no ledger entry. That is the expected v0 behaviour, not a misconfiguration: adding a transport is a deliberate code change, and an actual adapter must still refuse to transmit without the matching approval.
+Provider invocation now reaches a real adapter per invocation. To probe a local install, start `ollama serve`, pull a model (for example `ollama pull qwen2.5-coder`), register the provider with endpoint `http://127.0.0.1:11434` and that model name, request the invocation approval, approve it, and invoke. The request goes to `/api/chat` and the bounded reply is stored in the ledger. No model is required for the automated tests, which use a stub loopback server.
+
+For an OpenAI-compatible local server (llama.cpp, LM Studio, vLLM), register endpoint `http://127.0.0.1:<port>/v1` and, if the server needs a key, a `secret_ref` naming the environment variable that holds it. The key is read only at call time and is never stored. A cloud endpoint additionally requires `cloud_allowed: true` at registration and a separate `network` approval before each distinct invocation, and its `secret_ref` is mandatory.
+
+If no transport should be available at all, set `server.PROVIDER_TRANSPORT = unavailable_provider_transport`; every invocation then fails closed with a clear message.
 
 ## ZimaOS
 

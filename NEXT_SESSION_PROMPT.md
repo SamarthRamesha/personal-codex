@@ -4,68 +4,57 @@ You are taking over an existing software project from another AI coding agent. Y
 
 Project objective: build Personal Codex, a secure local-first autonomous coding environment for a Mac interactive client and an eventual ZimaOS private worker.
 
-Repository location: the official repository is `https://github.com/SamarthRamesha/personal-codex` (`origin` remote). The owner's working copy on the Mac is `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex`. If that path does not exist, search for a checkout whose `origin` is the GitHub repository above. Do not create a new project or fork its history.
+Repository location: official repository `https://github.com/SamarthRamesha/personal-codex` (`origin`). The owner's Mac checkout is `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex`. If that path is missing, find a checkout whose `origin` matches the URL above; do not fork history.
 
-First inspect the repository and verify this prompt against actual files: `git status --short --branch`, `git rev-parse --short HEAD`, `git log --oneline -20`, then read `README.md`, `PROJECT_STATUS.md`, `TASKS.md`, `ARCHITECTURE.md`, `SECURITY.md`, `HANDOFF.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`, `DEPLOYMENT.md`. Do not recreate completed features. Resolve discrepancies in favour of the actual repository. Preserve every security requirement and keep checkpoints current.
+Inspect before acting: `git status --short --branch`, `git rev-parse --short HEAD`, `git log --oneline -20`, then read `README.md`, `PROJECT_STATUS.md`, `TASKS.md`, `ARCHITECTURE.md`, `SECURITY.md`, `HANDOFF.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`, `DEPLOYMENT.md`.
 
-## Current architecture
+## Architecture
 
-- Python standard-library loopback service: `app/server.py` (~440 lines), `ThreadingHTTPServer` bound to `127.0.0.1:8787` (`PERSONAL_CODEX_HOST`/`PERSONAL_CODEX_PORT` overrides).
-- SQLite persistence at `data/personal_codex.db` (gitignored) with tables `projects`, `tasks`, `events`, `approvals`, `providers`, `workspaces`, `executions`, `invocations`.
-- Static dashboard: `web/index.html`, `web/app.js`, `web/style.css` — no framework, no build step, no dependencies.
-- Tests: `tests/test_server.py` (unit + opt-in HTTP lifecycle) and `tests/test_ui.py` (browser-free dashboard contract checks). Standard library only; no installed packages.
+- `app/server.py` — standard-library loopback control plane (`127.0.0.1:8787`, overridable via `PERSONAL_CODEX_HOST`/`PERSONAL_CODEX_PORT`), `ThreadingHTTPServer`.
+- `app/providers.py` — standard-library provider HTTP adapters (Ollama, OpenAI-compatible).
+- SQLite at `data/personal_codex.db` (gitignored): `projects`, `tasks`, `events`, `approvals`, `providers`, `workspaces`, `executions`, `invocations`.
+- `web/index.html`, `web/app.js`, `web/style.css` — dependency-free dashboard.
+- `tests/test_server.py`, `tests/test_ui.py`, `tests/test_providers.py` — stdlib `unittest`; no installed packages.
 
-Implemented and verified: local repository registration; bounded non-secret repository summaries; four-stage planner/developer/testing/reviewer plans; approval-gated Git worktree creation; exact-command execution with no shell, development-tool allowlist, task-owned workspace only, 1–300 s timeout, child CPU/file/descriptor/address-space limits, 200 kB redacted output cap; immutable one-way approval decisions; critical-approval clean-worktree release that preserves the task branch as a recovery checkpoint; read-only merge previews with conflict reporting; critical-approved merge bound to reviewed source and target commit IDs (changed Git state invalidates the approval); separately approved recovery-branch deletion bound to the branch commit ID and gated on `merge-base --is-ancestor`; provider metadata validation for `ollama` and `openai-compatible` (absolute HTTP(S) endpoint, no embedded credentials, loopback unless `cloud_allowed: true`, `secret_ref` restricted to an environment-variable name, no secret read and no provider contact at registration).
+Implemented and verified: project registration; bounded non-secret repository summaries; four-stage planner/developer/testing/reviewer plans; approval-gated worktree creation; exact-command execution (no shell, allowlist, task workspace only, 1–300 s timeout, child CPU/file/descriptor/address-space limits, 200 kB redacted output); immutable one-way approvals; critical-approved clean release retaining a recovery branch; read-only merge preview + conflict reporting; critical-approved merge bound to reviewed source/target commits (stale state rejected); separately approved recovery-branch deletion (ancestry-checked, commit-bound); provider metadata validation (absolute HTTP(S), no embedded credentials, loopback unless `cloud_allowed: true`, `secret_ref` = environment-variable name only, no secret read or provider contact at registration).
 
-Newest milestone (checkpoint commit `b0e25b7`, plus a following prompt-refresh commit): approval-gated provider invocation. `POST /api/tasks/{id}/provider-request` creates a pending approval whose canonical detail binds task, provider ID, endpoint, model, prompt SHA-256, and cloud flag; `POST /api/tasks/{id}/invoke` refuses unless an approved record with that exact detail exists. Loopback providers require approval kind `provider-invoke`; a provider registered with `cloud_allowed: true` requires a separate `network` approval, so metadata consent never implies transmission consent. The adapter receives only kind/endpoint/model/prompt — never the secret reference. The shipped `PROVIDER_TRANSPORT` is `unavailable_provider_transport`, which raises instead of opening a socket, so a prompt cannot leave the machine. Responses are bounded, redacted, stored in `invocations` with the prompt digest (the prompt itself is not stored there), listed at `GET /api/tasks/{id}/invocations`, and audited as an event. The dashboard now has provider invocation controls and a provider-response ledger, covered by `tests/test_ui.py` (scripted element IDs exist, every button is wired, every `/api/...` path in `app.js` is routed by `server.py`, all gated controls are present, only local assets load, no browser-stored secrets).
+Newest milestone: real approved provider invocation. `POST /api/tasks/{id}/provider-request` records a pending approval bound to task, provider ID, endpoint, model, prompt SHA-256, and cloud flag; `POST /api/tasks/{id}/invoke` requires that exact approved record. Loopback providers need kind `provider-invoke`; cloud-consented providers need a separate `network` approval. `app/providers.py` implements Ollama `/api/chat` (and `/api/generate`) and OpenAI-compatible `/chat/completions` using `http.client` (proxy env vars ignored, redirects refused, 60 s timeout, 1 MB response cap, sanitised errors, loopback re-check inside the adapter). OpenAI credentials are read from the named environment variable inside the transport at call time, used only in the `Authorization` header, never stored or logged; cloud providers require a secret reference and missing credentials fail before sending. `server.PROVIDER_TRANSPORT` defaults to `None` (built-in adapters); setting it to a callable injects a deterministic transport, and `unavailable_provider_transport` restores hard fail-closed behaviour. Responses are bounded, redacted, stored in `invocations` with the prompt digest (never the prompt), listed at `GET /api/tasks/{id}/invocations`, and audited. Dashboard has provider select with transport-policy hint, approval request, duplicate-guarded invoke, and a response ledger.
 
-## Git state to verify, not assume
+## Git state (verify, do not assume)
 
-Branch in the last development workspace was `freebuff/b3647b5f9c91c9d2a6c41d37`; the owner's `main` should contain the same commits after publication. Commits of interest: `b0e25b7` (provider invocation lifecycle + dashboard tests), `f2fea40` (injected transport seam), `2ccf79f` (provider metadata validation), `7f8ae0b` (merge lifecycle), `2526fb4` (initial publication). Always run `git status --short --branch` and `git rev-parse --short HEAD` before acting; a committed prompt cannot know its own resulting hash. Working tree was clean at prompt generation. Remote state must be re-verified with `git fetch origin` and `git ls-remote origin refs/heads/main`; do not assume the remote still matches.
+Published through the milestone before the transport work at `d4ab9d4`; the transport milestone was committed locally as `9a5b522` and published immediately after. Always run `git status --short --branch`, `git rev-parse --short HEAD`, and `git ls-remote origin refs/heads/main`. Recent commits: `9a5b522` (transports), `d4ab9d4` (prompt refresh), `b0e25b7` (invocation lifecycle), `f2fea40` (transport seam), `2ccf79f` (provider validation), `7f8ae0b` (merge lifecycle), `2526fb4` (initial publication).
 
-## Environment and hardware
+## Environment
 
-Owner's Mac: Apple Silicon, Darwin 25.6.0, Python 3.13.9, Node 24.22.1, Git 2.50.1, SQLite and SSH available; Cargo and Docker not on PATH. No third-party packages are installed and none are required. The most recent cloud workspace ran Linux with Python 3.12.3 and Node 26.13.0; code must stay compatible with both. ZimaOS is uninspected: no endpoint, credentials, or authorized session were supplied. Do not probe or deploy to it.
+Owner's Mac: Apple Silicon, Darwin 25.6.0, Python 3.13.9, Node 24.22.1, Git 2.50.1, SQLite, SSH; Cargo/Docker absent. Cloud workspaces have run Linux with Python 3.12.3 and Node 26.13.0 — stay compatible with both. No third-party packages installed or needed. ZimaOS is uninspected; never probe or deploy without authorized access.
 
-## Commands and verified results (`b0e25b7`)
+## Commands and verified results
 
 ```sh
-cd <repository root>
-python3 -m unittest discover -s tests -v                              # 19 unit tests pass; listener test skipped
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 20 tests pass
-python3 -m py_compile app/server.py                                   # passes
-node --check web/app.js                                               # passes
-python3 app/server.py                                                 # serves http://127.0.0.1:8787
+python3 -m unittest discover -s tests -v                              # 40 tests, OK (skipped=2)
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 40 tests pass
+python3 -m py_compile app/server.py app/providers.py                  # passes
+node --check web/app.js                                              # passes
+python3 app/server.py                                                # http://127.0.0.1:8787
 ```
 
-The opt-in suite runs a disposable Git fixture and temporary SQLite database through: registration → task → provider guardrails → denied/approved workspace → denied/approved command → provider invocation denied/approved/invoked → changed-prompt rejection → invocation ledger → cloud `network` approval separation → clean release → merge preview → stale-merge-approval rejection → merge → branch deletion.
-
-A real loopback smoke test in the last workspace additionally confirmed: `/api/health` OK; dashboard exposes the provider controls; invoke before approval returns 403; the approval detail carries endpoint, model, and prompt digest; invoking with an approval but the default transport returns `No approved provider transport is configured` and writes no ledger row; a cloud endpoint without consent returns 400. The server process was stopped afterwards and `data/personal_codex.db` was removed.
+The opt-in suite covers registration → task → provider guardrails → denied/approved workspace → denied/approved command → provider invocation denied/approved/invoked → changed-prompt rejection → ledger → cloud `network` approval separation → clean release → merge preview → stale-approval rejection → merge → branch deletion, plus a no-override test hitting the built-in Ollama adapter through a stub loopback model server. `tests/test_providers.py` covers request path/shape, response extraction, malformed JSON, HTTP 500, redirect refusal, connection refusal, timeout, oversize, unexpected structure, invalid endpoints, non-loopback refusal, credential handling, and transport selection.
 
 ## Limitations
 
-No real Ollama or OpenAI-compatible network client, no streaming, no tool-call execution, no agent engine that edits code autonomously, no native desktop shell, no server connector, no indexer/LSP, no encrypted secret storage, no login/auth, no TLS/remote protocol, no CSP headers, no OS sandboxing, no conflict-resolution tooling, and no browser-automation UI tests (the dashboard tests are static contract checks). Do not claim autonomous code modification, live model execution, or interactive UI verification beyond what has actually run.
-
-Deployment state: nothing is deployed anywhere. The Mac app is run locally with `python3 app/server.py`. ZimaOS deployment is deferred pending authorized access.
+No provider streaming, no tool-call execution, no agent engine that edits code, no native desktop shell, no server connector, no indexer/LSP, no encrypted secret store, no login/auth, no TLS/remote protocol, no CSP, no OS sandboxing, no conflict-resolution tooling, no browser-automation UI tests. No live Ollama or cloud call has been made — all adapter tests use a local stub. Nothing is deployed; ZimaOS work is deferred.
 
 ## Highest-priority next task
 
-Implement a real Ollama HTTP transport behind the existing injected seam, without weakening the approval boundary:
-
-1. Keep `invoke_provider(provider, prompt, transport)` and the exact-detail approval check as-is; add the transport as an explicit opt-in module-level adapter that is selected only for `kind == "ollama"`.
-2. Verify it first against a local stub HTTP server in tests (started on a loopback ephemeral port) so no live model is required; assert the outgoing request body, the bounded response handling, timeout/error mapping to a clear API error, and that non-loopback or cloud-consented providers cannot use it.
-3. Never read the secret reference at registration; read an environment variable only inside the transport at call time if needed, and never log or persist it.
-4. Then consider an OpenAI-compatible transport with the same rules, streaming later.
-
-After that: agent-engine adapter with tool calls, project memory rebuild, and only then a Tauri shell. Add Playwright UI tests only where a browser runtime actually exists.
+Implement the first bounded developer-agent cycle on top of the approved provider invocation: define a strict tool-call schema (`apply_patch`/`write_file`, `read_file`, `run_tests`) returned as validated JSON; execute only allowlisted tools, only inside the task worktree, only after the approvals that already gate workspace creation and command execution; record tool calls and test results as immutable events. Extend provider adapters with streaming and tool-call parsing only after the allowlisted dispatcher exists. Add UI coverage for the new controls. Then project-memory rebuild and the Tauri shell.
 
 ## Security restrictions (non-negotiable)
 
-Never bind a public/LAN interface, never add remote push, never transmit code context or prompts to a cloud provider without the recorded `network` approval, never add a destructive action that is not separately critical-approved, never read, print, log, or commit secret values, never weaken approval binding, redaction, the command allowlist, workspace containment, or the immutable-decision rule to make a check pass. Keep `secret_ref` an environment-variable name only. Do not deploy or probe ZimaOS without authorized access. Do not include passwords, API keys, tokens, or other secrets in any document, prompt, or commit.
+Never bind a public/LAN interface; never transmit prompts or code to a cloud provider without the recorded `network` approval; never treat registration or cloud metadata consent as invocation consent; never execute model output outside the tool allowlist; never add a destructive action without its own critical approval; never read, print, log, or commit secret values; keep `secret_ref` an environment-variable name only; never weaken approval binding, redaction, workspace containment, timeouts, or response caps to make a check pass; never force-push; never claim an unverified test passed; never deploy or probe ZimaOS without authorization.
 
 ## Checkpoint documents
 
-Continue recursively: maintain `PROJECT_STATUS.md`, `ARCHITECTURE.md`, `TASKS.md`, `HANDOFF.md`, `NEXT_SESSION_PROMPT.md`, `CHANGELOG.md`, `DEVELOPMENT_LOG.md`, `SECURITY.md`, and `DEPLOYMENT.md`. If near model/account limits, stop starting large work, verify files and Git state, update those documents, regenerate this prompt from actual state, and include it directly in your final response.
+Maintain `PROJECT_STATUS.md`, `ARCHITECTURE.md`, `TASKS.md`, `HANDOFF.md`, `NEXT_SESSION_PROMPT.md`, `CHANGELOG.md`, `DEVELOPMENT_LOG.md`, `SECURITY.md`, `DEPLOYMENT.md`. Near model/account limits, stop starting large work, verify files and Git, update the documents, regenerate this prompt, and include it in the final response.
 
 ## PERMANENT CROSS-ACCOUNT CONTINUATION PROTOCOL
 
@@ -79,6 +68,6 @@ Every new prompt must carry this protocol forward and tell the next account to g
 
 ## GitHub continuity and publishing
 
-The official repository is `https://github.com/SamarthRamesha/personal-codex` (`origin`: `https://github.com/SamarthRamesha/personal-codex.git`), on `main`. Commit meaningful verified milestones and push to `origin/main` whenever remote access is available. Before publishing, verify remote state (`git fetch origin`, `git ls-remote origin refs/heads/main`), run relevant tests/checks, inspect Git status/diff, check that secrets, runtime databases, and temporary files are excluded, update checkpoints, and verify the resulting remote commit (`git ls-remote` after pushing). Never force-push, erase unexpected remote history, publish secrets, or claim a push succeeded without verification. If unavailable, retain verified local commits and record them as unpushed. Every future prompt must carry these GitHub rules along with the permanent continuation protocol.
+The official repository is `https://github.com/SamarthRamesha/personal-codex` (`origin`: `https://github.com/SamarthRamesha/personal-codex.git`), on `main`. Commit meaningful verified milestones and push to `origin/main` whenever remote access is available. Before publishing, verify remote state (`git fetch origin`, `git ls-remote origin refs/heads/main`), run relevant tests/checks, inspect Git status/diff, check that secrets, runtime databases, and temporary files are excluded, update checkpoints, and verify the resulting remote commit after pushing. Never force-push, erase unexpected remote history, publish secrets, or claim a push succeeded without verification. If unavailable, retain verified local commits and record them as unpushed. Every future prompt must carry these GitHub rules along with the permanent continuation protocol.
 
-Initial publication was verified on 2026-11-01 at `2526fb4`. The latest milestone checkpoint is `b0e25b7`; re-verify remote state before assuming either is still the remote head.
+Publication was verified on 2026-11-01 at `2526fb4` (first push) and `d4ab9d4` (invocation milestone); the transport milestone commit was pushed next. Always re-inspect the remote before assuming synchronization.
