@@ -19,6 +19,12 @@ python3 -m unittest discover -s tests -v
 python3 -m py_compile app/server.py
 ```
 
+To run the full disposable HTTP lifecycle test in an environment that permits loopback listeners:
+
+```sh
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v
+```
+
 ## Current capabilities
 
 - Register an existing local repository by path.

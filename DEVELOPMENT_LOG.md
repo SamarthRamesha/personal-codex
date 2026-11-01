@@ -11,3 +11,5 @@ Added and unit-tested a capability-gated executor. Worktree creation needs a mat
 Completed UI wiring for the approval and execution workflow. Approval decisions are now immutable after a first approved/rejected decision. Node syntax validation should be run after this UI change; no automated browser or HTTP integration harness has been added yet.
 
 Ran the updated unit, Python compilation, JavaScript syntax, and loopback asset smoke checks successfully. The loopback server was stopped after verification.
+
+Added an opt-in in-process HTTP integration test. It creates an initialised temporary Git fixture and switches the app to temporary SQLite/workspace storage, asserts both denied pre-approval operations and allowed post-approval operations, then shuts down the server and removes temporary data. With `PERSONAL_CODEX_HTTP_TESTS=1`, all seven tests passed in 0.646 seconds.

@@ -6,7 +6,7 @@
 - [x] Add basic Git worktree lifecycle with per-task ownership.
 - [ ] Add workspace cleanup/merge/recovery controls and resource limits beyond timeout.
 - [ ] Replace placeholder plan-only workflow with an agent-engine adapter that supports streaming and tool calls.
-- [ ] Add integration tests using an in-process HTTP server or locally permitted listener.
+- [x] Add integration tests using an in-process HTTP server or locally permitted listener.
 - [ ] Add UI tests for the approval/workspace/command workflow.
 
 ## Next
