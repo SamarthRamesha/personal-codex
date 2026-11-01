@@ -1,7 +1,43 @@
-const $=s=>document.querySelector(s); const api=(url,opt={})=>fetch(url,{headers:{'Content-Type':'application/json'},...opt}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d});
+const $=s=>document.querySelector(s);
+const api=(url,opt={})=>fetch(url,{headers:{'Content-Type':'application/json'},...opt}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d});
+const esc=v=>{const d=document.createElement('div');d.textContent=v??'';return d.innerHTML};
 const msg=(el,text,fail=false)=>{el.textContent=text;el.style.color=fail?'#ff9e9e':'#74e0ba'};
-async function refresh(){try{const [projects,tasks,approvals,providers]=await Promise.all(['/api/projects','/api/tasks','/api/approvals','/api/providers'].map(api)); $('#project').innerHTML=projects.length?projects.map(p=>`<option value="${p.id}">${esc(p.name)} — ${esc(p.path)}</option>`).join(''):'<option value="">Add a project first</option>'; $('#tasks').innerHTML=tasks.length?tasks.map(t=>`<div class=item><span class=tag>${t.status}</span><strong>${esc(t.prompt)}</strong><small>${new Date(t.updated_at*1000).toLocaleString()}</small></div>`).join(''):'<div class=empty>No planned tasks yet.</div>'; $('#approvals').innerHTML=approvals.length?approvals.map(a=>`<div class=item><span class=tag>${a.kind}</span><strong>${esc(a.detail)}</strong></div>`).join(''):'<div class=empty>No pending approvals.</div>'; $('#providers').innerHTML=providers.length?providers.map(p=>`<div class=item><strong>${esc(p.model)}</strong><small>${esc(p.kind)} · ${p.cloud_allowed?'cloud allowed':'local-only'}</small></div>`).join(''):'<div class=empty>No model providers configured.</div>';$('#approval-count').textContent=approvals.length}catch(e){console.error(e)}}
-function esc(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML}
+let tasks=[], selectedId=null;
+
+async function refresh(){
+ try{
+  const [projects,nextTasks,approvals,providers]=await Promise.all(['/api/projects','/api/tasks','/api/approvals','/api/providers'].map(api));
+  tasks=nextTasks;
+  $('#project').innerHTML=projects.length?projects.map(p=>`<option value="${p.id}">${esc(p.name)} — ${esc(p.path)}</option>`).join(''):'<option value="">Add a project first</option>';
+  $('#tasks').innerHTML=tasks.length?tasks.map(t=>`<div class="item clickable" data-task="${t.id}"><span class=tag>${esc(t.status)}</span><strong>${esc(t.prompt)}</strong><small>${new Date(t.updated_at*1000).toLocaleString()}</small></div>`).join(''):'<div class=empty>No planned tasks yet.</div>';
+  document.querySelectorAll('[data-task]').forEach(el=>el.onclick=()=>selectTask(el.dataset.task));
+  $('#approvals').innerHTML=approvals.length?approvals.map(a=>`<div class=item><span class=tag>${esc(a.kind)}</span><strong>${esc(a.detail)}</strong><div class=approval-buttons><button class=approve data-approval="${a.id}" data-status="approved">Approve</button><button class=reject data-approval="${a.id}" data-status="rejected">Reject</button></div></div>`).join(''):'<div class=empty>No pending approvals.</div>';
+  document.querySelectorAll('[data-approval]').forEach(el=>el.onclick=()=>decide(el.dataset.approval,el.dataset.status));
+  $('#providers').innerHTML=providers.length?providers.map(p=>`<div class=item><strong>${esc(p.model)}</strong><small>${esc(p.kind)} · ${p.cloud_allowed?'cloud allowed':'local-only'}</small></div>`).join(''):'<div class=empty>No model providers configured.</div>';
+  $('#approval-count').textContent=approvals.length;
+  if(selectedId) await renderSelected();
+ }catch(e){console.error(e)}
+}
+async function decide(id,status){try{await api(`/api/approvals/${id}`,{method:'PATCH',body:JSON.stringify({status})});await refresh()}catch(e){alert(e.message)}}
+async function selectTask(id){selectedId=id;await renderSelected()}
+async function renderSelected(){
+ const task=tasks.find(t=>t.id===selectedId); if(!task){selectedId=null;return}
+ $('#selected-title').textContent=task.prompt; $('#task-actions').hidden=false;
+ const plan=JSON.parse(task.plan); $('#task-plan').className='plan'; $('#task-plan').innerHTML=plan.map((s,i)=>`<div class=plan-step><strong>${i+1}. ${esc(s.agent)} — ${esc(s.action)}</strong><br><span class=muted>${esc(s.detail)}</span></div>`).join('');
+ try{
+  const [workspace,events,executions]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`)]);
+  const ready=workspace.status==='ready'; $('#workspace-state').textContent=ready?workspace.branch:workspace.status;
+  $('#create-workspace').disabled=ready; $('#request-workspace').disabled=ready;
+  $('#run-command').disabled=!ready; $('#request-command').disabled=!ready;
+  const log=[...events.map(e=>`<div class=item><strong>${esc(e.agent)} · ${esc(e.level)}</strong><small>${esc(e.message)}</small></div>`),...executions.map(x=>`<div class=item><span class=tag>exit ${x.exit_code}</span><strong>${esc(x.argv)}</strong><div class=output>${esc(x.output)}</div></div>` )];
+  $('#task-events').innerHTML=log.length?log.join(''):'<div class=empty>No activity yet.</div>';
+ }catch(e){msg($('#action-result'),e.message,true)}
+}
+async function action(path,body,success){try{const d=await api(path,{method:'POST',body:JSON.stringify(body||{})});msg($('#action-result'),success(d));await refresh()}catch(e){msg($('#action-result'),e.message,true)}}
 $('#add-project').onclick=async()=>{try{let d=await api('/api/projects',{method:'POST',body:JSON.stringify({name:$('#project-name').value,path:$('#project-path').value})});msg($('#project-result'),`Added ${d.name}.`);await refresh()}catch(e){msg($('#project-result'),e.message,true)}};
-$('#create-task').onclick=async()=>{try{if(!$('#project').value)throw Error('Add a project first.');let d=await api('/api/tasks',{method:'POST',body:JSON.stringify({project_id:$('#project').value,prompt:$('#prompt').value})});msg($('#task-result'),`Plan created with ${d.plan.length} coordinated stages. Open the task ledger to track it.`);$('#prompt').value='';await refresh()}catch(e){msg($('#task-result'),e.message,true)}};
+$('#create-task').onclick=async()=>{try{if(!$('#project').value)throw Error('Add a project first.');let d=await api('/api/tasks',{method:'POST',body:JSON.stringify({project_id:$('#project').value,prompt:$('#prompt').value})});selectedId=d.id;msg($('#task-result'),`Plan created with ${d.plan.length} coordinated stages.`);$('#prompt').value='';await refresh()}catch(e){msg($('#task-result'),e.message,true)}};
+$('#request-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace-request`,{},()=> 'Workspace request queued for approval.');
+$('#create-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace`,{},d=>`Workspace ready on ${d.branch}.`);
+$('#request-command').onclick=()=>action(`/api/tasks/${selectedId}/execution-request`,{command:$('#command').value},()=> 'Exact command approval queued.');
+$('#run-command').onclick=()=>action(`/api/tasks/${selectedId}/execute`,{command:$('#command').value},d=>`Command finished with exit code ${d.exit_code}.`);
 $('#refresh').onclick=refresh;refresh();

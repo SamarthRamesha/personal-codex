@@ -7,3 +7,7 @@ Environment discovered: Apple Silicon macOS (Darwin 25.6.0), Python 3.13.9, Node
 Created an isolated Git repository in this deliverable. Used no third-party runtime dependencies. Unit tests passed (4/4). A listener smoke test failed at bind time with sandbox `PermissionError`; it was not retried because policy changed neither the port nor the permission model.
 
 Added and unit-tested a capability-gated executor. Worktree creation needs a matching approved `modify` record. Command execution needs a matching approved `execute` record, uses no shell, is restricted to a task-owned workspace, supports a 1–300 second timeout, records redacted output, and emits an audit event. UI wiring and end-to-end HTTP tests remain outstanding. An approved unsandboxed loopback smoke test later confirmed the health endpoint and dashboard respond; process was stopped immediately.
+
+Completed UI wiring for the approval and execution workflow. Approval decisions are now immutable after a first approved/rejected decision. Node syntax validation should be run after this UI change; no automated browser or HTTP integration harness has been added yet.
+
+Ran the updated unit, Python compilation, JavaScript syntax, and loopback asset smoke checks successfully. The loopback server was stopped after verification.

@@ -208,6 +208,9 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/approvals/"):
             aid=route.split("/")[3]; data=self.body(); status=data.get("status")
             if status not in {"approved","rejected"}: return self.json({"error":"status must be approved or rejected"},400)
+            approval=STORE.one("SELECT * FROM approvals WHERE id=?",(aid,))
+            if not approval: return self.json({"error":"approval not found"},404)
+            if approval["status"] != "pending": return self.json({"error":"approval has already been decided"},409)
             STORE.write("UPDATE approvals SET status=? WHERE id=?",(status,aid)); return self.json({"id":aid,"status":status})
         return self.json({"error":"not found"},404)
 
