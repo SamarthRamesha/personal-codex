@@ -27,9 +27,12 @@ async function renderSelected(){
  try{
   const [workspace,events,executions]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`)]);
   const ready=workspace.status==='ready'; $('#workspace-state').textContent=ready?workspace.branch:workspace.status;
+  const released=workspace.status==='released', merged=workspace.status==='merged';
   $('#create-workspace').disabled=ready; $('#request-workspace').disabled=ready;
   $('#run-command').disabled=!ready; $('#request-command').disabled=!ready;
   $('#request-release').disabled=!ready; $('#release-workspace').disabled=!ready;
+  $('#preview-merge').disabled=!released; $('#request-merge').disabled=!released; $('#merge-branch').disabled=!released;
+  $('#request-branch-delete').disabled=!merged; $('#delete-branch').disabled=!merged;
   const log=[...events.map(e=>`<div class=item><strong>${esc(e.agent)} · ${esc(e.level)}</strong><small>${esc(e.message)}</small></div>`),...executions.map(x=>`<div class=item><span class=tag>exit ${x.exit_code}</span><strong>${esc(x.argv)}</strong><div class=output>${esc(x.output)}</div></div>` )];
   $('#task-events').innerHTML=log.length?log.join(''):'<div class=empty>No activity yet.</div>';
  }catch(e){msg($('#action-result'),e.message,true)}
@@ -43,4 +46,9 @@ $('#request-command').onclick=()=>action(`/api/tasks/${selectedId}/execution-req
 $('#run-command').onclick=()=>action(`/api/tasks/${selectedId}/execute`,{command:$('#command').value},d=>`Command finished with exit code ${d.exit_code}.`);
 $('#request-release').onclick=()=>action(`/api/tasks/${selectedId}/workspace-release-request`,{},()=> 'Critical workspace-release request queued for approval.');
 $('#release-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace-release`,{},d=>`Workspace released; ${d.branch} remains for recovery.`);
+$('#preview-merge').onclick=async()=>{try{const d=await api(`/api/tasks/${selectedId}/merge-preview`);msg($('#action-result'),d.can_merge?`Conflict-free merge into ${d.target}.`:`Merge cannot proceed: ${d.detail}`,!d.can_merge)}catch(e){msg($('#action-result'),e.message,true)}};
+$('#request-merge').onclick=()=>action(`/api/tasks/${selectedId}/merge-request`,{},d=>`Critical merge request queued for ${d.target}.`);
+$('#merge-branch').onclick=()=>action(`/api/tasks/${selectedId}/merge`,{},d=>`Merged into ${d.target}; recovery branch retained.`);
+$('#request-branch-delete').onclick=()=>action(`/api/tasks/${selectedId}/branch-delete-request`,{},()=> 'Critical branch-deletion request queued.');
+$('#delete-branch').onclick=()=>action(`/api/tasks/${selectedId}/branch-delete`,{},()=> 'Merged recovery branch deleted.');
 $('#refresh').onclick=refresh;refresh();

@@ -118,6 +118,48 @@ def release_task_workspace(project_path: str, path: str) -> None:
     result = subprocess.run(["git", "-C", str(root), "worktree", "remove", str(target)], text=True, capture_output=True, timeout=45, check=False)
     if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "worktree release failed"))
 
+def git_output(root: str, args: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", root, *args], text=True, capture_output=True, timeout=45, check=False)
+
+def current_branch(root: str) -> str:
+    result=git_output(root,["symbolic-ref","--quiet","--short","HEAD"])
+    if result.returncode != 0: raise ValueError("Detached HEAD is not a merge target")
+    return result.stdout.strip()
+
+def ref_oid(root: str, ref: str) -> str:
+    result = git_output(root, ["rev-parse", "--verify", f"{ref}^{{commit}}"])
+    if result.returncode != 0: raise ValueError(f"Git reference is unavailable: {ref}")
+    return result.stdout.strip()
+
+def approval_detail(action: str, task_id: str, **refs: str) -> str:
+    """Canonical, immutable description of the exact Git state a user reviewed."""
+    return json.dumps({"action": action, "refs": refs, "task_id": task_id}, sort_keys=True, separators=(",", ":"))
+
+def merge_preview(root: str, branch: str) -> dict:
+    if not workspace_clean(root): raise ValueError("Project has uncommitted changes; merge is refused")
+    target = current_branch(root)
+    target_oid, branch_oid = ref_oid(root, target), ref_oid(root, branch)
+    result=git_output(root,["merge-tree","--write-tree",target,branch])
+    preview = {"target": target, "target_oid": target_oid, "branch": branch, "branch_oid": branch_oid}
+    if result.returncode == 0: return {**preview, "can_merge":True,"detail":"Merge tree is conflict-free."}
+    return {**preview, "can_merge":False,"detail":redacted(result.stdout or result.stderr or "Merge conflict detected.")}
+
+def merge_recovery_branch(root: str, branch: str, target: str, branch_oid: str, target_oid: str) -> None:
+    if current_branch(root) != target or ref_oid(root, target) != target_oid or ref_oid(root, branch) != branch_oid:
+        raise ValueError("Reviewed Git state changed after approval; request a new preview and approval")
+    preview = merge_preview(root, branch)
+    if not preview["can_merge"]: raise ValueError("Merge conflicts detected; resolve them manually in a dedicated workspace")
+    result=git_output(root,["merge","--no-ff","--no-edit",branch])
+    if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "Merge failed"))
+
+def delete_merged_branch(root: str, branch: str, branch_oid: str) -> None:
+    if ref_oid(root, branch) != branch_oid: raise ValueError("Recovery branch changed after approval; request a new deletion approval")
+    target=current_branch(root)
+    contained=git_output(root,["merge-base","--is-ancestor",branch,target])
+    if contained.returncode != 0: raise ValueError("Recovery branch is not merged into the current target")
+    result=git_output(root,["branch","-d",branch])
+    if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "Branch deletion failed"))
+
 def child_limits(timeout: int):
     """Apply limits that the host OS accepts; unsupported limits remain documented."""
     def cap(limit, wanted):
@@ -178,6 +220,10 @@ class App(SimpleHTTPRequestHandler):
             present=Path(workspace["path"]).is_dir()
             clean=workspace_clean(workspace["path"]) if present else None
             return self.json({**workspace,"present":present,"clean":clean,"branch_preserved":True})
+        if route.startswith("/api/tasks/") and route.endswith("/merge-preview"):
+            tid=route.split("/")[3]; workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='released'",(tid,))
+            if not workspace: return self.json({"error":"released workspace not found"},404)
+            project=STORE.one("SELECT * FROM projects WHERE id=?",(workspace["project_id"],)); return self.json(merge_preview(project["path"],workspace["branch"]))
         if route.startswith("/api/tasks/") and route.endswith("/executions"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM executions WHERE task_id=? ORDER BY created_at DESC",(tid,)))
         if route.startswith("/api/projects/") and route.endswith("/summary"):
@@ -247,6 +293,45 @@ class App(SimpleHTTPRequestHandler):
                 project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); release_task_workspace(project["path"],workspace["path"])
                 STORE.write("UPDATE workspaces SET status='released' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info",f"Clean workspace released; recovery branch {workspace['branch']} was retained.")
                 return self.json({"task_id":tid,"status":"released","branch":workspace["branch"],"branch_preserved":True})
+            if route.startswith("/api/tasks/") and route.endswith("/merge-request"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='released'",(tid,))
+                if not task or not workspace: return self.json({"error":"released workspace not found"},404)
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); preview=merge_preview(project["path"],workspace["branch"])
+                if not preview["can_merge"]:
+                    task_event(tid, "security", "warning", f"Merge preview reported a conflict for {workspace['branch']} into {preview['target']}: {preview['detail']}")
+                    return self.json(preview,409)
+                aid=uid(); detail=approval_detail("merge", tid, target=preview["target"], target_oid=preview["target_oid"], branch=workspace["branch"], branch_oid=preview["branch_oid"])
+                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
+                task_event(tid,"security","warning",f"Merge into {preview['target']} requires critical-operation approval.")
+                return self.json({"id":aid,"status":"pending",**preview},201)
+            if route.startswith("/api/tasks/") and route.endswith("/merge"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='released'",(tid,))
+                if not task or not workspace: return self.json({"error":"released workspace not found"},404)
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); preview=merge_preview(project["path"],workspace["branch"])
+                detail=approval_detail("merge", tid, target=preview["target"], target_oid=preview["target_oid"], branch=workspace["branch"], branch_oid=preview["branch_oid"])
+                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],detail))
+                if not permitted: return self.json({"error":"approved merge request for the current target required"},403)
+                merge_recovery_branch(project["path"],workspace["branch"],preview["target"],preview["branch_oid"],preview["target_oid"])
+                STORE.write("UPDATE workspaces SET status='merged' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info",f"Recovery branch {workspace['branch']} merged into {preview['target']}; branch retained.")
+                return self.json({"task_id":tid,"status":"merged","target":preview["target"],"branch":workspace["branch"],"branch_preserved":True})
+            if route.startswith("/api/tasks/") and route.endswith("/branch-delete-request"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='merged'",(tid,))
+                if not task or not workspace: return self.json({"error":"merged recovery branch not found"},404)
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); branch_oid=ref_oid(project["path"],workspace["branch"])
+                aid=uid(); detail=approval_detail("branch-delete", tid, branch=workspace["branch"], branch_oid=branch_oid)
+                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
+                task_event(tid,"security","warning",f"Deleting recovery branch {workspace['branch']} requires critical-operation approval.")
+                return self.json({"id":aid,"status":"pending","branch":workspace["branch"]},201)
+            if route.startswith("/api/tasks/") and route.endswith("/branch-delete"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='merged'",(tid,))
+                if not task or not workspace: return self.json({"error":"merged recovery branch not found"},404)
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); branch_oid=ref_oid(project["path"],workspace["branch"])
+                detail=approval_detail("branch-delete", tid, branch=workspace["branch"], branch_oid=branch_oid)
+                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],detail))
+                if not permitted: return self.json({"error":"approved recovery-branch deletion request required"},403)
+                delete_merged_branch(project["path"],workspace["branch"],branch_oid)
+                STORE.write("UPDATE workspaces SET status='complete' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info","Merged recovery branch deleted after critical approval.")
+                return self.json({"task_id":tid,"status":"complete","branch_deleted":True})
             if route.startswith("/api/tasks/") and route.endswith("/execution-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); command=str(data.get("command","")).strip()
                 if not task: return self.json({"error":"task not found"},404)

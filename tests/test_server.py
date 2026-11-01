@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import app.server as server
-from app.server import execute_in_workspace, parse_command, plan_for, redacted, repository_summary, safe_project_path, visible_files
+from app.server import execute_in_workspace, merge_preview, parse_command, plan_for, redacted, repository_summary, safe_project_path, visible_files
 
 class SecurityAndPlanningTests(unittest.TestCase):
   def test_secret_named_files_not_visible(self):
@@ -26,6 +26,18 @@ class SecurityAndPlanningTests(unittest.TestCase):
     self.assertIn('[REDACTED]', redacted('API_KEY=abc123 failure'))
   def test_timeout_range_is_enforced_before_execution(self):
     with self.assertRaises(ValueError): execute_in_workspace('/tmp', 'python3 -c "print(1)"', 301)
+  def test_merge_preview_reports_conflicts_without_modifying_repository(self):
+    with tempfile.TemporaryDirectory() as d:
+      repo=Path(d)
+      def git(*args): return subprocess.run(["git",*args],cwd=repo,check=True,capture_output=True,text=True)
+      git("init"); git("config","user.email","test@example.invalid"); git("config","user.name","Test")
+      (repo/'README.md').write_text('base\n'); git("add","README.md"); git("commit","-m","base")
+      target=git("symbolic-ref","--short","HEAD").stdout.strip()
+      git("checkout","-b","task-branch"); (repo/'README.md').write_text('task\n'); git("commit","-am","task change")
+      git("checkout",target); (repo/'README.md').write_text('target\n'); git("commit","-am","target change")
+      preview=merge_preview(str(repo),"task-branch")
+      self.assertFalse(preview['can_merge']); self.assertEqual(preview['target'],target)
+      self.assertIn('conflict',preview['detail'].lower()); self.assertEqual((repo/'README.md').read_text(),'target\n')
 
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
 class HttpLifecycleTests(unittest.TestCase):
@@ -60,10 +72,25 @@ class HttpLifecycleTests(unittest.TestCase):
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
     status,execution=self.request(f'/api/tasks/{task_id}/execute','POST',{'command':command}); self.assertEqual(status,200); self.assertEqual(execution['exit_code'],0); self.assertIn('42',execution['output'])
     status,events=self.request(f'/api/tasks/{task_id}/events'); self.assertEqual(status,200); self.assertGreaterEqual(len(events),4)
+    workspace_path=Path(workspace['path']); (workspace_path/'feature.txt').write_text('merged fixture\n')
+    subprocess.run(["git","add","feature.txt"],cwd=workspace_path,check=True,capture_output=True); subprocess.run(["git","commit","-m","feature fixture"],cwd=workspace_path,check=True,capture_output=True)
     status,recovery=self.request(f'/api/tasks/{task_id}/workspace-recovery'); self.assertEqual((status,recovery['clean']),(200,True))
     status,approval=self.request(f'/api/tasks/{task_id}/workspace-release-request','POST',{}); self.assertEqual(status,201)
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
     status,released=self.request(f'/api/tasks/{task_id}/workspace-release','POST',{}); self.assertEqual((status,released['branch_preserved']),(200,True))
     status,recovery=self.request(f'/api/tasks/{task_id}/workspace-recovery'); self.assertEqual((status,recovery['present'],recovery['clean']),(200,False,None))
+    status,preview=self.request(f'/api/tasks/{task_id}/merge-preview'); self.assertEqual((status,preview['can_merge']),(200,True))
+    status,denied=self.request(f'/api/tasks/{task_id}/merge','POST',{}); self.assertEqual(status,403)
+    status,approval=self.request(f'/api/tasks/{task_id}/merge-request','POST',{}); self.assertEqual(status,201)
+    self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
+    (self.repo/'target.txt').write_text('target advanced\n'); subprocess.run(["git","add","target.txt"],cwd=self.repo,check=True,capture_output=True); subprocess.run(["git","commit","-m","target advanced"],cwd=self.repo,check=True,capture_output=True)
+    status,stale=self.request(f'/api/tasks/{task_id}/merge','POST',{}); self.assertEqual(status,403); self.assertIn('current target',stale['error'])
+    status,approval=self.request(f'/api/tasks/{task_id}/merge-request','POST',{}); self.assertEqual(status,201)
+    self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
+    status,merged=self.request(f'/api/tasks/{task_id}/merge','POST',{}); self.assertEqual((status,merged['branch_preserved']),(200,True)); self.assertTrue((self.repo/'feature.txt').is_file())
+    status,denied=self.request(f'/api/tasks/{task_id}/branch-delete','POST',{}); self.assertEqual(status,403)
+    status,approval=self.request(f'/api/tasks/{task_id}/branch-delete-request','POST',{}); self.assertEqual(status,201)
+    self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
+    status,deleted=self.request(f'/api/tasks/{task_id}/branch-delete','POST',{}); self.assertEqual((status,deleted['branch_deleted']),(200,True))
 
 if __name__ == '__main__': unittest.main()
