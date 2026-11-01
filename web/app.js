@@ -51,7 +51,8 @@ async function renderSelected(){
   $('#task-invocations').innerHTML=responses.length?responses.join(''):'<div class=empty>No provider responses yet.</div>';
  }catch(e){msg($('#action-result'),e.message,true)}
 }
-async function action(path,body,success){try{const d=await api(path,{method:'POST',body:JSON.stringify(body||{})});msg($('#action-result'),success(d));await refresh()}catch(e){msg($('#action-result'),e.message,true)}}
+let busy=false;
+async function action(path,body,success){if(busy)return;busy=true;try{const d=await api(path,{method:'POST',body:JSON.stringify(body||{})});msg($('#action-result'),success(d));await refresh()}catch(e){msg($('#action-result'),e.message,true)}finally{busy=false}}
 $('#add-project').onclick=async()=>{try{let d=await api('/api/projects',{method:'POST',body:JSON.stringify({name:$('#project-name').value,path:$('#project-path').value})});msg($('#project-result'),`Added ${d.name}.`);await refresh()}catch(e){msg($('#project-result'),e.message,true)}};
 $('#create-task').onclick=async()=>{try{if(!$('#project').value)throw Error('Add a project first.');let d=await api('/api/tasks',{method:'POST',body:JSON.stringify({project_id:$('#project').value,prompt:$('#prompt').value})});selectedId=d.id;msg($('#task-result'),`Plan created with ${d.plan.length} coordinated stages.`);$('#prompt').value='';await refresh()}catch(e){msg($('#task-result'),e.message,true)}};
 $('#request-workspace').onclick=()=>action(`/api/tasks/${selectedId}/workspace-request`,{},()=> 'Workspace request queued for approval.');

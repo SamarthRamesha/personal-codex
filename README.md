@@ -106,7 +106,7 @@ Allowed tools: `list_files`, `read_file`, `apply_patch` (exact single-match text
 
 ### Round lifecycle
 
-`round/request` → approval → `round/plan` → proposal approval → `round/execute` → `passed` / `failed-checks` / `failed` → next `round/request`. Each round row persists its provider, model, prompt digest, proposal digest, approval, operations, results, test feedback, error, and timestamps, so a refreshed dashboard reconstructs the whole history. Duplicate provider responses and already-reviewed proposal digests are refused, and the run is limited by rounds, elapsed time, operations, and bounded feedback text.
+`round/request` → approval → `round/plan` → proposal approval → `round/execute` → `passed` / `failed-checks` / `failed` → next `round/request`. Each round row persists its provider, model, prompt digest, proposal digest, approval, operations, results, test feedback, error, and timestamps, so a refreshed dashboard reconstructs the whole history. Duplicate provider responses and already-reviewed proposal digests are refused, and the run is limited by rounds, elapsed time, operations, and bounded feedback text. If the service restarts mid-execution, the next start marks the abandoned round `interrupted` (never `passed`), releases the task to `needs-another-round`, and requires a fresh proposal, so a crash can neither fake success nor wedge the loop.
 
 ## Security model
 
@@ -128,8 +128,8 @@ Known limitations: no OS sandboxing, no guaranteed address-space enforcement on 
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -v                              # 65 tests; listener-gated ones skipped
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 65 tests, disposable fixtures
+python3 -m unittest discover -s tests -v                              # 66 tests; listener-gated ones skipped
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 66 tests, disposable fixtures
 python3 -m py_compile app/server.py app/providers.py app/tools.py
 node --check web/app.js
 ```

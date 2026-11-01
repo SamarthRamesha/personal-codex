@@ -31,7 +31,8 @@ Implemented and verified:
 - Multi-round engine: `rounds` table plus `/api/tasks/{id}/agent/round/{request,plan,execute,cancel}`, `GET /agent/rounds`, and `GET /agent/report`. Each round binds a fresh provider and proposal approval to its round number; the next prompt embeds bounded, redacted evidence from previous rounds (test command, exit code, output tail, failed test names, changed files, errors). Default limits are 3 rounds (`PERSONAL_CODEX_MAX_ROUNDS`), 30 minutes per task, and 8 operations per round.
 - Objective completion: a `complete` status is rejected unless a passing executed round recorded both a zero-exit test command and an approved file change, and the latest executed round passed. False claims are stored as `rejected-completion` without changing the workspace.
 - Loop safety: duplicate provider responses and already-reviewed proposal digests are refused, a round can execute at most once, cancellation invalidates its pending proposal, and a failing test run is distinguished from a failed tool operation.
-- Dashboard rounds panel: round count/limits/elapsed, per-round status with test exit codes and failed test names, errors, and a final report with changed files and bounded diff stat.
+- Crash recovery: on start, any round still marked `executing` becomes `interrupted` with an event and its proposal is closed, so a restart cannot leave a task stuck or a half-applied round looking passed.
+- Dashboard rounds panel: round count/limits/elapsed, per-round status with test exit codes and failed test names, errors, and a final report with changed files and bounded diff stat. Action buttons ignore repeated clicks while a request is in flight.
 - Browser-free dashboard contract tests (`tests/test_ui.py`) assert that scripted element IDs exist, every button is wired, every `/api/...` path used by the script is routed, gated actions are all present, and only local assets are loaded without browser-stored secrets.
 - Provider adapter tests (`tests/test_providers.py`) run against an ephemeral loopback stub server: request shape and path, response extraction, malformed JSON, HTTP errors, redirect refusal, connection refusal, timeout, oversized response, unexpected structure, invalid endpoints, non-loopback refusal, credential handling, and transport selection. No external network or real model is used.
 - Agent tests (`tests/test_tools.py`): schema and argument validation, path/symlink/secret containment, patch hash binding, duplicate-match refusal, stop-on-failure execution, runner failure handling, digest binding, and an opt-in HTTP lifecycle where an approved proposal edits the worktree, runs a test command, refuses a second execution, and rejects a stale file with the file preserved.
@@ -39,8 +40,8 @@ Implemented and verified:
 
 Verification completed (2026-11-01, this session):
 
-- `python3 -m unittest discover -s tests -v` — 65 tests, `OK (skipped=9)`: the listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 65 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation.
+- `python3 -m unittest discover -s tests -v` — 66 tests, `OK (skipped=9)`: the listener-gated tests are correctly skipped unless explicitly enabled.
+- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 66 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation.
 - `python3 -m py_compile app/server.py app/providers.py app/tools.py` — passed.
 - `node --check web/app.js` — passed.
 - `node --check web/app.js` — passed.

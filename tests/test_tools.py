@@ -441,5 +441,31 @@ class MultiRoundApiTests(unittest.TestCase):
         self.assertEqual(rounds["rounds"][0]["status"], "cancelled")
 
 
+class RoundRecoveryTests(unittest.TestCase):
+    """A restart mid-execution must leave the loop recoverable, not stuck."""
+
+    def test_interrupted_round_is_released_for_a_new_proposal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db, data = Path(tmp) / "test.db", Path(tmp)
+            original = (server.DB_PATH, server.DATA)
+            server.DB_PATH, server.DATA = db, data
+            try:
+                store = server.Store()
+                store.write("INSERT INTO projects VALUES (?,?,?,?)", ("p1", "demo", tmp, 1))
+                store.write("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)", ("t1", "p1", "fix it", "iterating", "[]", 1, 1))
+                store.write("INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?,?,?)",
+                            ("pr1", "t1", "codex/t1", "/tmp/t1", "fix", "[]", "d1", "executing", None, 1))
+                store.write("INSERT INTO rounds VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            ("r1", "t1", 1, "pv1", "m", "sha", "pr1", "d1", None, "executing",
+                             "start", None, None, None, None, 1, 1))
+                restarted = server.Store()
+                self.assertEqual(restarted.one("SELECT status FROM rounds WHERE id='r1'")["status"], "interrupted")
+                self.assertEqual(restarted.one("SELECT status FROM proposals WHERE id='pr1'")["status"], "interrupted")
+                self.assertEqual(restarted.one("SELECT status FROM tasks WHERE id='t1'")["status"], "needs-another-round")
+                self.assertIn("interrupted", restarted.one("SELECT message FROM events WHERE task_id='t1'")["message"])
+            finally:
+                server.DB_PATH, server.DATA = original
+
+
 if __name__ == "__main__":
     unittest.main()

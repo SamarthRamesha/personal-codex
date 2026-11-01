@@ -22,7 +22,8 @@
 - [x] Implement the bounded multi-round loop: send redacted test output back to the provider, cap rounds/time/operations, and require a fresh approval per proposal.
 - [ ] Add streaming response support and audited provider-native tool-call handling.
 - [ ] Add project memory (manifest, docs, symbol index) to improve round context without exceeding the prompt budget.
-- [ ] Add a task-level cancellation check inside long round execution and a resume path for interrupted rounds.
+- [x] Add restart recovery for interrupted rounds: they are marked `interrupted`, their proposals are closed, and the task returns to `needs-another-round`.
+- [ ] Add a cancellation check between tool operations inside a long round, and checkpoint partial results so an interrupted round can be inspected in detail.
 - [ ] Run one live Ollama agent cycle on the owner's Mac with a locally pulled model (requires the owner's machine and an installed Ollama).
 - [ ] Implement project memory rebuild from manifests, docs, and parsed symbols.
 - [ ] Design and implement mutually authenticated ZimaOS worker registration after actual server discovery credentials are supplied.

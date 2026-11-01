@@ -44,7 +44,7 @@ adapter once, refuses a byte-identical response already seen for the task, parse
 `{"summary","status","operations"}` JSON, and queues a second approval for `agent-round-proposal` bound
 to round number, workspace branch/path, proposal digest, and prompt digest. `round/execute` recomputes
 the digest, verifies file hashes, runs the tools through the existing dispatcher, and writes the round
-status. A round executes at most once; a cancelled or superseded round keeps its row for audit.
+status. A round executes at most once; a cancelled or superseded round keeps its row for audit. At startup the store sweeps rounds still marked `executing` into `interrupted`, closes their proposals, writes an event, and moves an `iterating` task to `needs-another-round`, so a crash between tool calls can neither fake a pass nor block future rounds.
 
 Round status is derived from recorded evidence, not from the model: a non-`run_tests` tool error is
 `failed`; otherwise a zero-exit test command is `passed`; anything else is `failed-checks`. A failing

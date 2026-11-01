@@ -57,6 +57,23 @@ class Store:
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA); self.conn.commit()
+        self.recover_interrupted()
+    def recover_interrupted(self):
+        """A restart during execution must not leave a round stuck in 'executing' forever."""
+        stamp = now()
+        stuck = [dict(x) for x in self.conn.execute("SELECT * FROM rounds WHERE status='executing'").fetchall()]
+        for row in stuck:
+            self.conn.execute("UPDATE rounds SET status='interrupted', error=?, updated_at=? WHERE id=?",
+                              ("service restarted before this round finished; request a new round", stamp, row["id"]))
+            if row["proposal_id"]:
+                self.conn.execute("UPDATE proposals SET status='interrupted' WHERE id=? AND status='executing'", (row["proposal_id"],))
+            self.conn.execute("INSERT INTO events VALUES (?,?,?,?,?,?)",
+                              (uid(), row["task_id"], "orchestrator", "warning",
+                               f"Round {row['round_number']} was interrupted by a restart; it cannot be resumed and needs a new proposal.", stamp))
+            task = self.conn.execute("SELECT status FROM tasks WHERE id=?", (row["task_id"],)).fetchone()
+            if task and task["status"] == "iterating":
+                self.conn.execute("UPDATE tasks SET status='needs-another-round', updated_at=? WHERE id=?", (stamp, row["task_id"]))
+        self.conn.commit()
     def rows(self, sql, args=()): return [dict(x) for x in self.conn.execute(sql, args).fetchall()]
     def one(self, sql, args=()):
         row = self.conn.execute(sql, args).fetchone(); return dict(row) if row else None
