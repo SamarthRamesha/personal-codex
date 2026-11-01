@@ -10,3 +10,4 @@
 - Added disposable, opt-in HTTP integration coverage for the approval-gated workspace and command lifecycle.
 - Added resource-limited execution and critical-approval clean-workspace release with retained recovery branches.
 - Added read-only merge previews, conflict reporting, critical-approved merges, and separately approved recovery-branch deletion. Approval records bind the reviewed Git commit IDs.
+- Added strict provider metadata validation and capability discovery for future Ollama/OpenAI-compatible adapters, without secret access or provider network I/O.

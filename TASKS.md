@@ -7,13 +7,14 @@
 - [x] Add clean workspace release/recovery controls and resource limits beyond timeout.
 - [x] Add explicit user-approved branch merge, conflict reporting, and recovery-branch deletion controls.
 - [ ] Replace placeholder plan-only workflow with an agent-engine adapter that supports streaming and tool calls.
+- [x] Add provider metadata validation and capability discovery without secret access or network I/O.
 - [x] Add integration tests using an in-process HTTP server or locally permitted listener.
 - [ ] Add UI tests for the approval/workspace/command workflow.
 
 ## Next
 
 - [ ] Implement project memory rebuild from manifests, docs, and parsed symbols.
-- [ ] Add provider adapters (Ollama plus OpenAI-compatible first) with local/cloud consent.
+- [ ] Implement approval-gated provider invocation adapters (Ollama plus OpenAI-compatible first) with streaming, tool calls, and local/cloud consent. Metadata validation is complete.
 - [ ] Design and implement mutually authenticated ZimaOS worker registration after actual server discovery credentials are supplied.
 - [ ] Package a Tauri desktop shell only after the local API is covered by integration tests.
 

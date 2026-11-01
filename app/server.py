@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -19,6 +19,9 @@ MAX_TIMEOUT_SECONDS = 300
 MAX_OUTPUT_BYTES = 200_000
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_MEMORY_BYTES = 768 * 1024 * 1024
+PROVIDER_KINDS = {"ollama", "openai-compatible"}
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+ENV_REF_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
@@ -50,6 +53,23 @@ def safe_project_path(value: str) -> Path:
     p = Path(value).expanduser().resolve()
     if not p.exists() or not p.is_dir(): raise ValueError("Project path must be an existing directory")
     return p
+
+def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: str, cloud_allowed: bool) -> dict:
+    """Validate metadata only; this function never reads an environment secret or contacts a provider."""
+    if kind not in PROVIDER_KINDS: raise ValueError("Unsupported provider kind")
+    if not model: raise ValueError("model is required")
+    parsed = urlparse(endpoint)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("Provider endpoint must be an absolute http(s) URL without embedded credentials")
+    if not cloud_allowed and parsed.hostname.lower() not in LOOPBACK_HOSTS:
+        raise ValueError("Non-cloud providers must use a loopback endpoint; cloud use requires explicit consent")
+    if secret_ref and not ENV_REF_RE.fullmatch(secret_ref):
+        raise ValueError("secret_ref must be an environment-variable name, never a secret value")
+    return {"kind": kind, "endpoint": endpoint, "model": model, "secret_ref": secret_ref, "cloud_allowed": int(cloud_allowed)}
+
+def provider_capabilities(provider: dict) -> dict:
+    """Describe the adapter boundary without invoking a provider or reading a secret."""
+    return {"id": provider["id"], "kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "cloud_allowed": bool(provider["cloud_allowed"]), "supports_streaming": True, "supports_tool_calls": provider["kind"] == "openai-compatible", "invocation_requires_approval": True}
 
 def visible_files(root: Path, cap=160):
     result=[]
@@ -212,6 +232,9 @@ class App(SimpleHTTPRequestHandler):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
         if route == "/api/approvals": return self.json(STORE.rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at DESC"))
         if route == "/api/providers": return self.json(STORE.rows("SELECT id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at FROM providers ORDER BY created_at DESC"))
+        if route.startswith("/api/providers/") and route.endswith("/capabilities"):
+            pid=route.split("/")[3]; provider=STORE.one("SELECT id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at FROM providers WHERE id=?",(pid,))
+            return self.json(provider_capabilities(provider)) if provider else self.json({"error":"provider not found"},404)
         if route.startswith("/api/tasks/") and route.endswith("/workspace"):
             tid=route.split("/")[3]; return self.json(STORE.one("SELECT * FROM workspaces WHERE task_id=?",(tid,)) or {"task_id":tid,"status":"absent"})
         if route.startswith("/api/tasks/") and route.endswith("/workspace-recovery"):
@@ -258,9 +281,9 @@ class App(SimpleHTTPRequestHandler):
                 aid=uid(); STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,project["id"],kind,detail,"pending",now())); return self.json({"id":aid,"status":"pending"},201)
             if route == "/api/providers":
                 kind=str(data.get("kind","openai-compatible")); endpoint=str(data.get("endpoint","")).strip(); model=str(data.get("model","")).strip(); ref=str(data.get("secret_ref","")).strip()
-                if not model: return self.json({"error":"model is required"},400)
-                pid=uid(); STORE.write("INSERT INTO providers VALUES (?,?,?,?,?,?,?,?)",(pid,kind,endpoint,model,ref,int(bool(data.get("cloud_allowed"))),1,now()))
-                return self.json({"id":pid,"note":"Only an environment-variable reference is stored; no secret value was accepted."},201)
+                config=validate_provider_config(kind,endpoint,model,ref,data.get("cloud_allowed") is True)
+                pid=uid(); STORE.write("INSERT INTO providers VALUES (?,?,?,?,?,?,?,?)",(pid,kind,endpoint,model,ref,config["cloud_allowed"],1,now()))
+                return self.json({"id":pid,"capabilities":provider_capabilities({"id":pid,**config}),"note":"Only an environment-variable reference is stored; no secret value was accepted and no provider was contacted."},201)
             if route.startswith("/api/tasks/") and route.endswith("/workspace-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)

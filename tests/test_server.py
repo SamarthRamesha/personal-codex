@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import app.server as server
-from app.server import execute_in_workspace, merge_preview, parse_command, plan_for, redacted, repository_summary, safe_project_path, visible_files
+from app.server import execute_in_workspace, merge_preview, parse_command, plan_for, redacted, repository_summary, safe_project_path, validate_provider_config, visible_files
 
 class SecurityAndPlanningTests(unittest.TestCase):
   def test_secret_named_files_not_visible(self):
@@ -38,6 +38,12 @@ class SecurityAndPlanningTests(unittest.TestCase):
       preview=merge_preview(str(repo),"task-branch")
       self.assertFalse(preview['can_merge']); self.assertEqual(preview['target'],target)
       self.assertIn('conflict',preview['detail'].lower()); self.assertEqual((repo/'README.md').read_text(),'target\n')
+  def test_provider_metadata_requires_explicit_cloud_consent(self):
+    local=validate_provider_config('ollama','http://127.0.0.1:11434','qwen','',False)
+    self.assertEqual(local['cloud_allowed'],0)
+    with self.assertRaises(ValueError): validate_provider_config('openai-compatible','https://provider.example/v1','model','API_KEY',False)
+  def test_provider_secret_reference_is_only_an_environment_variable_name(self):
+    with self.assertRaises(ValueError): validate_provider_config('openai-compatible','https://provider.example/v1','model','sk-secret-value',True)
 
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
 class HttpLifecycleTests(unittest.TestCase):
@@ -60,6 +66,9 @@ class HttpLifecycleTests(unittest.TestCase):
   def test_approval_workspace_execution_lifecycle(self):
     status,health=self.request('/api/health'); self.assertEqual((status,health['ok']),(200,True))
     status,project=self.request('/api/projects','POST',{'name':'fixture','path':str(self.repo)}); self.assertEqual(status,201)
+    status,provider=self.request('/api/providers','POST',{'kind':'ollama','endpoint':'http://127.0.0.1:11434','model':'fixture','secret_ref':''}); self.assertEqual(status,201)
+    status,capabilities=self.request(f"/api/providers/{provider['id']}/capabilities"); self.assertEqual((status,capabilities['invocation_requires_approval']),(200,True))
+    status,cloud_denied=self.request('/api/providers','POST',{'kind':'openai-compatible','endpoint':'https://provider.example/v1','model':'fixture','secret_ref':'API_KEY'}); self.assertEqual(status,400)
     status,task=self.request('/api/tasks','POST',{'project_id':project['id'],'prompt':'run a safe check'}); self.assertEqual(status,201); task_id=task['id']
     status,denied=self.request(f'/api/tasks/{task_id}/workspace','POST',{}); self.assertEqual(status,403); self.assertIn('approved',denied['error'])
     status,approval=self.request(f'/api/tasks/{task_id}/workspace-request','POST',{}); self.assertEqual(status,201)

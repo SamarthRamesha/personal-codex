@@ -38,3 +38,5 @@ This is a working foundation, not yet the complete desktop/distributed product. 
 Approved commands run in task-owned worktrees only. They are constrained to 1–300 seconds, with child CPU, file-size, descriptor, and supported address-space limits. A clean worktree can be released only through a separate critical approval; its branch is retained for recovery.
 
 For a released task branch, the dashboard offers a read-only merge preview. A conflict-free merge needs a critical approval tied to the exact reviewed source and target commits. The retained recovery branch can be deleted only by a separate critical approval after it is merged.
+
+Provider records support `ollama` and `openai-compatible` metadata. Local providers must use loopback endpoints; a cloud endpoint needs explicit `cloud_allowed: true`. Registration stores only a validated environment-variable reference and never contacts the provider.
