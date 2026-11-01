@@ -1,7 +1,7 @@
 import os, sys, tempfile, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
-from app.server import plan_for, repository_summary, safe_project_path, visible_files
+from app.server import parse_command, plan_for, redacted, repository_summary, safe_project_path, visible_files
 
 class SecurityAndPlanningTests(unittest.TestCase):
   def test_secret_named_files_not_visible(self):
@@ -16,5 +16,9 @@ class SecurityAndPlanningTests(unittest.TestCase):
   def test_summary_detects_git(self):
     with tempfile.TemporaryDirectory() as d:
       Path(d,'.git').mkdir(); self.assertTrue(repository_summary(Path(d))['git'])
+  def test_shell_syntax_is_refused(self):
+    with self.assertRaises(ValueError): parse_command('pytest && curl example.com')
+  def test_output_secrets_are_redacted(self):
+    self.assertIn('[REDACTED]', redacted('API_KEY=abc123 failure'))
 
 if __name__ == '__main__': unittest.main()

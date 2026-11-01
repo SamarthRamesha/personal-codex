@@ -2,8 +2,9 @@
 
 ## Highest priority
 
-- [ ] Build capability-gated command executor: worktree-only CWD, allowlisted commands, output redaction, resource/time limits, approval lookup, and audit event.
-- [ ] Add Git worktree lifecycle with per-task ownership and conflict prevention.
+- [x] Build capability-gated command executor: worktree-only CWD, allowlisted commands, output redaction, timeout, approval lookup, and audit event.
+- [x] Add basic Git worktree lifecycle with per-task ownership.
+- [ ] Add workspace cleanup/merge/recovery controls and resource limits beyond timeout.
 - [ ] Replace placeholder plan-only workflow with an agent-engine adapter that supports streaming and tool calls.
 - [ ] Add integration tests using an in-process HTTP server or locally permitted listener.
 

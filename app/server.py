@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, agent TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS providers (id TEXT PRIMARY KEY, kind TEXT NOT NULL, endpoint TEXT, model TEXT, secret_ref TEXT, cloud_allowed INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS workspaces (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, path TEXT NOT NULL UNIQUE, branch TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, argv TEXT NOT NULL, exit_code INTEGER, output TEXT NOT NULL, created_at INTEGER NOT NULL);
 """
 
 def now() -> int: return int(time.time())
@@ -73,6 +75,42 @@ def plan_for(prompt: str, summary: dict) -> list[dict]:
 def task_event(task_id, agent, level, message):
     STORE.write("INSERT INTO events VALUES (?,?,?,?,?,?)", (uid(), task_id, agent, level, message, now()))
 
+def parse_command(command: str) -> list[str]:
+    """Parse an approved development command; shell syntax is deliberately forbidden."""
+    argv = shlex.split(command)
+    if not argv or argv[0] not in ALLOWED_COMMANDS: raise ValueError("Command is not in the controlled development allowlist")
+    if any(x in {"|", ";", "&&", "||", ">", ">>"} or x.startswith("$") for x in argv):
+        raise ValueError("Shell operators and substitutions are not permitted")
+    return argv
+
+def redacted(text: str) -> str:
+    text = re.sub(r'(?i)(api[_-]?key|token|password|secret)\s*[=:]\s*[^\s]+', r'\1=[REDACTED]', text)
+    return text[:200_000]
+
+def workspace_path(task_id: str) -> Path:
+    return (DATA / "workspaces" / task_id).resolve()
+
+def create_task_workspace(task_id: str, project_path: str) -> dict:
+    """Create an isolated branch. Caller must first satisfy a matching approval."""
+    root = Path(project_path).resolve(); target = workspace_path(task_id)
+    if not (root / ".git").exists(): raise ValueError("A Git repository is required for isolated execution")
+    if target.exists(): raise ValueError("Task workspace already exists")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    branch = f"personal-codex/task-{task_id[:8]}"
+    result = subprocess.run(["git", "-C", str(root), "worktree", "add", "-b", branch, str(target)], text=True, capture_output=True, timeout=45, check=False)
+    if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "worktree creation failed"))
+    return {"path":str(target), "branch":branch}
+
+def execute_in_workspace(path: str, command: str, timeout=120) -> dict:
+    argv=parse_command(command); root=Path(path).resolve()
+    if not root.is_dir() or DATA.resolve() not in root.parents: raise ValueError("Execution must use a Personal Codex task workspace")
+    env={"PATH":os.environ.get("PATH", ""), "HOME":str(root), "LANG":"C", "LC_ALL":"C"}
+    try:
+        result=subprocess.run(argv, cwd=root, env=env, text=True, capture_output=True, timeout=min(max(int(timeout),1),300), check=False)
+        return {"argv":argv,"exit_code":result.returncode,"output":redacted((result.stdout or "")+(result.stderr or ""))}
+    except subprocess.TimeoutExpired as e:
+        return {"argv":argv,"exit_code":124,"output":redacted((e.stdout or "")+(e.stderr or "")+"\nTimed out.")}
+
 class App(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args): print("[personal-codex] " + fmt % args)
     def json(self, payload, status=200):
@@ -89,6 +127,10 @@ class App(SimpleHTTPRequestHandler):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
         if route == "/api/approvals": return self.json(STORE.rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at DESC"))
         if route == "/api/providers": return self.json(STORE.rows("SELECT id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at FROM providers ORDER BY created_at DESC"))
+        if route.startswith("/api/tasks/") and route.endswith("/workspace"):
+            tid=route.split("/")[3]; return self.json(STORE.one("SELECT * FROM workspaces WHERE task_id=?",(tid,)) or {"task_id":tid,"status":"absent"})
+        if route.startswith("/api/tasks/") and route.endswith("/executions"):
+            tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM executions WHERE task_id=? ORDER BY created_at DESC",(tid,)))
         if route.startswith("/api/projects/") and route.endswith("/summary"):
             pid=route.split("/")[3]; p=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             return self.json(repository_summary(Path(p["path"]))) if p else self.json({"error":"not found"},404)
@@ -124,6 +166,40 @@ class App(SimpleHTTPRequestHandler):
                 if not model: return self.json({"error":"model is required"},400)
                 pid=uid(); STORE.write("INSERT INTO providers VALUES (?,?,?,?,?,?,?,?)",(pid,kind,endpoint,model,ref,int(bool(data.get("cloud_allowed"))),1,now()))
                 return self.json({"id":pid,"note":"Only an environment-variable reference is stored; no secret value was accepted."},201)
+            if route.startswith("/api/tasks/") and route.endswith("/workspace-request"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+                if not task: return self.json({"error":"task not found"},404)
+                aid=uid(); detail=f"workspace:{tid}"
+                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"modify",detail,"pending",now()))
+                task_event(tid,"security","info","Workspace creation requires approval.")
+                return self.json({"id":aid,"status":"pending","detail":detail},201)
+            if route.startswith("/api/tasks/") and route.endswith("/workspace"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,));
+                if not task: return self.json({"error":"task not found"},404)
+                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],f"workspace:{tid}"))
+                if not permitted: return self.json({"error":"approved workspace request required"},403)
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],))
+                workspace=create_task_workspace(tid,project["path"])
+                STORE.write("INSERT INTO workspaces VALUES (?,?,?,?,?,?)",(tid,task["project_id"],workspace["path"],workspace["branch"],"ready",now()))
+                task_event(tid,"orchestrator","info",f"Isolated workspace created on branch {workspace['branch']}.")
+                return self.json(workspace,201)
+            if route.startswith("/api/tasks/") and route.endswith("/execution-request"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); command=str(data.get("command","")).strip()
+                if not task: return self.json({"error":"task not found"},404)
+                parse_command(command); aid=uid(); detail=f"execute:{tid}:{command}"
+                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"execute",detail,"pending",now()))
+                return self.json({"id":aid,"status":"pending","detail":detail},201)
+            if route.startswith("/api/tasks/") and route.endswith("/execute"):
+                tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); command=str(data.get("command","")).strip()
+                if not task: return self.json({"error":"task not found"},404)
+                workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
+                if not workspace: return self.json({"error":"ready task workspace required"},403)
+                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='execute' AND detail=? AND status='approved'",(task["project_id"],f"execute:{tid}:{command}"))
+                if not permitted: return self.json({"error":"approved exact command request required"},403)
+                result=execute_in_workspace(workspace["path"],command,data.get("timeout",120)); eid=uid()
+                STORE.write("INSERT INTO executions VALUES (?,?,?,?,?,?)",(eid,tid,json.dumps(result["argv"]),result["exit_code"],result["output"],now()))
+                task_event(tid,"executor","info",f"Approved command completed with exit code {result['exit_code']}.")
+                return self.json({"id":eid,**result})
             return self.json({"error":"not found"},404)
         except (ValueError, sqlite3.IntegrityError) as e: return self.json({"error":str(e)},400)
         except json.JSONDecodeError: return self.json({"error":"invalid JSON"},400)
