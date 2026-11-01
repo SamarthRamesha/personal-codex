@@ -25,3 +25,5 @@ Added provider-adapter metadata validation. The control plane now accepts only O
 Applied the permanent cross-account continuation protocol. The stored next-session prompt is now regenerated at meaningful verified milestones, user-requested handoffs, and before usage exhaustion, and embeds the dedicated recursive protocol that every future account must preserve.
 
 Configured the official GitHub `origin` and verified with `git ls-remote --heads` that it had no branch heads before first publication. Added permanent GitHub continuity, safe-push, and remote-verification requirements to the handoff checkpoints.
+
+Published the complete verified local history to the empty GitHub `origin/main` without force-pushing, then verified the remote head at `2526fb4`.

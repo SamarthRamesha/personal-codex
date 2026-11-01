@@ -8,6 +8,8 @@ Continuity protocol: `NEXT_SESSION_PROMPT.md` is a permanent, ready-to-use cross
 
 GitHub protocol: `origin` is the official `https://github.com/SamarthRamesha/personal-codex.git` remote. Meaningful verified milestones are committed and pushed to `main` when available, without force-pushing or overwriting unexpected history.
 
+GitHub status: the previously empty remote was verified and initial local history was published on 2026-11-01; `origin/main` was confirmed at `2526fb4` after the push.
+
 Implemented and verified:
 
 - Python local service with SQLite persistence (`app/server.py`).

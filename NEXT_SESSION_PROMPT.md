@@ -25,3 +25,5 @@ Every new prompt must carry this protocol forward and tell the next account to g
 ## GitHub continuity and publishing
 
 The official repository is `https://github.com/SamarthRamesha/personal-codex` (`origin`: `https://github.com/SamarthRamesha/personal-codex.git`), on `main`. Commit meaningful verified milestones and push to `origin/main` whenever remote access is available. Before publishing, verify remote state, run relevant tests/checks, inspect Git status/diff, check that secrets, runtime databases, and temporary files are excluded, update checkpoints, and verify the resulting remote commit. Never force-push, erase unexpected remote history, publish secrets, or claim a push succeeded without verification. If unavailable, retain verified local commits and record them as unpushed. Every future prompt must carry these GitHub rules along with the permanent continuation protocol.
+
+Initial publication was verified on 2026-11-01: `origin/main` pointed at `2526fb4` immediately after the first push. Always inspect its current state before assuming it remains synchronized.
