@@ -18,6 +18,6 @@ Verification completed:
 
 - `python3 -m unittest discover -s tests -v` — 6 tests passed after the execution-boundary milestone.
 - `python3 -m py_compile app/server.py` — passed.
-- HTTP smoke test could not run in this Codex filesystem sandbox because opening a loopback listener returned `PermissionError: [Errno 1] Operation not permitted`. This is an environment restriction, not an application assertion failure; run locally to verify the UI.
+- HTTP smoke test completed after using an approved unsandboxed loopback test: `/api/health` returned `{"ok": true, "version": "0.1.0", "mode": "local-control-plane"}` and the dashboard served successfully. The process was stopped after the check.
 
 Not implemented: native desktop shell, actual provider streaming/tool calls, UI for approvals/workspaces/execution, real multi-agent executor, server connector, indexer/LSP, encrypted secrets, TLS/authenticated remote protocol, end-to-end tests.

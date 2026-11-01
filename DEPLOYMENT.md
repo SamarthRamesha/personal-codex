@@ -4,7 +4,7 @@
 
 Run `python3 app/server.py` from the repository root. The database will be created at `data/personal_codex.db`, which is ignored by Git.
 
-The current execution environment disallows listener binding, so deployment was not launched here. On the owner's Mac, verify with `curl http://127.0.0.1:8787/api/health` and open the URL in a browser.
+The service passed an approved loopback smoke test: `/api/health` returned its expected JSON response and the dashboard was served. On the owner's Mac, run `curl http://127.0.0.1:8787/api/health` and open the URL in a browser.
 
 ## ZimaOS
 
