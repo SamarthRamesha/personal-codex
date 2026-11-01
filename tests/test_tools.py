@@ -592,3 +592,34 @@ class ReliabilityApiTests(RoundApiFixture):
         status, contexts = self.call(f"/api/tasks/{self.task_id}/agent/context")
         self.assertEqual((status, len(contexts["contexts"])), (200, 1))
         self.assertNotIn("prompt", contexts["contexts"][0])
+
+
+class BudgetAndMemoryIntegrationTests(RoundApiFixture):
+    """Exhaustion of the remaining counters and memory injection into an approved prompt."""
+
+    def test_test_output_budget_stops_further_rounds(self):
+        self.responses = [json.dumps({"summary": "noisy", "status": "continue", "operations": [
+            {"tool": "run_tests", "command": 'python3 -c "print(\'x\' * 200)"'}]})]
+        planned = self.plan_round()
+        self.approve(planned["approval_id"])
+        original = server.MAX_TEST_OUTPUT_BYTES
+        server.MAX_TEST_OUTPUT_BYTES = 10
+        try:
+            status, executed = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
+            self.assertEqual(status, 200, executed)
+            self.assertGreater(executed["budget"]["used"]["test_output_bytes"], 10)
+            status, refused = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})
+            self.assertEqual((status, "test output budget" in refused["error"]), (409, True), refused)
+        finally:
+            server.MAX_TEST_OUTPUT_BYTES = original
+
+    def test_project_memory_is_included_in_the_approved_round_prompt(self):
+        project_row = server.STORE.one("SELECT project_id FROM tasks WHERE id=?", (self.task_id,))
+        status, _ = self.call(f"/api/projects/{project_row['project_id']}/memory", "POST",
+                              {"kind": "test-command", "content": "always run python3 -m unittest discover -s tests"})
+        self.assertEqual(status, 201)
+        payload = self.request_round()
+        stored = server.STORE.one("SELECT prompt FROM contexts WHERE task_id=? ORDER BY created_at DESC LIMIT 1", (self.task_id,))
+        self.assertIn("always run python3 -m unittest discover", stored["prompt"])
+        self.assertIn("possibly stale", stored["prompt"])
+        self.assertEqual(payload["budget"]["used"]["context_bytes"] > 0, True)

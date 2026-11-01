@@ -260,6 +260,8 @@ def budget_error(task_id: str, prompt_bytes: int = 0) -> str | None:
     if used["prompt_bytes"] + max(0, prompt_bytes) > limits["prompt_bytes"]: return f"prompt budget exhausted ({limits['prompt_bytes']} bytes)"
     if used["invocations"] >= limits["invocations"]: return f"provider invocation budget exhausted ({limits['invocations']})"
     if used["response_bytes"] >= limits["response_bytes"]: return f"provider response budget exhausted ({limits['response_bytes']} bytes)"
+    if used["test_output_bytes"] >= limits["test_output_bytes"]: return f"test output budget exhausted ({limits['test_output_bytes']} bytes)"
+    if used["context_bytes"] >= limits["context_bytes"]: return f"context budget exhausted ({limits['context_bytes']} bytes)"
     return None
 
 def reset_budget(task_id: str) -> dict:
@@ -890,6 +892,7 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/tasks/") and route.endswith("/cancel"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
+                if task["status"]=="completed": return self.json({"error":"completed task cannot be cancelled"},409)
                 return self.json(cancel_task(tid, str(data.get("reason") or "task cancelled by user")),202)
             if route.startswith("/api/tasks/") and route.endswith("/agent/budget/reset"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))

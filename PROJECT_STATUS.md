@@ -46,8 +46,8 @@ Implemented and verified:
 
 Verification completed (2026-11-01, this session):
 
-- `python3 -m unittest discover -s tests -v` — 82 tests, `OK (skipped=14)`: the listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 82 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
+- `python3 -m unittest discover -s tests -v` — 84 tests, `OK (skipped=14)`: the listener-gated tests are correctly skipped unless explicitly enabled.
+- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 84 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
 - `python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py` — passed.
 - `node --check web/app.js` — passed.
 - `node --check web/app.js` — passed.

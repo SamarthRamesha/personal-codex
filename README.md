@@ -175,8 +175,8 @@ Known limitations: no OS sandboxing, no guaranteed address-space enforcement on 
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -v                              # 82 tests; listener-gated ones skipped
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 82 tests, disposable fixtures
+python3 -m unittest discover -s tests -v                              # 84 tests; listener-gated ones skipped
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 84 tests, disposable fixtures
 python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py
 node --check web/app.js
 ```

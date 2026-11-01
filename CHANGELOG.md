@@ -4,12 +4,13 @@
 
 - Added per-operation cancellation: a persisted cancellation bound to the active round, checked before every tool and test command, revoking the round's approval, preserving completed work, and recording skipped indexes.
 - Added an operation-level ledger (status, timing, summary, error, applied flag, before/after hashes) written before and after each operation, with interrupted rows never replayed on restart.
+- Enforced test-output and context budgets on the next provider request, refused cancellation of a completed task, and covered test-output exhaustion plus memory injection into the approved prompt.
 - Added cumulative per-task budgets for prompt bytes, provider response bytes, test output bytes, context bytes and provider invocations, with clamped environment configuration, refusal before any provider call, a recorded reason, and an explicit confirmed reset.
 - Added `app/context.py`: bounded repository manifest, documentation prioritisation, Python/JS symbol outlines, token/failed-test/changed-file ranking, `.gitignore` and secret exclusion, symlink containment, byte caps, a stable context digest, and an untrusted-data prompt block.
 - Added `GET /api/tasks/{id}/agent/context` and context/ledger/budget/cancellation data in `GET /agent/rounds` and `GET /agent/report`.
 - Added a project-memory foundation with project-scoped CRUD, seven bounded kinds, and credential-pattern rejection.
 - Extended the dashboard with cancel task, explicit budget reset, budget meter, operation ledger, and selected-context panels, plus contract tests.
-- Added 16 tests: cancellation between operations, ledger persistence and crash recovery, budget refusal/reset, context visibility, context engine relevance/containment/determinism, and memory CRUD.
+- Added 18 tests: cancellation between operations, ledger persistence and crash recovery, budget refusal/reset, context visibility, context engine relevance/containment/determinism, and memory CRUD.
 - Documented the reproducible live Ollama test procedure; live model testing remains pending.
 
 ## 0.2.0 — 2026-11-01
