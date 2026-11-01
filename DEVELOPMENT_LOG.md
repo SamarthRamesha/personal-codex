@@ -23,3 +23,5 @@ Verified the completed merge lifecycle: default tests passed 8 unit tests with t
 Added provider-adapter metadata validation. The control plane now accepts only Ollama/OpenAI-compatible descriptors with absolute HTTP(S) endpoints; non-cloud descriptors must point at loopback and cloud consent is a strict boolean. `secret_ref` accepts only an environment-variable name. Registration and capability discovery never read a secret or contact the endpoint. Default tests passed 10 tests with the listener skipped; the opt-in HTTP suite passed all 11 tests and verifies the provider guardrails.
 
 Applied the permanent cross-account continuation protocol. The stored next-session prompt is now regenerated at meaningful verified milestones, user-requested handoffs, and before usage exhaustion, and embeds the dedicated recursive protocol that every future account must preserve.
+
+Configured the official GitHub `origin` and verified with `git ls-remote --heads` that it had no branch heads before first publication. Added permanent GitHub continuity, safe-push, and remote-verification requirements to the handoff checkpoints.

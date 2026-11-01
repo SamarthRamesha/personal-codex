@@ -5,3 +5,5 @@ The repository is recoverable without chat history. Start with `PROJECT_STATUS.m
 Never add server access or cloud credentials to the repository. Update all checkpoint documents after every meaningful milestone.
 
 Cross-account continuation is a permanent project requirement. After each meaningful verified milestone, regenerate `NEXT_SESSION_PROMPT.md` from actual Git/repository state; immediately do the same and display it when the user requests a handoff; and do so before usage exhaustion. Every generated prompt must contain the dedicated `PERMANENT CROSS-ACCOUNT CONTINUATION PROTOCOL` section and require the next account to repeat this process.
+
+GitHub continuity is permanent. The official remote is `origin` at `https://github.com/SamarthRamesha/personal-codex.git`; commit meaningful verified milestones and push to `main` when available. Verify remote state first, never force-push or overwrite unexpected history, and record unpushed commits if publication is unavailable.
