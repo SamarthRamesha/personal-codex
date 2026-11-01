@@ -172,11 +172,17 @@ STREAM_PROVIDER = os.getenv("PERSONAL_CODEX_STREAM_PROVIDER", "0") == "1"
 def round_transport(provider: dict, stop_check=None, on_chunk=None):
     """Pick the adapter for one approved round call. Streaming is opt-in and never changes the prompt."""
     if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
-    if STREAM_PROVIDER and provider.get("kind") == "ollama":
-        streamer = providers.OllamaStreamTransport()
-        def transport(request):
-            return streamer({**request, "stop_check": stop_check or (lambda: False), "on_chunk": on_chunk or (lambda count: None)})
-        return transport
+    if STREAM_PROVIDER:
+        if provider.get("kind") == "ollama":
+            streamer = providers.OllamaStreamTransport()
+        elif provider.get("kind") == "openai-compatible":
+            streamer = providers.OpenAIStreamTransport(provider.get("secret_ref") or "")
+        else:
+            streamer = None
+        if streamer is not None:
+            def transport(request):
+                return streamer({**request, "stop_check": stop_check or (lambda: False), "on_chunk": on_chunk or (lambda count: None)})
+            return transport
     return providers.transport_for(provider, provider.get("secret_ref") or "")
 
 def record_latency(provider_id: str, started: float) -> int:
@@ -367,6 +373,21 @@ def propose_memory(task: dict, kind: str, content: str, evidence: str = "") -> d
                  "pending", None, now(), None))
     task_event(task["id"], "reviewer", "warning", f"Memory proposal {pid[:8]} ({kind}) is pending explicit user approval.")
     return {"id": pid, "status": "pending", "kind": kind, "content": content, "evidence": proof, "digest": digest}
+
+def auto_summary_proposal(task: dict) -> dict | None:
+    """Queue an evidence-derived completion summary for review. Never stores it; approval is human."""
+    rounds = decoded_rounds(task["id"])
+    passing = [row for row in rounds if row["status"] == "passed"]
+    if not passing:
+        return None
+    latest = passing[-1]; tests = latest.get("test_result") or {}
+    files = ", ".join(tests.get("changed_files") or []) or "no files"
+    content = (f"Task '{str(task['prompt'])[:120]}' completed with {files} and `{tests.get('test_command')}` "
+               f"exiting {tests.get('test_exit_code')}.")
+    try:
+        return propose_memory(task, "summary", content[:2000], "auto-derived from the verified completion report")
+    except ValueError:
+        return None
 
 def decide_memory(proposal_id: str, approve: bool, reason: str = "") -> dict:
     row = STORE.one("SELECT * FROM memory_proposals WHERE id=?", (proposal_id,))
@@ -966,6 +987,7 @@ class App(SimpleHTTPRequestHandler):
                     rid=insert_round(tid,number,provider,prompt_sha,"complete",parsed["summary"])
                     link_context(tid,number,rid)
                     STORE.write("UPDATE tasks SET status='completed', updated_at=? WHERE id=?",(now(),tid))
+                    auto_summary_proposal(task)
                     task_event(tid,"reviewer","info",f"Round {number} completed the task with verified evidence: {reason}.")
                     return self.json({"round_id":rid,"round":number,"status":"complete","summary":parsed["summary"],"evidence":reason,"report":task_report(tid)},201)
                 rid=insert_round(tid,number,provider,prompt_sha,parsed["status"],parsed["summary"])

@@ -9,7 +9,10 @@
 - Added provider health metadata (status, issues, last latency) to `GET /api/providers` and `GET /api/providers/{id}/health`, and recorded latency after each invocation.
 - Added secret-shape redaction for provider error bodies.
 - Dashboard: project-memory panel with pending proposals and approve/reject, provider status and latency, `.git` excluded from prompt listings and context walks.
-- Added 20 tests: streaming, discovery, redaction, harness behaviour, memory promotion/staleness/retrieval, and UI contracts. Documented measured performance.
+- Added OpenAI-compatible SSE streaming with `[DONE]` termination, credential handling and rejection of unterminated or malformed frames.
+- Added provider failure classification and a single read-only discovery retry; mutation paths are never retried.
+- Added a deterministic, evidence-derived completion summary memory proposal (pending until approved).
+- Added 26 tests over the milestone: streaming (both protocols), discovery/retry/classification, redaction, harness behaviour, memory promotion/staleness/retrieval, and UI contracts. Documented measured performance.
 
 ## 0.3.0 — 2026-11-01
 

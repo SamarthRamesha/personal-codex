@@ -159,11 +159,11 @@ Everything above is verified with a deterministic injected transport. A live mod
 
 ## Memory lifecycle
 
-Memory is not free-form model text. A proposal can only be created after a round passed its checks (`POST /api/tasks/{id}/agent/memory/propose`), and it stores evidence: source task, round number, test command, exit code and changed files. The proposal is deduplicated against existing memory and pending proposals, rejected if it looks like a credential, and remains `pending` until the user approves or rejects it (`POST /api/memory-proposals/{id}/decide`). Approval copies it into project memory with its provenance; rejection stores nothing. Memory reads report `stale: true` when the originating task is missing or no longer passed, and prompts label entries "verified against a passing round" or "possibly stale, verify against the files". Retrieval is relevance-ranked against the task and the selected context paths, capped by entries and bytes.
+Memory is not free-form model text. A proposal can only be created after a round passed its checks (`POST /api/tasks/{id}/agent/memory/propose`), and it stores evidence: source task, round number, test command, exit code and changed files. The proposal is deduplicated against existing memory and pending proposals, rejected if it looks like a credential, and remains `pending` until the user approves or rejects it (`POST /api/memory-proposals/{id}/decide`). Approval copies it into project memory with its provenance; rejection stores nothing. A task that completes additionally queues one deterministic summary proposal derived from its verified report — also pending until approved. Memory reads report `stale: true` when the originating task is missing or no longer passed, and prompts label entries "verified against a passing round" or "possibly stale, verify against the files". Retrieval is relevance-ranked against the task and the selected context paths, capped by entries and bytes.
 
 ## Provider streaming and diagnostics
 
-`OllamaStreamTransport` reads NDJSON chunks with `http.client` under a byte cap and a chunk cap, ignores proxies, refuses redirects and non-loopback hosts without cloud consent, honours a cancellation check between chunks, and fails on malformed chunks, error chunks, missing terminal `done`, oversized output or empty text. Only the completed, validated text can enter the approval lifecycle; partial output is never parsed as a proposal. Streaming is opt-in with `PERSONAL_CODEX_STREAM_PROVIDER=1` and currently applies to Ollama round calls.
+`OllamaStreamTransport` reads NDJSON chunks with `http.client` under a byte cap and a chunk cap, ignores proxies, refuses redirects and non-loopback hosts without cloud consent, honours a cancellation check between chunks, and fails on malformed chunks, error chunks, missing terminal `done`, oversized output or empty text. Only the completed, validated text can enter the approval lifecycle; partial output is never parsed as a proposal. Streaming is opt-in with `PERSONAL_CODEX_STREAM_PROVIDER=1` and covers both Ollama NDJSON and OpenAI-compatible SSE (`data:` frames, terminated by `[DONE]`); an unterminated SSE stream is rejected, and a missing credential fails before any request.
 
 `scripts/live_provider_check.py` is the only component intended to talk to a real model, and only when a human runs it. It lists installed models, requires an explicitly named model, sends one tiny probe, validates the JSON against the round schema, and reports latency, byte counts and sanitised errors. Exit codes: 0 pass, 2 no usable model, 3 invalid proposal, 4 provider failure. It never registers a project or modifies a repository.
 
@@ -172,7 +172,7 @@ python3 scripts/live_provider_check.py --discover-models
 python3 scripts/live_provider_check.py --model <installed-model>
 ```
 
-Provider HTTP error bodies are scrubbed of secret-shaped strings before they are shown or stored.
+Provider HTTP error bodies are scrubbed of secret-shaped strings before they are shown or stored, and failures are classified (`unreachable`, `timeout`, `redirect`, `oversized`, `malformed`, `unauthorised`, `server-error`, `rejected`) so the diagnostic can explain them. Read-only model discovery may retry once on a connection failure; nothing that could modify a workspace is retried.
 
 ## Measured performance (this repository, Linux, Python 3.12)
 
@@ -207,8 +207,8 @@ Known limitations: no OS sandboxing, no guaranteed address-space enforcement on 
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -v                              # 104 tests; listener-gated ones skipped
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 104 tests, disposable fixtures
+python3 -m unittest discover -s tests -v                              # 110 tests; listener-gated ones skipped
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 110 tests, disposable fixtures
 python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py
 node --check web/app.js
 ```

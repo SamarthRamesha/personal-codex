@@ -321,3 +321,136 @@ class OllamaStreamTransport:
         if not text.strip():
             raise ProviderTransportError("Provider stream did not contain assistant text")
         return {"text": text, "model": request.get("model"), "streamed": True}
+
+
+class OpenAIStreamTransport:
+    """Streaming OpenAI-compatible adapter (SSE `data:` frames) with the same safety rules.
+
+    Only a stream that ends with `[DONE]` produces text. Incomplete streams, malformed frames, provider
+    error objects, oversized output and cancellation all raise, so partial output is never validated.
+    """
+
+    def __init__(self, secret_ref: str = "", *, secret_reader=None, timeout: float = DEFAULT_TIMEOUT_SECONDS,
+                 max_bytes: int = MAX_PROVIDER_RESPONSE_BYTES, max_chunks: int = MAX_STREAM_CHUNKS):
+        self.secret_ref, self.secret_reader, self.timeout = secret_ref, secret_reader, timeout
+        self.max_bytes, self.max_chunks = max_bytes, max_chunks
+
+    def __call__(self, request: dict) -> dict:
+        endpoint = request.get("endpoint")
+        parts, host, port = _endpoint(endpoint)
+        if host not in LOOPBACK_HOSTS and not request.get("cloud_allowed"):
+            raise ProviderTransportError("Non-cloud provider transport refuses a non-loopback endpoint")
+        stop_check = request.get("stop_check") or (lambda: False)
+        on_chunk = request.get("on_chunk") or (lambda count: None)
+        base = parts.path.rstrip("/")
+        if base.endswith("/chat/completions"):
+            path = base
+        else:
+            path = f"{base}/chat/completions"
+        headers = {"Content-Type": "application/json", "Accept": "text/event-stream", "Connection": "close"}
+        secret = self._secret()
+        if secret:
+            headers["Authorization"] = f"Bearer {secret}"
+        payload = {"model": request.get("model"), "messages": [{"role": "user", "content": request.get("prompt")}],
+                   "stream": True}
+        body = json.dumps(payload).encode("utf-8")
+        connection_class = HTTPSConnection if parts.scheme == "https" else HTTPConnection
+        connection = connection_class(host, port, timeout=self.timeout)
+        pieces, total, chunks, done = [], 0, 0, False
+        try:
+            connection.request("POST", path, body=body, headers=headers)
+            response = connection.getresponse()
+            if 300 <= response.status < 400:
+                raise ProviderTransportError("Provider redirects are not permitted")
+            if response.status != 200:
+                raise ProviderTransportError(_safe_error(response.status, response.read(MAX_ERROR_TEXT)))
+            while chunks < self.max_chunks:
+                if stop_check():
+                    raise ProviderTransportError("provider stream cancelled before completion")
+                line = response.readline(self.max_bytes + 1)
+                if not line:
+                    break
+                total += len(line)
+                if total > self.max_bytes:
+                    raise ProviderTransportError("Provider streamed response exceeded the size limit")
+                stripped = line.strip()
+                if not stripped or not stripped.startswith(b"data:"):
+                    continue
+                chunks += 1
+                data = stripped[len(b"data:"):].strip()
+                if data == b"[DONE]":
+                    done = True
+                    break
+                try:
+                    entry = json.loads(data.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    raise ProviderTransportError("Provider returned a malformed streaming frame")
+                if not isinstance(entry, dict):
+                    raise ProviderTransportError("Provider returned an unexpected streaming frame")
+                if entry.get("error"):
+                    raise ProviderTransportError("Provider reported an error during streaming")
+                text = ""
+                for choice in entry.get("choices") or []:
+                    delta = choice.get("delta") if isinstance(choice, dict) else None
+                    if isinstance(delta, dict) and isinstance(delta.get("content"), str):
+                        text += delta["content"]
+                if text:
+                    pieces.append(text)
+                on_chunk(total)
+        except (OSError, TimeoutError) as error:
+            raise ProviderTransportError(f"Provider streaming failed: {type(error).__name__}")
+        finally:
+            connection.close()
+        if not done:
+            raise ProviderTransportError("Provider stream ended before the termination frame")
+        text = "".join(pieces)
+        if not text.strip():
+            raise ProviderTransportError("Provider stream did not contain assistant text")
+        return {"text": text, "model": request.get("model"), "streamed": True}
+
+    def _secret(self) -> str:
+        if not self.secret_ref:
+            return ""
+        reader = self.secret_reader or os.environ.get
+        try:
+            value = reader(self.secret_ref) or ""
+        except Exception:
+            raise ProviderTransportError("Provider credential could not be resolved")
+        if not value:
+            raise ProviderTransportError("Provider credential is not available in the environment")
+        return str(value)
+
+
+ERROR_CLASSES = (
+    ("unreachable", ("connection failed", "connectionrefused", "name or service")),
+    ("timeout", ("timed out", "timeout")),
+    ("redirect", ("redirect",)),
+    ("oversized", ("size limit",)),
+    ("malformed", ("malformed", "unexpected response", "unexpected streaming")),
+    ("unauthorised", ("http 401", "http 403")),
+    ("server-error", ("http 5",)),
+    ("rejected", ("ollama reported an error", "provider reported an error", "refuses")),
+)
+
+
+def classify_provider_error(error) -> str:
+    """Map a provider failure to a stable class so callers can decide whether a retry is safe."""
+    text = str(error).lower()
+    for name, needles in ERROR_CLASSES:
+        if any(needle in text for needle in needles):
+            return name
+    return "provider-error"
+
+
+def discover_models_retrying(endpoint: str, *, timeout: float = 5.0, cloud_allowed: bool = False,
+                             attempts: int = 2) -> list[str]:
+    """Read-only discovery may retry once on a connection failure; nothing is mutated by a listing."""
+    last = None
+    for _ in range(max(1, min(3, attempts))):
+        try:
+            return discover_models(endpoint, timeout=timeout, cloud_allowed=cloud_allowed)
+        except ProviderTransportError as error:
+            last = error
+            if classify_provider_error(error) != "unreachable":
+                raise
+    raise last

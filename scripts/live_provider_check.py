@@ -52,9 +52,10 @@ def run(args) -> tuple[int, dict]:
         report["checks"].append({"check": name, "ok": bool(ok), "detail": detail})
 
     try:
-        models = providers.discover_models(args.endpoint, timeout=min(args.timeout, 10.0), cloud_allowed=args.cloud_allowed)
+        models = providers.discover_models_retrying(args.endpoint, timeout=min(args.timeout, 10.0), cloud_allowed=args.cloud_allowed)
     except providers.ProviderTransportError as error:
         check("service reachable", False, providers.redact_provider_text(str(error)))
+        report["failure_class"] = providers.classify_provider_error(error)
         report["models"] = []
         return 4, report
     report["models"] = models
@@ -82,6 +83,7 @@ def run(args) -> tuple[int, dict]:
             "cloud_allowed": args.cloud_allowed})
     except providers.ProviderTransportError as error:
         check("probe completed", False, providers.redact_provider_text(str(error)))
+        report["failure_class"] = providers.classify_provider_error(error)
         report["latency_ms"] = int((time.time() - started) * 1000)
         return 4, report
     report["latency_ms"] = int((time.time() - started) * 1000)

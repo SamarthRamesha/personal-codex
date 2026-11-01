@@ -40,7 +40,7 @@ Implemented and verified:
 - Project memory foundation (`memory` table): seven kinds, bounded content, credential-pattern rejection, project-scoped CRUD, and a "possibly stale" prompt section.
 - Dashboard: cancel task, explicit budget reset, budget meter, operation ledger, and selected-context panel with reasons, line ranges and digest.
 - Memory promotion: proposals only after a passing round, with provenance, duplicate and credential refusal, explicit approve/reject, staleness labelling and relevance-ranked bounded retrieval.
-- Streaming: bounded, cancellable NDJSON adapter with rejection of malformed, unterminated, oversized and erroring streams; opt-in via `PERSONAL_CODEX_STREAM_PROVIDER`.
+- Streaming: bounded, cancellable NDJSON (Ollama) and SSE (OpenAI-compatible) adapters with rejection of malformed, unterminated, oversized and erroring streams; opt-in via `PERSONAL_CODEX_STREAM_PROVIDER`.
 - Diagnostics: `scripts/live_provider_check.py` (model discovery, explicit model choice, schema probe, latency/bytes, sanitised errors) and provider health/latency metadata in the API.
 - Secret-shape redaction for provider error bodies.
 - Browser-free dashboard contract tests (`tests/test_ui.py`) assert that scripted element IDs exist, every button is wired, every `/api/...` path used by the script is routed, gated actions are all present, and only local assets are loaded without browser-stored secrets.
@@ -51,7 +51,7 @@ Implemented and verified:
 Verification completed (2026-11-01, this session):
 
 - `python3 -m unittest discover -s tests -v` — 84 tests, `OK (skipped=14)`: the listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 104 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
+- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 110 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
 - `python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py` — passed.
 - `node --check web/app.js` — passed.
 - `node --check web/app.js` — passed.

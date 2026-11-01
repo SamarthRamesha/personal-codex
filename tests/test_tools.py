@@ -378,6 +378,13 @@ class MultiRoundApiTests(RoundApiFixture):
         self.assertEqual(status, 200)
         self.assertEqual([r["status"] for r in rounds["rounds"]], ["failed-checks", "passed", "complete"])
         self.assertEqual(rounds["limits"]["remaining"], 0)
+
+        status, proposals = self.call(f"/api/projects/{self.project_id}/memory/proposals")
+        self.assertEqual(status, 200)
+        self.assertEqual([p["kind"] for p in proposals["proposals"]], ["summary"])
+        self.assertEqual(proposals["proposals"][0]["status"], "pending", "a completion summary is proposed, never stored automatically")
+        _, memory = self.call(f"/api/projects/{self.project_id}/memory")
+        self.assertEqual(memory["memory"], [])
         _, events = self.call(f"/api/tasks/{self.task_id}/events")
         self.assertTrue(any("Round 2 passed" in e["message"] for e in events))
 

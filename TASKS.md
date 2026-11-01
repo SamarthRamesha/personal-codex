@@ -28,7 +28,10 @@
 - [x] Add bounded streaming for Ollama with cancellation and validation.
 - [x] Add provider health/latency metadata and secret-shape error redaction.
 - [ ] Run a live Ollama round on the owner's Mac and record the real failure modes.
-- [ ] Add OpenAI-compatible streaming and provider-native tool calls.
+- [x] Add OpenAI-compatible SSE streaming.
+- [x] Add provider failure classification and safe read-only retry.
+- [x] Add evidence-derived completion summary proposals.
+- [ ] Add provider-native tool calls.
 - [ ] Promote verified memory entries automatically from completed rounds.
 - [x] Add restart recovery for interrupted rounds: they are marked `interrupted`, their proposals are closed, and the task returns to `needs-another-round`.
 - [x] Add a persisted cancellation checked between tool operations, with partial-result preservation and skipped-operation recording.

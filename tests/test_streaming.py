@@ -228,3 +228,103 @@ class LiveHarnessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpenAIStreamingTests(unittest.TestCase):
+    def start_sse(self, frames, status=200, done=True):
+        rows = [("data: " + json.dumps({"choices": [{"delta": {"content": piece}}]}) + "\n\n").encode() for piece in frames]
+        if done:
+            rows.append(b"data: [DONE]\n\n")
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", 0))
+                self.rfile.read(length)
+                self.send_response(status)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                try:
+                    for row in rows:
+                        self.wfile.write(row)
+                    self.close_connection = True
+                except OSError:
+                    pass
+
+            def log_message(self, *args):
+                pass
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        return httpd, thread, f"http://127.0.0.1:{httpd.server_port}"
+
+    def stop(self, httpd, thread):
+        httpd.shutdown(); httpd.server_close(); thread.join()
+
+    def test_sse_frames_are_joined_until_done(self):
+        from app.providers import OpenAIStreamTransport
+        httpd, thread, url = self.start_sse(['{"a":', '1}'])
+        try:
+            result = OpenAIStreamTransport()({"endpoint": url, "model": "m", "prompt": "p"})
+        finally:
+            self.stop(httpd, thread)
+        self.assertEqual(result["text"], '{"a":1}')
+
+    def test_unterminated_sse_stream_is_rejected(self):
+        from app.providers import OpenAIStreamTransport
+        httpd, thread, url = self.start_sse(['{"a":1}'], done=False)
+        try:
+            with self.assertRaises(ProviderTransportError) as raised:
+                OpenAIStreamTransport()({"endpoint": url, "model": "m", "prompt": "p"})
+        finally:
+            self.stop(httpd, thread)
+        self.assertIn("termination frame", str(raised.exception))
+
+    def test_malformed_sse_frame_is_rejected(self):
+        from app.providers import OpenAIStreamTransport
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"data: not-json\n\ndata: [DONE]\n\n")
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with self.assertRaises(ProviderTransportError) as raised:
+                OpenAIStreamTransport()({"endpoint": f"http://127.0.0.1:{httpd.server_port}", "model": "m", "prompt": "p"})
+        finally:
+            httpd.shutdown(); httpd.server_close(); thread.join()
+        self.assertIn("malformed", str(raised.exception))
+
+    def test_missing_credential_fails_before_any_request(self):
+        from app.providers import OpenAIStreamTransport
+        with self.assertRaises(ProviderTransportError) as raised:
+            OpenAIStreamTransport("MISSING_KEY", secret_reader=lambda name: "")({
+                "endpoint": "http://127.0.0.1:1", "model": "m", "prompt": "p"})
+        self.assertIn("credential", str(raised.exception))
+
+
+class FailureClassificationTests(unittest.TestCase):
+    def test_error_classes_are_stable(self):
+        from app.providers import ProviderTransportError as PTE, classify_provider_error as classify
+        self.assertEqual(classify(PTE("Provider connection failed: ConnectionRefusedError")), "unreachable")
+        self.assertEqual(classify(PTE("Provider returned HTTP 401: nope")), "unauthorised")
+        self.assertEqual(classify(PTE("Provider response exceeded the size limit")), "oversized")
+        self.assertEqual(classify(PTE("Provider returned a malformed streaming chunk")), "malformed")
+        self.assertEqual(classify(PTE("Provider redirects are not permitted")), "redirect")
+        self.assertEqual(classify(PTE("something else")), "provider-error")
+
+    def test_discovery_retries_only_unreachable_failures(self):
+        from app.providers import discover_models_retrying
+        import socket
+        probe = socket.socket(); probe.bind(("127.0.0.1", 0)); port = probe.getsockname()[1]; probe.close()
+        with self.assertRaises(ProviderTransportError):
+            discover_models_retrying(f"http://127.0.0.1:{port}", timeout=0.5, attempts=2)
