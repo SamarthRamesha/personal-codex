@@ -1,8 +1,8 @@
 # Project status
 
-Updated: 2026-11-01 (Asia/Kolkata)
+Updated: 2026-11-02 (Asia/Kolkata)
 
-## Current milestone: live-provider readiness, memory promotion and streaming
+## Current milestone: interactive execution — cancellation, live activity, diff review and search
 
 Continuity protocol: `NEXT_SESSION_PROMPT.md` is a permanent, ready-to-use cross-account handoff. It is regenerated after each meaningful verified milestone, on user request, and before usage exhaustion; it must embed the recursive continuation protocol for the next account.
 
@@ -43,6 +43,7 @@ Implemented and verified:
 - Streaming: bounded, cancellable NDJSON (Ollama) and SSE (OpenAI-compatible) adapters with rejection of malformed, unterminated, oversized and erroring streams; opt-in via `PERSONAL_CODEX_STREAM_PROVIDER`.
 - Diagnostics: `scripts/live_provider_check.py` (model discovery, explicit model choice, schema probe, latency/bytes, sanitised errors) and provider health/latency metadata in the API.
 - Secret-shape redaction for provider error bodies.
+- Milestone 6 interaction work: subprocess-level cancellation (SIGTERM then SIGKILL, partial output preserved, exit 130, recorded as `cancelled`), a resumable Server-Sent Events stream over persisted events (`Last-Event-ID`/`?after=`), diff review with bound and current file digests plus stale detection, bounded `.gitignore`-aware repository search, and restrictive security headers on every response.
 - Browser-free dashboard contract tests (`tests/test_ui.py`) assert that scripted element IDs exist, every button is wired, every `/api/...` path used by the script is routed, gated actions are all present, and only local assets are loaded without browser-stored secrets.
 - Provider adapter tests (`tests/test_providers.py`) run against an ephemeral loopback stub server: request shape and path, response extraction, malformed JSON, HTTP errors, redirect refusal, connection refusal, timeout, oversized response, unexpected structure, invalid endpoints, non-loopback refusal, credential handling, and transport selection. No external network or real model is used.
 - Agent tests (`tests/test_tools.py`): schema and argument validation, path/symlink/secret containment, patch hash binding, duplicate-match refusal, stop-on-failure execution, runner failure handling, digest binding, and an opt-in HTTP lifecycle where an approved proposal edits the worktree, runs a test command, refuses a second execution, and rejects a stale file with the file preserved.
@@ -50,10 +51,9 @@ Implemented and verified:
 
 Verification completed (2026-11-01, this session):
 
-- `python3 -m unittest discover -s tests -v` — 84 tests, `OK (skipped=14)`: the listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 110 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
+- `python3 -m unittest discover -s tests -v` — 126 tests, `OK (skipped=19)`: the listener-gated tests are correctly skipped unless explicitly enabled.
+- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 126 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
 - `python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py` — passed.
-- `node --check web/app.js` — passed.
 - `node --check web/app.js` — passed.
 - Earlier loopback smoke test confirmed health, dashboard provider controls, 403 before approval, bound approval detail, and rejection of a cloud endpoint without consent; later transport coverage replaced the fail-closed-only check with the stub-server adapter suite above.
 

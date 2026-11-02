@@ -1,5 +1,19 @@
 # Development log
 
+## 2026-11-02
+
+Reconciled the actual repository before writing code: the workspace and `origin/main` were both at `e9b0ee5` with a clean tree, while the owner's Mac report described an older local `f2fea40` that is 15 commits behind. No history was rewritten, reset or force-pushed; the correct action for that checkout is a fast-forward pull, and the untracked `personal-codex-diagnostic.txt` was deliberately not committed.
+
+Closed the named Milestone 6 gaps in the order that unblocked the others. Cancellation first: `execute_in_workspace` used to wait for the command to finish, so a long test run ignored cancellation until it completed. It now polls every 200 ms with the existing persisted cancellation check, sends SIGTERM to the process group, escalates to SIGKILL after 1.5 s, preserves partial output, and returns exit code 130 with `cancelled: true`. The tool layer had to change too: a cancelled test command was being classified as an operation error, which made later operations `skipped` and hid the reason. It is now recorded as `cancelled`, the round stops, and the ledger matches the round result.
+
+Live activity is backed by the existing `events` table rather than a new channel: `GET /api/tasks/{id}/events/stream` emits Server-Sent Events whose ids are SQLite rowids, so the browser's `Last-Event-ID` resumes exactly after the last delivered event. The stream is read-only, bounded to 500 events and 120 s, and closes on a dead client.
+
+Diff review was added because approving a digest was previously an act of faith: `GET /api/tasks/{id}/agent/diff` re-resolves every pending `apply_patch` path through the workspace containment check, returns a unified diff, the digest the proposal was bound to, the file's current digest, the occurrence count, and a stale flag. `tests/test_interaction.py` first asserted a stale file only after editing it, and also covers escaped and secret paths, which is how the error path is proven rather than assumed.
+
+Repository search reuses the context engine's walk so it inherits `.gitignore`, secret-name, symlink and generated-directory exclusions; a naive `rglob` implementation would have returned `.env` content. Finally, every response now carries a restrictive CSP (`default-src 'self'` with no inline script/style, `default-src 'none'` for JSON), `nosniff`, `no-referrer`, `X-Frame-Options: DENY` and `no-store`.
+
+Verification: 126 tests with HTTP integration enabled, `OK`; 126 with listeners skipped, `OK (skipped=19)`; `py_compile` and `node --check` pass; loopback smoke test returns 200 for `/` and `/app.js` with the new headers. Still no live model: the cloud workspace has no Ollama binary and nothing listening on 11434, so the Mac-side harness run remains the next task. Browser-level automation is also still unavailable here, so the dashboard's new panels are covered by static contracts and HTTP tests, not a real browser.
+
 ## 2026-11-01
 
 Verified `5e4267f` and confirmed no Ollama binary or service exists in this environment, so live model validation remains a documented, harnessed procedure rather than a claimed result. Built `scripts/live_provider_check.py` first so the owner can prove endpoint/model compatibility in one command, then made it deterministic under test with a loopback stub (unreachable service, empty model list, explicit-model requirement, valid probe, invalid JSON).

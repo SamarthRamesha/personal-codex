@@ -29,7 +29,7 @@ async function refresh(){
  }catch(e){console.error(e)}
 }
 async function decide(id,status){try{await api(`/api/approvals/${id}`,{method:'PATCH',body:JSON.stringify({status})});await refresh()}catch(e){alert(e.message)}}
-async function selectTask(id){selectedId=id;await renderSelected()}
+async function selectTask(id){stopLive();selectedId=id;await renderSelected()}
 async function renderSelected(){
  const task=tasks.find(t=>t.id===selectedId); if(!task){selectedId=null;return}
  $('#selected-title').textContent=task.prompt; $('#task-actions').hidden=false;
@@ -37,6 +37,7 @@ async function renderSelected(){
  try{
   const [workspace,events,executions,invocations,proposal,rounds,report]=await Promise.all([api(`/api/tasks/${task.id}/workspace`),api(`/api/tasks/${task.id}/events`),api(`/api/tasks/${task.id}/executions`),api(`/api/tasks/${task.id}/invocations`),api(`/api/tasks/${task.id}/agent`),api(`/api/tasks/${task.id}/agent/rounds`),api(`/api/tasks/${task.id}/agent/report`)]);
   renderProposal(proposal);
+  await renderDiff(task.id);
   renderRounds(rounds,report);
   await renderMemory(task);
   const ready=workspace.status==='ready'; $('#workspace-state').textContent=ready?workspace.branch:workspace.status;
@@ -116,3 +117,47 @@ $('#merge-branch').onclick=()=>action(`/api/tasks/${selectedId}/merge`,{},d=>`Me
 $('#request-branch-delete').onclick=()=>action(`/api/tasks/${selectedId}/branch-delete-request`,{},()=> 'Critical branch-deletion request queued.');
 $('#delete-branch').onclick=()=>action(`/api/tasks/${selectedId}/branch-delete`,{},()=> 'Merged recovery branch deleted.');
 $('#refresh').onclick=refresh;refresh();
+
+function renderDiffLine(line){
+ const cls=line.startsWith('+')&&!line.startsWith('+++')?'add':line.startsWith('-')&&!line.startsWith('---')?'del':line.startsWith('@@')?'hunk':'';
+ return `<div class="${cls}">${esc(line)}</div>`;
+}
+async function renderDiff(taskId){
+ const box=$('#agent-diff');
+ try{
+  const d=await api(`/api/tasks/${taskId}/agent/diff`);
+  const files=(d.files||[]).map(f=>`<div class=item><span class="tag ${f.stale?'warn':'ok'}">${f.stale?'stale':'reviewed'}</span><strong>${esc(f.path)}</strong><small class=muted>current ${esc((f.sha256_current||'unbound').slice(0,12))} · expected ${esc((f.expected_sha256||'unbound').slice(0,12))} · ${f.occurrences==null?'unavailable':esc(f.occurrences)+' match(es)'}${f.error?' · '+esc(f.error):''}</small><div class=diff>${(f.diff||[]).map(renderDiffLine).join('')||'<div class=hunk>no textual diff</div>'}</div>${f.truncated?'<small class=muted>diff truncated for display; the approval still binds the whole operation.</small>':''}</div>`).join('');
+  box.innerHTML=`<div class=item><span class="tag ${d.digest_valid?'ok':'warn'}">${d.digest_valid?'digest valid':'digest mismatch'}</span><strong>${esc(d.summary||'Proposed changes')}</strong><small class=muted>+${d.totals.additions} / −${d.totals.deletions} across ${d.totals.files} file(s) · proposal ${esc((d.proposal_id||'').slice(0,8))}${d.round?' · round '+esc(d.round):''}</small></div>`+files+(d.stale?'<div class=item><span class="tag warn">stale</span><strong>A reviewed file changed after this proposal was bound. Request a new round; executing this approval would be refused.</strong></div>':'');
+  $('#execute-agent-round').disabled=Boolean(d.stale||!d.digest_valid);
+ }catch(e){ box.innerHTML='<div class=empty>No pending proposal to review.</div>' }
+}
+$('#search-project').onclick=async()=>{
+ const pid=$('#project').value, query=$('#search-query').value;
+ if(!pid){$('#search-results').innerHTML='<div class=empty>Add a project first.</div>';return}
+ try{
+  const d=await api(`/api/projects/${pid}/search?q=${encodeURIComponent(query)}&limit=25`);
+  $('#search-results').innerHTML=d.matches.length?d.matches.map(m=>`<div class=item><span class=tag>${esc(m.path)}:${m.line}</span><div class=output>${esc(m.text)}</div></div>`).join('')+(d.truncated?'<div class=empty>Showing the first 25 matches; narrow the query to see more.</div>':''):`<div class=empty>No matches in ${d.files_scanned} tracked text file(s).</div>`;
+ }catch(e){$('#search-results').innerHTML=`<div class=empty>${esc(e.message)}</div>`}
+};
+let stream=null;
+function stopLive(){
+ if(stream){stream.close();stream=null}
+ const state=$('#live-state'); if(state) state.textContent='stream off — persisted events only';
+}
+function startLive(){
+ stopLive(); if(!selectedId) return;
+ const es=new EventSource(`/api/tasks/${selectedId}/events/stream`);
+ es.addEventListener('activity',event=>{
+  try{
+   const d=JSON.parse(event.data), list=$('#task-events'), row=document.createElement('div');
+   row.className='item'; row.innerHTML=`<strong>${esc(d.agent)} · ${esc(d.level)}</strong><small>${esc(d.message)}</small>`;
+   list.insertBefore(row,list.firstChild);
+   while(list.children.length>80) list.removeChild(list.lastChild);
+  }catch(error){}
+ });
+ es.addEventListener('end',()=>{$('#live-state').textContent='stream paused — reconnecting'});
+ es.onopen=()=>{$('#live-state').textContent='live · persisted events'};
+ es.onerror=()=>{ if(es.readyState===EventSource.CLOSED) $('#live-state').textContent='stream closed — press watch live' };
+ stream=es; $('#live-state').textContent='connecting…';
+}
+$('#live-toggle').onclick=()=>{ if(stream) stopLive(); else startLive() };

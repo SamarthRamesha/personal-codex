@@ -33,3 +33,13 @@
 - Future worker containers must not receive the Docker socket or host secrets, and must use a per-task workspace.
 
 Known limitation: v0 does not yet have OS sandboxing, guaranteed address-space enforcement on every OS, encrypted secret storage, CSP headers, login authentication, or remote TLS. Provider streaming, provider-native tool calls, and project memory are not implemented. Consequently it must be used only as a loopback development service.
+
+## Milestone 6 hardening (2026-11-02)
+
+- Cancellation terminates the command's process group: SIGTERM first, SIGKILL after a 1.5 s grace period, so a cancelled test run cannot keep holding the workspace or keep writing output. A cancelled run is reported as `cancelled` with exit code 130 and can never be mistaken for a passing test.
+- Partial output written before the stop is preserved for the audit trail, and the remaining operations are recorded as `cancelled` rather than silently skipped without a reason.
+- The event stream is read-only, same-origin, bounded (500 events / 120 s), and cannot be used to write state. It emits only persisted event rows for the requested task.
+- Diff review resolves each path through the workspace containment check, so it cannot read outside the worktree or a secret-named file; a changed digest marks the review stale and blocks execution of that approval.
+- Repository search inherits the context engine's exclusions (`.gitignore`, secret names, symlinks, generated directories) and caps results, so it cannot be used as an oracle for secret content.
+- Every response now sends a restrictive Content-Security-Policy (no inline script or style for the dashboard, `default-src 'none'` for JSON), `nosniff`, `no-referrer`, `X-Frame-Options: DENY` and `Cache-Control: no-store`.
+- These controls are covered by tests; browser-level automated testing is still not available in the cloud workspace and is reported as pending rather than claimed.

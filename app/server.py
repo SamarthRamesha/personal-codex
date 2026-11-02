@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 try:
     import context, providers, tools  # script execution puts app/ on sys.path
@@ -648,7 +648,31 @@ def child_limits(timeout: int):
     cap(resource.RLIMIT_NOFILE, 64)
     if hasattr(resource, "RLIMIT_AS"): cap(resource.RLIMIT_AS, MAX_MEMORY_BYTES)
 
-def execute_in_workspace(path: str, command: str, timeout=120) -> dict:
+CANCEL_EXIT_CODE = 130
+CANCEL_GRACE_SECONDS = 1.5
+
+
+def terminate_process_group(process, grace: float = CANCEL_GRACE_SECONDS) -> None:
+    """Stop a running command: SIGTERM its group, then SIGKILL whatever survives the grace period."""
+    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
+        try:
+            os.killpg(process.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            process.wait(timeout=wait)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None) -> dict:
+    """Run an allowlisted command, honouring cancellation while it is still running.
+
+    Cancellation is polled every 200 ms so a long test command stops promptly instead of waiting
+    for the next operation. Output written before the stop is preserved, and the exit code is 130
+    so callers cannot mistake a cancelled run for a passing one.
+    """
     try: timeout=int(timeout)
     except (TypeError, ValueError): raise ValueError("Timeout must be an integer")
     if not 1 <= timeout <= MAX_TIMEOUT_SECONDS: raise ValueError(f"Timeout must be between 1 and {MAX_TIMEOUT_SECONDS} seconds")
@@ -658,22 +682,48 @@ def execute_in_workspace(path: str, command: str, timeout=120) -> dict:
     runtime = DATA / "runtime"; runtime.mkdir(exist_ok=True)
     with tempfile.NamedTemporaryFile(mode="w+b", dir=runtime, delete=False) as output_file:
         output_path=Path(output_file.name)
+    cancelled=False
     try:
         with output_path.open("ab") as output_file:
             process=subprocess.Popen(argv, cwd=root, env=env, stdout=output_file, stderr=subprocess.STDOUT, preexec_fn=lambda: child_limits(timeout), start_new_session=True)
-            try: exit_code=process.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL); process.wait(); exit_code=124
+            deadline=time.time()+timeout
+            while True:
+                remaining=deadline-time.time()
+                try:
+                    exit_code=process.wait(timeout=min(0.2, max(0.01, remaining)))
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+                if stop_check and stop_check():
+                    cancelled=True
+                    terminate_process_group(process)
+                    exit_code=CANCEL_EXIT_CODE
+                    break
+                if time.time() >= deadline:
+                    os.killpg(process.pid, signal.SIGKILL); process.wait(); exit_code=124
+                    break
         output=output_path.read_bytes()[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
         if exit_code == 124: output += "\nTimed out."
-        return {"argv":argv,"exit_code":exit_code,"output":redacted(output)}
+        if cancelled: output += "\nCancelled by the operator; partial output preserved."
+        return {"argv":argv,"exit_code":exit_code,"output":redacted(output),"cancelled":cancelled}
     finally:
         output_path.unlink(missing_ok=True)
 
 class App(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args): print("[personal-codex] " + fmt % args)
+    def security_headers(self, api=False):
+        """Loopback responses still get a restrictive policy; the UI needs no remote origins."""
+        self.send_header("X-Content-Type-Options","nosniff")
+        self.send_header("Referrer-Policy","no-referrer")
+        self.send_header("X-Frame-Options","DENY")
+        self.send_header("Cache-Control","no-store")
+        if api:
+            self.send_header("Content-Security-Policy","default-src 'none'; frame-ancestors 'none'")
+        else:
+            self.send_header("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; "
+                             "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
     def json(self, payload, status=200):
-        body=json.dumps(payload).encode(); self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+        body=json.dumps(payload).encode(); self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.security_headers(api=True); self.end_headers(); self.wfile.write(body)
     def body(self):
         length=int(self.headers.get("Content-Length",0)); return json.loads(self.rfile.read(length) or b"{}")
     def route(self): return urlparse(self.path).path
@@ -749,12 +799,81 @@ class App(SimpleHTTPRequestHandler):
             pid=route.split("/")[3]
             if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
             return self.json({"project_id":pid,"kinds":sorted(MEMORY_KINDS),"memory":memory_rows(pid)})
+        if route.startswith("/api/projects/") and route.endswith("/search"):
+            pid=route.split("/")[3]; project=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
+            if not project: return self.json({"error":"not found"},404)
+            params=parse_qs(urlparse(self.path).query)
+            query=(params.get("q") or [""])[0]
+            try: limit=int((params.get("limit") or ["25"])[0])
+            except ValueError: return self.json({"error":"limit must be an integer"},400)
+            try: result=context.search(project["path"], query, limit)
+            except ValueError as error: return self.json({"error":str(error)},400)
+            return self.json({"project_id":pid, **result})
+        if route.startswith("/api/tasks/") and route.endswith("/events/stream"):
+            tid=route.split("/")[3]
+            if not STORE.one("SELECT id FROM tasks WHERE id=?",(tid,)): return self.json({"error":"task not found"},404)
+            after=self.last_event_id()
+            return self.stream_events(tid, after)
+        if route.startswith("/api/tasks/") and route.endswith("/agent/diff"):
+            tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
+            if not task: return self.json({"error":"task not found"},404)
+            proposal=STORE.one("SELECT * FROM proposals WHERE task_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1",(tid,))
+            if not proposal: return self.json({"error":"no pending proposal to review"},404)
+            operations=json.loads(proposal["operations"])
+            digest=tools.proposal_digest(tid, proposal["workspace_branch"], operations)
+            review=tools.review_operations(Path(proposal["workspace_path"]), operations)
+            round_row=STORE.one("SELECT id,round_number,status FROM rounds WHERE proposal_id=? ORDER BY round_number DESC LIMIT 1",(proposal["id"],))
+            return self.json({**review,"proposal_id":proposal["id"],"summary":proposal["summary"],"status":proposal["status"],
+                              "digest":digest,"digest_valid":digest==proposal["digest"],"workspace_branch":proposal["workspace_branch"],
+                              "round":round_row["round_number"] if round_row else None,
+                              "approval_required":True})
         return self.serve_static(route)
+    def last_event_id(self) -> int:
+        """Resume a stream from Last-Event-ID, falling back to the ?after= query parameter."""
+        candidates=[self.headers.get("Last-Event-ID"), (parse_qs(urlparse(self.path).query).get("after") or [None])[0]]
+        for value in candidates:
+            try:
+                if value is not None: return max(0, int(value))
+            except (TypeError, ValueError):
+                continue
+        return 0
+    def stream_events(self, task_id: str, after: int):
+        """Tail persisted events as server-sent events, replaying anything the client missed.
+
+        The stream is read-only, bounded by count and wall clock, and closes on a dead client. Event
+        ids come from SQLite rowid, so EventSource reconnection resumes exactly where it stopped
+        rather than replaying already-seen history.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type","text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control","no-store")
+        self.send_header("X-Accel-Buffering","no")
+        self.security_headers(api=True)
+        self.end_headers()
+        deadline=time.time()+120; sent=0; last_ping=time.time()
+        try:
+            self.wfile.write(b"retry: 2000\n\n"); self.wfile.flush()
+            while time.time() < deadline and sent < 500:
+                rows=STORE.rows("SELECT rowid AS seq, * FROM events WHERE task_id=? AND rowid>? ORDER BY rowid ASC LIMIT 50",(task_id,after))
+                if rows:
+                    for row in rows:
+                        payload=json.dumps({"seq":row["seq"],"agent":row["agent"],"level":row["level"],
+                                            "message":row["message"],"created_at":row["created_at"]})
+                        self.wfile.write(f"id: {row['seq']}\nevent: activity\ndata: {payload}\n\n".encode())
+                        after=row["seq"]; sent+=1
+                    self.wfile.flush(); last_ping=time.time()
+                elif time.time()-last_ping > 15:
+                    self.wfile.write(b": keep-alive\n\n"); self.wfile.flush(); last_ping=time.time()
+                else:
+                    time.sleep(0.4)
+            self.wfile.write(b"event: end\ndata: {}\n\n"); self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            return
     def serve_static(self, route):
         name="index.html" if route in {"/",""} else route.lstrip("/")
         candidate=(WEB/name).resolve()
         if WEB not in candidate.parents or not candidate.is_file(): self.send_error(404); return
-        self.send_response(200); self.send_header("Content-Type", "text/css" if name.endswith(".css") else "application/javascript" if name.endswith(".js") else "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(candidate.read_bytes())
+        self.send_response(200); self.send_header("Content-Type", "text/css" if name.endswith(".css") else "application/javascript" if name.endswith(".js") else "text/html; charset=utf-8"); self.security_headers(api=False); self.end_headers(); self.wfile.write(candidate.read_bytes())
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
@@ -1033,7 +1152,7 @@ class App(SimpleHTTPRequestHandler):
                 def stop_check():
                     row=cancellation_row(tid)
                     return bool(row and row["round_id"] in (None,round_row["id"]))
-                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout), stop_check=stop_check, on_event=on_event)
+                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=stop_check), stop_check=stop_check, on_event=on_event)
                 feedback=tools.round_feedback(Path(workspace["path"]), operations, outcome["operations"], redact=redacted)
                 add_usage(tid, test_output_bytes=len(str(feedback.get("test_output") or "").encode("utf-8")))
                 hard_failures=[r for r in outcome["operations"] if r["status"]=="error" and r["tool"]!="run_tests"]
@@ -1137,7 +1256,7 @@ class App(SimpleHTTPRequestHandler):
                 if not permitted: return self.json({"error":"approved agent proposal for this exact workspace and digest required"},403)
                 claim=STORE.conn.execute("UPDATE proposals SET status='executing' WHERE id=? AND status='pending'",(proposal["id"],)); STORE.conn.commit()
                 if claim.rowcount != 1: return self.json({"error":"Proposal is already being executed"},409)
-                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout))
+                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=lambda: bool(cancellation_row(tid))))
                 final="executed" if outcome["ok"] else "failed"
                 STORE.write("UPDATE proposals SET status=?, results=? WHERE id=?",(final,json.dumps(outcome["operations"]),proposal["id"]))
                 for entry in outcome["operations"]:
@@ -1184,7 +1303,7 @@ class App(SimpleHTTPRequestHandler):
                 if not workspace: return self.json({"error":"ready task workspace required"},403)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='execute' AND detail=? AND status='approved'",(task["project_id"],f"execute:{tid}:{command}"))
                 if not permitted: return self.json({"error":"approved exact command request required"},403)
-                result=execute_in_workspace(workspace["path"],command,data.get("timeout",120)); eid=uid()
+                result=execute_in_workspace(workspace["path"],command,data.get("timeout",120),stop_check=lambda: bool(cancellation_row(tid))); eid=uid()
                 STORE.write("INSERT INTO executions VALUES (?,?,?,?,?,?)",(eid,tid,json.dumps(result["argv"]),result["exit_code"],result["output"],now()))
                 task_event(tid,"executor","info",f"Approved command completed with exit code {result['exit_code']}.")
                 return self.json({"id":eid,**result})

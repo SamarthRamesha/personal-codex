@@ -486,9 +486,10 @@ if __name__ == "__main__":
 class ReliabilityApiTests(RoundApiFixture):
     """Cancellation, partial-result persistence, crash recovery and cumulative budgets."""
 
-    def test_cancellation_between_operations_preserves_partial_work(self):
+    def test_cancellation_stops_a_running_command_and_preserves_partial_work(self):
         self.responses = [json.dumps({"summary": "long round", "status": "continue", "operations": [
-            {"tool": "run_tests", "command": 'python3 -c "import time; time.sleep(1.0)"'},
+            {"tool": "run_tests", "command": 'python3 -c "print(1)"'},
+            {"tool": "run_tests", "command": 'python3 -c "import time; time.sleep(5.0)"'},
             {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "cancelled\n"},
             {"tool": "run_tests", "command": 'python3 -c "print(2)"'}]})]
         planned = self.plan_round()
@@ -496,17 +497,21 @@ class ReliabilityApiTests(RoundApiFixture):
         result = {}
         worker = threading.Thread(target=lambda: result.update(
             value=self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})), daemon=True)
+        started = time.time()
         worker.start()
-        time.sleep(0.4)
+        time.sleep(0.7)
         status, cancel = self.call(f"/api/tasks/{self.task_id}/cancel", "POST", {"reason": "test cancellation"})
         self.assertEqual(status, 202, cancel)
         worker.join(timeout=30)
+        elapsed = time.time() - started
         status, executed = result["value"]
         self.assertEqual((status, executed["status"], executed["task_status"]), (200, "cancelled", "cancelled"))
         self.assertTrue(executed["cancelled"])
-        self.assertEqual([entry["status"] for entry in executed["results"]], ["ok", "cancelled", "cancelled"])
+        self.assertEqual([entry["status"] for entry in executed["results"]], ["ok", "cancelled", "cancelled", "cancelled"])
+        self.assertEqual(executed["results"][1]["exit_code"], server.CANCEL_EXIT_CODE)
+        self.assertLess(elapsed, 4.5, "cancellation must interrupt the running command, not wait for it")
         self.assertEqual((self.workspace / "README.md").read_text(), "hi\n", "a cancelled operation must not be applied")
-        self.assertEqual([row["status"] for row in executed["ledger"]], ["ok", "cancelled", "cancelled"])
+        self.assertEqual([row["status"] for row in executed["ledger"]], ["ok", "cancelled", "cancelled", "cancelled"])
         status, rounds = self.call(f"/api/tasks/{self.task_id}/agent/rounds")
         self.assertIsNotNone(rounds["cancellation"])
         self.assertEqual(rounds["rounds"][0]["status"], "cancelled")

@@ -40,7 +40,10 @@ Python control plane (app/server.py)  ──  SQLite (data/personal_codex.db)
 - Invoke an approved provider and keep a bounded, redacted response ledger.
 - Ask a provider for an **agent proposal** of allowlisted tool calls, review it, approve it, and execute it inside the task worktree.
 - Run an **iterative round loop**: execute an approved proposal, record the test evidence, and send that bounded evidence back to the provider for the next proposal. Every round needs its own approval, at most 3 rounds run by default (`PERSONAL_CODEX_MAX_ROUNDS`, 1–10), and a task cannot be declared complete without a passing executed round that changed files.
-- **Cancel a running task between operations** without losing completed work: the cancellation is persisted, checked before every tool and before every test command, completed operations are kept, skipped ones are recorded, and the cancelled round can never execute with its old approval.
+- **Cancel a running task** without losing completed work: the cancellation is persisted, checked before every tool, and passed into the command executor, which stops a running test command with SIGTERM and then SIGKILL after a 1.5 s grace period. Output written before the stop is preserved, the exit code is `130` so a cancelled run can never look like a passing one, completed operations are kept, skipped ones are recorded, and the cancelled round can never execute with its old approval.
+- **Review a pending proposal as a diff:** each `apply_patch` is shown as a unified diff with the digest the proposal was bound to, the file's current digest, and an occurrence count. A file that changed after review is flagged stale and the round cannot be executed from that approval.
+- **Watch activity live:** `GET /api/tasks/{id}/events/stream` streams persisted events as Server-Sent Events, using SQLite rowids as ids, so a reconnecting dashboard resumes from `Last-Event-ID` instead of replaying history. The stream is read-only, bounded and closed on a dead client.
+- **Search a registered repository locally** (`GET /api/projects/{id}/search?q=`): case-insensitive, `.gitignore`-aware, and it never returns secret-named files, symlinks or generated directories. Results are capped in count and line length.
 - Inspect every task's plan, events, executions, provider responses, proposal, round history, test results, final report and diff-facing operation list in the dashboard.
 - See an **operation-level ledger** (status, timing, applied flag, file hashes) for each round and a **cumulative budget meter** (prompt, response, test output, context, invocations).
 - Let the agent select **bounded repository context** locally: manifest, docs, test locations, symbol outlines, task/symbol/changed-file ranking, `.gitignore` and secret exclusion, symlink containment, byte caps, and a stable digest bound to the approved prompt.
@@ -187,7 +190,7 @@ Provider latency is unknowable here because no model is installed; the diagnosti
 
 ## Security model
 
-- Loopback-only listener; no login or TLS, so never expose it.
+- Loopback-only listener; no login or TLS, so never expose it. Every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cache-Control: no-store`, and a restrictive Content-Security-Policy (`default-src 'self'` for the dashboard with no inline script or style, `default-src 'none'` for JSON APIs).
 - Secret-named files (`.env`, keys, credentials files) are excluded from summaries, tool reads, and listings.
 - Registration never reads a secret or contacts a provider.
 - Approvals are immutable once decided, and are bound to exact state: prompt digest, provider/endpoint/model, workspace branch, proposal digest and file hashes.
@@ -207,8 +210,8 @@ Known limitations: no OS sandboxing, no guaranteed address-space enforcement on 
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -v                              # 110 tests; listener-gated ones skipped
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 110 tests, disposable fixtures
+python3 -m unittest discover -s tests -v                              # 126 tests; listener-gated ones skipped
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 126 tests, disposable fixtures
 python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py
 node --check web/app.js
 ```

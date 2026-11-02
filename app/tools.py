@@ -9,6 +9,7 @@ introduced here.
 """
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import os
@@ -21,6 +22,8 @@ MAX_LIST_ENTRIES = 100
 MAX_LIST_DEPTH = 3
 MAX_PATCH_TEXT = 60_000
 MAX_SUMMARY = 2_000
+MAX_DIFF_LINES = 400
+MAX_DIFF_CHARS = 60_000
 IGNORED_PARTS = {".git", "node_modules", ".venv", "venv", "dist", "build", "target", "__pycache__"}
 SECRET_NAMES = {".env", ".env.local", ".env.production", ".env.development", "id_rsa", "id_ed25519", "credentials.json"}
 
@@ -211,6 +214,64 @@ def apply_patch(root: Path, path: str, old_text: str, new_text: str, expected_sh
             "bytes_before": len(original.encode("utf-8")), "bytes_after": len(updated.encode("utf-8"))}
 
 
+def review_operations(root: Path, operations: list[dict]) -> dict:
+    """Build the reviewer's view of a pending proposal without touching the workspace.
+
+    Each ``apply_patch`` entry reports the digest the proposal was bound to, the digest the file has
+    now, and a bounded unified diff. A file whose digest no longer matches is marked stale so the
+    dashboard can refuse to execute a review that no longer describes reality.
+    """
+    files, additions, deletions = [], 0, 0
+    stale = False
+    budget = MAX_DIFF_CHARS
+    for operation in operations:
+        if operation.get("tool") != "apply_patch":
+            continue
+        entry = {"path": operation["path"], "expected_sha256": operation.get("expected_sha256"),
+                 "sha256_current": None, "stale": False, "occurrences": None, "diff": [],
+                 "truncated": False, "error": None, "patch_preview_only": False}
+        try:
+            target = resolve_in_workspace(root, operation["path"])
+            if not target.is_file():
+                raise ToolCallError("review target no longer exists")
+            current = target.read_bytes().decode("utf-8", errors="replace")
+            entry["sha256_current"] = file_sha256(target)
+            entry["stale"] = bool(operation.get("expected_sha256")) and entry["sha256_current"] != operation["expected_sha256"]
+            occurrences = current.count(operation["old_text"])
+            entry["occurrences"] = occurrences
+            if occurrences == 1:
+                before, after = current, current.replace(operation["old_text"], operation["new_text"], 1)
+            else:
+                before, after = operation["old_text"], operation["new_text"]
+                entry["patch_preview_only"] = True
+            delta = list(difflib.unified_diff(before.splitlines(), after.splitlines(),
+                                              fromfile=f"a/{operation['path']}", tofile=f"b/{operation['path']}",
+                                              lineterm="", n=3))
+            for line in delta:
+                if line.startswith("+") and not line.startswith("+++"):
+                    additions += 1
+                elif line.startswith("-") and not line.startswith("---"):
+                    deletions += 1
+            kept = []
+            for line in delta[:MAX_DIFF_LINES]:
+                size = len(line.encode("utf-8"))
+                if budget - size < 0:
+                    entry["truncated"] = True
+                    break
+                kept.append(line)
+                budget -= size
+            if len(delta) > len(kept):
+                entry["truncated"] = True
+            entry["diff"] = kept
+        except (OSError, ValueError, ToolCallError) as error:
+            entry["error"] = str(error)[:300]
+            entry["stale"] = True
+        stale = stale or entry["stale"] or bool(entry["error"])
+        files.append(entry)
+    return {"files": files, "stale": stale,
+            "totals": {"files": len(files), "additions": additions, "deletions": deletions}}
+
+
 def execute_operations(root: Path, operations: list[dict], runner=None, stop_check=None, on_event=None) -> dict:
     """Execute validated, approved operations sequentially; stop at the first failure or cancellation.
 
@@ -255,6 +316,14 @@ def execute_operations(root: Path, operations: list[dict], runner=None, stop_che
                 if runner is None:
                     raise ToolCallError("No command runner is configured for this execution")
                 detail = runner(operation["command"], operation["timeout"])
+                if detail.get("cancelled"):
+                    # The command was stopped by the operator mid-run: that is a cancellation, not
+                    # a test failure, and the remaining operations must not start.
+                    cancelled = True
+                    results.append({"index": index, "tool": tool, "status": "cancelled", **detail,
+                                    "error": "cancelled while the command was running"})
+                    notify("finish", index, operation, results[-1])
+                    continue
                 if detail.get("exit_code") != 0:
                     failed = True
             else:
@@ -265,7 +334,8 @@ def execute_operations(root: Path, operations: list[dict], runner=None, stop_che
             results.append({"index": index, "tool": tool, "status": "error", "error": str(error)[:400]})
         notify("finish", index, operation, results[-1])
     return {"operations": results, "cancelled": cancelled,
-            "ok": not failed and not cancelled and all(r["status"] == "ok" for r in results)}
+            "ok": not failed and not cancelled and all(r["status"] == "ok" for r in results),
+            "cancelled_at_index": next((r["index"] for r in results if r["status"] == "cancelled"), None)}
 
 
 def parse_proposal(text: str) -> dict:

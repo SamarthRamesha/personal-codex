@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-11-02
+
+- Cancellation now reaches the running subprocess: the executor polls every 200 ms, sends SIGTERM to the process group, then SIGKILL after a 1.5 s grace period, preserves partial output, and reports exit code 130. A cancelled test command is recorded as `cancelled` rather than a failed test, and later operations do not start.
+- Added `GET /api/tasks/{id}/events/stream`: Server-Sent Events over persisted events with SQLite rowid ids, `Last-Event-ID`/`?after=` resumption, a 500-event/120 s bound, keep-alive comments, and clean close on a dead client.
+- Added `GET /api/tasks/{id}/agent/diff`: per-file unified diffs for the pending proposal with the bound digest, current digest, occurrence count, stale detection, and a truncated-display flag. The dashboard disables execution when the proposal is stale or its digest no longer matches.
+- Added `GET /api/projects/{id}/search`: bounded local repository search that respects `.gitignore` and never returns secret-named files, symlinks or generated directories.
+- Added security headers to every response, including a Content-Security-Policy with no inline script/style for the dashboard and `default-src 'none'` for JSON.
+- Dashboard: diff review panel, repository search, and a live activity stream with reconnection status.
+- Added `tests/test_interaction.py` (15 tests) covering subprocess termination, timeout distinction, diff/hash/stale semantics, search containment and validation, stream resumption and HTTP headers; updated the cancellation round test for the stronger guarantee. Total: 126 tests.
+
 ## 0.4.0 — 2026-11-01
 
 - Added evidence-backed memory promotion: proposals require a passing round, carry provenance (task, round, test command, exit code, changed files), are deduplicated, credential-checked, and stored only after explicit approval or rejection.

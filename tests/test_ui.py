@@ -82,6 +82,18 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn("/decide", SERVER)
         self.assertIn("health", JS)
 
+    def test_review_search_and_stream_controls_are_present_and_routed(self):
+        for element in ("agent-diff", "search-query", "search-project", "search-results",
+                        "live-toggle", "live-state"):
+            self.assertIn(element, HTML)
+            self.assertIn(element, JS)
+        for route in ("/agent/diff", "/search", "/events/stream"):
+            self.assertIn(route, SERVER)
+            self.assertIn(route, JS)
+        self.assertIn("EventSource", JS)
+        self.assertIn("Last-Event-ID", SERVER)
+        self.assertIn("stale", JS)
+
     def test_dashboard_loads_only_local_assets_and_no_stored_secrets(self):
         self.assertFalse(re.search(r'(?:src|href)="https?://', HTML), "dashboard must not load remote assets")
         self.assertIn('src="/app.js"', HTML)

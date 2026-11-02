@@ -96,6 +96,45 @@ def walk(root, patterns=None) -> list[str]:
     return found
 
 
+MAX_SEARCH_MATCHES = 50
+MAX_SEARCH_LINE = 220
+MAX_SEARCH_QUERY = 200
+
+
+def search(root, query: str, limit: int = MAX_SEARCH_MATCHES) -> dict:
+    """Case-insensitive local search over the same contained, ignored-aware file set as context.
+
+    Results are bounded in count, files scanned and line length. Secret-named files and symlinks
+    never enter the result set, and no line is returned for a file that fails containment.
+    """
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("Search query must be non-empty")
+    query = query.strip()
+    if len(query) > MAX_SEARCH_QUERY:
+        raise ValueError(f"Search query must be at most {MAX_SEARCH_QUERY} characters")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_SEARCH_MATCHES:
+        raise ValueError(f"Search limit must be between 1 and {MAX_SEARCH_MATCHES}")
+    base = _root(root)
+    patterns = gitignore_patterns(base)
+    needle = query.lower()
+    matches, scanned, truncated = [], 0, False
+    for relative in walk(base, patterns):
+        text = read_text(base, relative)
+        if text is None:
+            continue
+        scanned += 1
+        for number, line in enumerate(text.splitlines(), 1):
+            if needle not in line.lower():
+                continue
+            if len(matches) >= limit:
+                truncated = True
+                break
+            matches.append({"path": relative, "line": number, "text": line.strip()[:MAX_SEARCH_LINE]})
+        if truncated:
+            break
+    return {"query": query, "files_scanned": scanned, "matches": matches, "truncated": truncated}
+
+
 def read_text(root, relative: str, max_bytes: int = MAX_FILE_BYTES) -> str | None:
     """Read a contained, non-secret file; return None instead of escaping the root."""
     base = _root(root)

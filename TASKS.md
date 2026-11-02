@@ -20,7 +20,8 @@
 ## Next
 
 - [x] Implement the bounded multi-round loop: send redacted test output back to the provider, cap rounds/time/operations, and require a fresh approval per proposal.
-- [ ] Add streaming response support and audited provider-native tool-call handling.
+- [x] Add streaming response support.
+- [ ] Add audited provider-native tool-call handling.
 - [x] Add a bounded repository context engine (manifest, docs, symbols, ranking, digest).
 - [x] Add a project-memory foundation with CRUD and credential rejection.
 - [x] Add a live-provider diagnostic harness and deterministic coverage for it.
@@ -40,6 +41,11 @@
 - [ ] Implement project memory rebuild from manifests, docs, and parsed symbols.
 - [ ] Design and implement mutually authenticated ZimaOS worker registration after actual server discovery credentials are supplied.
 - [ ] Package a Tauri desktop shell only after the local API is covered by integration tests.
+- [x] Stop a running test command on cancellation: SIGTERM, then SIGKILL after a 1.5 s grace, partial output preserved, exit code 130.
+- [x] Stream persisted task events to the dashboard with resumable ids (`Last-Event-ID`).
+- [x] Review a pending proposal as a unified diff bound to current file digests, with stale detection.
+- [x] Add bounded, `.gitignore`-aware local repository search.
+- [x] Send restrictive security headers (CSP, nosniff, no-referrer, frame denial, no-store) on every response.
 - [ ] Add optional browser automation (Playwright) UI tests once a browser runtime is available in the target environment.
 
 ## Deferred by unavailable access

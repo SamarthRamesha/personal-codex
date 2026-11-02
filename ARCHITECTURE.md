@@ -123,6 +123,14 @@ The adapter itself only receives a request object of kind, endpoint, model, prom
 
 Only bounded, redacted response text and the prompt digest are persisted in `invocations`; the prompt is not stored there.
 
+## Interactive execution surface
+
+- `GET /api/tasks/{id}/events/stream` — read-only Server-Sent Events over the persisted `events` table. Ids are SQLite rowids, so `Last-Event-ID` (or `?after=`) resumes exactly after the last delivered event. Bounded to 500 events and 120 s per connection, with keep-alive comments and a clean close on a broken client.
+- `GET /api/tasks/{id}/agent/diff` — re-reads each pending `apply_patch` target through the workspace resolver and returns a unified diff, the digest the proposal was bound to, the current digest, the occurrence count, and a `stale` flag. It never writes to the workspace and never returns content from outside it.
+- `GET /api/projects/{id}/search?q=&limit=` — case-insensitive search over the same contained, `.gitignore`-aware, secret-free file set as the context engine, capped at 50 matches and 220 characters per line.
+- Cancellation reaches the process executor: `execute_in_workspace(..., stop_check=)` polls every 200 ms, sends SIGTERM to the process group, escalates to SIGKILL after 1.5 s, keeps partial output, and returns exit code 130 with `cancelled: true`. The tool layer records that operation as `cancelled`, so a cancelled command is not misreported as a failed test, and the remaining operations never start.
+- Every response carries `nosniff`, `no-referrer`, `X-Frame-Options: DENY`, `Cache-Control: no-store`, and a Content-Security-Policy (`default-src 'self'` for the dashboard with no inline script or style, `default-src 'none'` for JSON).
+
 ## Intended progression
 
 1. Keep this control-plane API stable.
