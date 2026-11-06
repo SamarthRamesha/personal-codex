@@ -252,7 +252,8 @@ class OllamaStreamTransport:
     Chunks are accumulated under a byte cap and a chunk cap. A malformed chunk, a response without a
     terminal ``done`` marker, an oversized reply, or a cancellation request raises instead of returning
     text, so an incomplete stream can never become an approved proposal. `on_chunk` receives byte
-    counts only (never text), for progress UI and tests.
+    counts only, for progress UI and tests. `on_text` is the display-only channel used by chat: the
+    returned text, not the deltas, is the only value any caller validates.
     """
 
     def __init__(self, timeout: float = DEFAULT_TIMEOUT_SECONDS, max_bytes: int = MAX_PROVIDER_RESPONSE_BYTES,
@@ -266,6 +267,7 @@ class OllamaStreamTransport:
             raise ProviderTransportError("Non-cloud provider transport refuses a non-loopback endpoint")
         stop_check = request.get("stop_check") or (lambda: False)
         on_chunk = request.get("on_chunk") or (lambda count: None)
+        on_text = request.get("on_text") or (lambda text: None)
         path = OllamaTransport(timeout=self.timeout).path(endpoint)
         payload = {"model": request.get("model"), "messages": [{"role": "user", "content": request.get("prompt")}],
                    "stream": True}
@@ -310,6 +312,7 @@ class OllamaStreamTransport:
                 text = _assistant_text(message.get("content") if isinstance(message, dict) else entry.get("response"))
                 if text:
                     pieces.append(text)
+                    on_text(text)
                 on_chunk(total)
         except (OSError, TimeoutError) as error:
             raise ProviderTransportError(f"Provider streaming failed: {type(error).__name__}")
@@ -342,6 +345,7 @@ class OpenAIStreamTransport:
             raise ProviderTransportError("Non-cloud provider transport refuses a non-loopback endpoint")
         stop_check = request.get("stop_check") or (lambda: False)
         on_chunk = request.get("on_chunk") or (lambda count: None)
+        on_text = request.get("on_text") or (lambda text: None)
         base = parts.path.rstrip("/")
         if base.endswith("/chat/completions"):
             path = base
@@ -396,6 +400,7 @@ class OpenAIStreamTransport:
                         text += delta["content"]
                 if text:
                     pieces.append(text)
+                    on_text(text)
                 on_chunk(total)
         except (OSError, TimeoutError) as error:
             raise ProviderTransportError(f"Provider streaming failed: {type(error).__name__}")
