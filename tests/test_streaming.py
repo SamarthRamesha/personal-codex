@@ -28,8 +28,10 @@ def load_harness():
 class StreamStub:
     """Loopback stub serving `/api/tags` and a configurable NDJSON chat stream."""
 
-    def __init__(self, chunks=None, status=200, models=None, malformed=False, delay=0.0):
+    def __init__(self, chunks=None, status=200, models=None, malformed=False, delay=0.0, stream_chunks=None):
         self.chunks = chunks if chunks is not None else []
+        # Optional separate body for a streaming request, so one stub can answer but truncate its stream.
+        self.stream_chunks = stream_chunks
         self.status, self.models, self.malformed, self.delay = status, models or [], malformed, delay
         self.requests = []
         outer = self
@@ -45,7 +47,19 @@ class StreamStub:
             def do_POST(self):
                 length = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(length) or b"{}"
-                outer.requests.append({"path": self.path, "body": json.loads(raw), "headers": dict(self.headers)})
+                body = json.loads(raw)
+                outer.requests.append({"path": self.path, "body": body, "headers": dict(self.headers)})
+                if body.get("stream") is False and outer.chunks and not outer.malformed:
+                    # A real Ollama endpoint answers a non-streaming request with one JSON object.
+                    text = "".join(json.loads(chunk.decode())["message"]["content"] for chunk in outer.chunks)
+                    payload = json.dumps({"message": {"role": "assistant", "content": text}}).encode()
+                    self.send_response(outer.status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    self.close_connection = True
+                    return
                 self.send_response(outer.status)
                 self.send_header("Content-Type", "application/x-ndjson")
                 self.end_headers()
@@ -54,8 +68,9 @@ class StreamStub:
                     time.sleep(outer.delay)
                 if outer.malformed:
                     self.wfile.write(b"not json\n")
+                body_chunks = outer.stream_chunks if outer.stream_chunks is not None else outer.chunks
                 try:
-                    for chunk in outer.chunks:
+                    for chunk in body_chunks:
                         self.wfile.write(chunk)
                         self.wfile.flush()
                 except OSError:
@@ -310,6 +325,77 @@ class OpenAIStreamingTests(unittest.TestCase):
             OpenAIStreamTransport("MISSING_KEY", secret_reader=lambda name: "")({
                 "endpoint": "http://127.0.0.1:1", "model": "m", "prompt": "p"})
         self.assertIn("credential", str(raised.exception))
+
+
+class LiveHarnessTests(unittest.TestCase):
+    """The owner's only live entry point must be honest about success, failure and next steps."""
+
+    def run_harness(self, argv):
+        harness = load_harness()
+        return harness.run(harness.build_parser().parse_args(argv))
+
+    def test_discovery_prints_installed_identifiers_without_probing(self):
+        stub = StreamStub(models=["qwen2.5-coder:7b"])
+        try:
+            code, report = self.run_harness(["--endpoint", stub.url, "--discover-models"])
+        finally:
+            stub.stop()
+        self.assertEqual(code, 0)
+        self.assertEqual(report["models"], ["qwen2.5-coder:7b"])
+        self.assertEqual(stub.requests, [])
+
+    def test_unreachable_service_exits_four_with_actionable_next_steps(self):
+        probe = socket.socket(); probe.bind(("127.0.0.1", 0)); port = probe.getsockname()[1]; probe.close()
+        code, report = self.run_harness(["--endpoint", f"http://127.0.0.1:{port}", "--discover-models", "--timeout", "0.5"])
+        self.assertEqual(code, 4)
+        self.assertEqual(report["failure_class"], "unreachable")
+        self.assertTrue(any("ollama serve" in step for step in report["next"]))
+
+    def test_a_model_that_is_not_installed_is_never_probed(self):
+        stub = StreamStub(models=["installed:1b"])
+        try:
+            code, report = self.run_harness(["--endpoint", stub.url, "--model", "guessed:70b"])
+        finally:
+            stub.stop()
+        self.assertEqual(code, 2)
+        self.assertEqual(stub.requests, [])
+        self.assertFalse([check for check in report["checks"] if check["check"] == "probe completed"])
+
+    def test_stream_probe_reports_deltas_and_schema_validity(self):
+        chunks = [line('{"summary":"x",'), line('"status":"continue",'),
+                  line('"operations":[{"tool":"list_files","path":"."}]}', True)]
+        stub = StreamStub(chunks=chunks, models=["fixture:1b"])
+        try:
+            code, report = self.run_harness(["--endpoint", stub.url, "--model", "fixture:1b", "--stream"])
+        finally:
+            stub.stop()
+        self.assertEqual(code, 0)
+        self.assertEqual(report["proposal"]["status"], "continue")
+        self.assertEqual(report["stream"]["chunks"], 3)
+        self.assertTrue(report["stream"]["text_matches"])
+
+    def test_stream_probe_fails_closed_without_a_terminal_chunk(self):
+        full = line('{"summary":"x","status":"continue","operations":[{"tool":"list_files","path":"."}]}', True)
+        # Schema-valid single reply, but the streaming endpoint never sends its done marker.
+        stub = StreamStub(chunks=[full], models=["fixture:1b"], stream_chunks=[line('{"summary":"x",')])
+        try:
+            code, report = self.run_harness(["--endpoint", stub.url, "--model", "fixture:1b", "--stream"])
+        finally:
+            stub.stop()
+        self.assertEqual(code, 4)
+        self.assertEqual(report["proposal"]["status"], "continue")
+        self.assertTrue(any("completion marker" in check["detail"] for check in report["checks"] if not check["ok"]))
+
+    def test_prose_instead_of_json_is_reported_as_a_schema_failure(self):
+        chunks = [line("Sure, I can help with that.", True)]
+        stub = StreamStub(chunks=chunks, models=["fixture:1b"])
+        try:
+            code, report = self.run_harness(["--endpoint", stub.url, "--model", "fixture:1b"])
+        finally:
+            stub.stop()
+        self.assertEqual(code, 3)
+        self.assertIn("response_preview", report)
+        self.assertTrue(report["next"])
 
 
 class FailureClassificationTests(unittest.TestCase):
