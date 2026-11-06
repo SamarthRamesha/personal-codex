@@ -5,6 +5,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import app.server as server
+from app import conversations
 from app.server import execute_in_workspace, invoke_provider, merge_preview, parse_command, plan_for, provider_approval_kind, provider_invocation_detail, redacted, repository_summary, safe_project_path, unavailable_provider_transport, validate_provider_config, validate_provider_prompt, visible_files
 
 class SecurityAndPlanningTests(unittest.TestCase):
@@ -135,5 +136,58 @@ class HttpLifecycleTests(unittest.TestCase):
     status,approval=self.request(f'/api/tasks/{task_id}/branch-delete-request','POST',{}); self.assertEqual(status,201)
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
     status,deleted=self.request(f'/api/tasks/{task_id}/branch-delete','POST',{}); self.assertEqual((status,deleted['branch_deleted']),(200,True))
+
+class ExecutionClaimTests(unittest.TestCase):
+    """The execution claim shares one sqlite connection with streamed chat writes."""
+
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory(); base=Path(self.tmp.name)
+        self.old_data,self.old_db,self.old_store=server.DATA,server.DB_PATH,server.STORE
+        server.DATA=base/'claim-data'; server.DB_PATH=server.DATA/'test.db'; server.STORE=server.Store()
+        self.store=server.STORE
+        at=server.now()
+        self.store.write("INSERT INTO projects VALUES (?,?,?,?)",('p1','Fixture',self.tmp.name,at))
+        self.store.write("INSERT INTO proposals (id,task_id,workspace_branch,workspace_path,summary,operations,digest,status,created_at) "
+                         "VALUES (?,?,?,?,?,?,?,?,?)",('prop-1','task-1','b',self.tmp.name,'s','[]','d','pending',at))
+        self.store.write("INSERT INTO rounds (id,task_id,round_number,provider_id,model,prompt_sha256,proposal_id,status,created_at,updated_at) "
+                         "VALUES (?,?,?,?,?,?,?,?,?,?)",('round-1','task-1',1,'prov-1','m','sha','prop-1','awaiting-approval',at,at))
+
+    def tearDown(self):
+        server.STORE.conn.close()
+        server.DATA,server.DB_PATH,server.STORE=self.old_data,self.old_db,self.old_store
+        self.tmp.cleanup()
+
+    def test_a_claim_takes_the_proposal_and_round_exactly_once(self):
+        self.assertEqual(self.store.claim_execution('prop-1','round-1'),'ok')
+        self.assertEqual(self.store.one("SELECT status FROM proposals WHERE id='prop-1'")['status'],'executing')
+        self.assertEqual(self.store.one("SELECT status FROM rounds WHERE id='round-1'")['status'],'executing')
+        # A second claim loses instead of re-running the same approved proposal.
+        self.assertEqual(self.store.claim_execution('prop-1','round-1'),'proposal')
+
+    def test_a_lost_claim_leaves_the_connection_usable(self):
+        self.store.write("UPDATE proposals SET status='executing' WHERE id='prop-1'")
+        self.assertEqual(self.store.claim_execution('prop-1','round-1'),'proposal')
+        # The rollback of a lost claim must not strand an open transaction for the next writer.
+        self.store.write("INSERT INTO projects VALUES (?,?,?,?)",('p2','After',str(Path(self.tmp.name)/'after'),server.now()))
+        self.assertIsNotNone(self.store.one("SELECT id FROM projects WHERE id='p2'"))
+        self.assertEqual(self.store.one("SELECT status FROM rounds WHERE id='round-1'")['status'],'awaiting-approval')
+
+    def test_streamed_chat_writes_survive_a_concurrent_claim(self):
+        conversation=conversations.create_conversation(self.store)
+        message=conversations.new_message(self.store,conversation['id'],'assistant','',status='streaming')
+        expected=40; errors=[]
+        def writer():
+            try:
+                for index in range(expected):
+                    conversations.append_chunk(self.store,conversation['id'],message['id'],f'chunk{index}')
+            except Exception as error:
+                errors.append(error)
+        thread=threading.Thread(target=writer); thread.start()
+        for _ in range(40):
+            self.store.claim_execution('prop-1','round-1')
+        thread.join()
+        self.assertEqual(errors,[])
+        chunks=self.store.rows("SELECT text FROM message_chunks WHERE message_id=? ORDER BY seq",(message['id'],))
+        self.assertEqual(len(chunks),expected)
 
 if __name__ == '__main__': unittest.main()

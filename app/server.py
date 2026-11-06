@@ -2,7 +2,7 @@
 """Personal Codex local control plane. Standard-library only by design for v0."""
 from __future__ import annotations
 
-import hashlib, json, os, re, resource, shlex, signal, sqlite3, subprocess, sys, tempfile, time, uuid
+import hashlib, json, os, re, resource, shlex, signal, sqlite3, subprocess, sys, tempfile, threading, time, uuid
 from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, gateway, providers, tools  # script execution puts app/ on sys.path
+    import context, conversations, gateway, providers, tools  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, gateway, providers, tools
+    from app import context, conversations, gateway, providers, tools
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS cancellations (task_id TEXT PRIMARY KEY, round_id TEX
 CREATE TABLE IF NOT EXISTS contexts (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, round_id TEXT, round_number INTEGER NOT NULL, digest TEXT NOT NULL, bytes INTEGER NOT NULL, files TEXT NOT NULL, prompt TEXT, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS memory (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, content TEXT NOT NULL, source TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS memory_proposals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT, round_id TEXT, kind TEXT NOT NULL, content TEXT NOT NULL, evidence TEXT, digest TEXT NOT NULL, status TEXT NOT NULL, reason TEXT, created_at INTEGER NOT NULL, decided_at INTEGER);
+CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, project_id TEXT, provider_id TEXT, model TEXT NOT NULL DEFAULT '', pinned INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER);
+CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL, provider_id TEXT, model TEXT, error TEXT, latency_ms INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS message_chunks (seq INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT NOT NULL, conversation_id TEXT NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_chunks_message ON message_chunks(message_id, seq);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at);
+CREATE TABLE IF NOT EXISTS conversation_tasks (conversation_id TEXT NOT NULL, task_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (conversation_id, task_id));
 """
 MIGRATIONS = {
     "providers": {"last_latency_ms": "INTEGER", "last_checked_at": "INTEGER"},
@@ -78,8 +85,13 @@ def uid() -> str: return str(uuid.uuid4())
 class Store:
     def __init__(self):
         DATA.mkdir(exist_ok=True)
-        self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        # One connection is shared by every HTTP thread and by streamed chat workers, so access is
+        # serialized here: sqlite3 cannot start a transaction while another thread's commit is open.
+        self.lock = threading.RLock()
+        self.conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10.0)
         self.conn.row_factory = sqlite3.Row
+        # A streamed chat turn writes from a worker thread while HTTP threads read; wait instead of failing.
+        self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.executescript(SCHEMA); self.conn.commit()
         self.migrate()
         self.recover_interrupted()
@@ -92,8 +104,17 @@ class Store:
                     self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
         self.conn.commit()
     def recover_interrupted(self):
-        """A restart during execution must not leave a round stuck in 'executing' forever."""
+        """No round and no streamed answer may stay 'running' forever after a restart.
+
+        An interrupted answer is closed as 'stopped' with its reason recorded: that is the existing
+        terminal status for a generation that did not finish, so lists, prompt building and SSE all
+        treat it as finished instead of waiting for a worker thread that no longer exists.
+        """
         stamp = now()
+        recovered_messages = self.conn.execute(
+            "UPDATE messages SET status='stopped', error=?, updated_at=? WHERE status IN ('queued','streaming')",
+            ("service restarted before this answer finished; the partial text is display-only and will not be resumed",
+             stamp)).rowcount
         interrupted_ops = self.conn.execute("UPDATE operations SET status='interrupted', finished_at=?, error=? WHERE status='running'",
                                             (stamp, "service restarted while this operation was running; it was not replayed")).rowcount
         stuck = [dict(x) for x in self.conn.execute("SELECT * FROM rounds WHERE status='executing'").fetchall()]
@@ -110,11 +131,38 @@ class Store:
             task = self.conn.execute("SELECT status FROM tasks WHERE id=?", (row["task_id"],)).fetchone()
             if task and task["status"] == "iterating":
                 self.conn.execute("UPDATE tasks SET status='needs-another-round', updated_at=? WHERE id=?", (stamp, row["task_id"]))
+        if recovered_messages:
+            print(f"[personal-codex] recovered {recovered_messages} interrupted conversation answer(s)", file=sys.stderr)
         self.conn.commit()
-    def rows(self, sql, args=()): return [dict(x) for x in self.conn.execute(sql, args).fetchall()]
+    def rows(self, sql, args=()):
+        with self.lock:
+            return [dict(x) for x in self.conn.execute(sql, args).fetchall()]
     def one(self, sql, args=()):
-        row = self.conn.execute(sql, args).fetchone(); return dict(row) if row else None
-    def write(self, sql, args=()): self.conn.execute(sql, args); self.conn.commit()
+        with self.lock:
+            row = self.conn.execute(sql, args).fetchone(); return dict(row) if row else None
+    def write(self, sql, args=()):
+        with self.lock:
+            self.conn.execute(sql, args); self.conn.commit()
+    def claim_execution(self, proposal_id: str, round_id: str | None = None) -> str:
+        """Take a pending proposal (and a round, when given) in one locked transaction.
+
+        The connection is shared with streamed chat workers, so the claim and the round update are
+        made under the same lock every other write uses; a lost claim rolls back only this attempt
+        instead of discarding another thread's in-flight insert. Returns ``ok``, ``proposal`` or
+        ``round`` so the caller can report the exact conflict.
+        """
+        with self.lock:
+            claim = self.conn.execute("UPDATE proposals SET status='executing' WHERE id=? AND status='pending'", (proposal_id,))
+            if claim.rowcount != 1:
+                self.conn.rollback()
+                return "proposal"
+            if round_id is None:
+                self.conn.commit()
+                return "ok"
+            round_claim = self.conn.execute("UPDATE rounds SET status='executing', updated_at=? WHERE id=? AND status='awaiting-approval'",
+                                            (now(), round_id))
+            self.conn.commit()
+            return "ok" if round_claim.rowcount == 1 else "round"
 
 STORE = Store()
 
@@ -745,6 +793,41 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/tasks/") and route.endswith("/events"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
         if route == "/api/approvals": return self.json(STORE.rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at DESC"))
+        if route == "/api/conversations":
+            params=parse_qs(urlparse(self.path).query)
+            try: limit=int((params.get("limit") or ["100"])[0])
+            except ValueError: return self.json({"error":"limit must be an integer"},400)
+            archived=(params.get("archived") or ["0"])[0] in {"1","true","yes"}
+            return self.json({"conversations":conversations.list_conversations(STORE,archived=archived,
+                query=(params.get("q") or [""])[0],limit=limit)})
+        if route == "/api/conversations/search":
+            params=parse_qs(urlparse(self.path).query)
+            try: limit=int((params.get("limit") or ["20"])[0])
+            except ValueError: return self.json({"error":"limit must be an integer"},400)
+            try: return self.json({"query":(params.get("q") or [""])[0],"results":conversations.search_messages(STORE,(params.get("q") or [""])[0],limit)})
+            except ValueError as error: return self.json({"error":str(error)},400)
+        if route == "/api/models":
+            return self.json({"providers":STORE.rows("SELECT id,kind,endpoint,model,cloud_allowed,enabled FROM providers ORDER BY created_at DESC"),
+                              "note":"Per-provider installed models: GET /api/providers/{id}/models (read-only loopback discovery)."})
+        if route.startswith("/api/providers/") and route.endswith("/models"):
+            pid=route.split("/")[3]; provider=STORE.one("SELECT * FROM providers WHERE id=?",(pid,))
+            if not provider: return self.json({"error":"provider not found"},404)
+            if provider["kind"] != "ollama":
+                return self.json({"provider_id":pid,"models":[provider["model"]],"live":False,
+                                  "note":"Only Ollama exposes a local model list; this provider's configured model is shown."})
+            try: models=providers.discover_models(provider["endpoint"],timeout=5.0,cloud_allowed=bool(provider["cloud_allowed"]))
+            except providers.ProviderTransportError as error:
+                return self.json({"provider_id":pid,"models":[],"live":False,"failure_class":providers.classify_provider_error(error),
+                                  "error":providers.redact_provider_text(str(error))},502)
+            return self.json({"provider_id":pid,"models":models,"live":True})
+        if route.startswith("/api/conversations/"):
+            parts=route.split("/")
+            if len(parts)==4:
+                report=conversations.conversation_report(STORE,parts[3])
+                return self.json(report) if report else self.json({"error":"conversation not found"},404)
+            if len(parts)==7 and parts[4]=="messages" and parts[6]=="stream":
+                return self.stream_message(parts[3],parts[5],self.last_event_id())
+            return self.json({"error":"not found"},404)
         if route == "/api/providers":
             rows=STORE.rows("SELECT id,kind,endpoint,model,cloud_allowed,enabled,created_at,last_latency_ms,last_checked_at FROM providers ORDER BY created_at DESC")
             return self.json([{**row,"health":provider_health(row)} for row in rows])
@@ -847,6 +930,39 @@ class App(SimpleHTTPRequestHandler):
             except (TypeError, ValueError):
                 continue
         return 0
+    def stream_message(self, conversation_id: str, message_id: str, after: int):
+        """Stream one assistant reply as SSE, resuming after the last chunk sequence the client saw.
+
+        Text arrives as persisted, incremental ``token`` events; ``done`` carries the final status so
+        a stopped or failed answer is never mistaken for a completed one.
+        """
+        try: events=conversations.stream_events(STORE,conversation_id,message_id,after)
+        except LookupError: return self.json({"error":"message not found"},404)
+        self.send_response(200)
+        self.send_header("Content-Type","text/event-stream; charset=utf-8")
+        self.send_header("X-Accel-Buffering","no")
+        self.security_headers(api=True)
+        self.end_headers()
+        deadline=time.time()+120; sent=0; last_seq=max(0,int(after or 0)); last_ping=time.time()
+        try:
+            self.wfile.write(b"retry: 1000\n\n"); self.wfile.flush()
+            for event,payload in events:
+                if event=="ping":
+                    if time.time()-last_ping > 12:
+                        self.wfile.write(b": keep-alive\n\n"); self.wfile.flush(); last_ping=time.time()
+                    if time.time() >= deadline or sent >= 4000: break
+                    continue
+                prefix=""
+                if event=="token" and isinstance(payload,dict) and payload.get("seq"):
+                    # An SSE id makes the browser's own reconnect resume without re-sending tokens.
+                    last_seq=payload["seq"]; prefix=f"id: {last_seq}\n"
+                self.wfile.write(f"{prefix}event: {event}\ndata: {json.dumps(payload)}\n\n".encode()); self.wfile.flush()
+                sent+=1; last_ping=time.time()
+                if event=="done": return
+                if time.time() >= deadline or sent >= 4000: break
+            self.wfile.write(f"event: end\ndata: {json.dumps({'reason':'timeout','after':last_seq})}\n\n".encode()); self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            return
     def stream_events(self, task_id: str, after: int):
         """Tail persisted events as server-sent events, replaying anything the client missed.
 
@@ -930,6 +1046,59 @@ class App(SimpleHTTPRequestHandler):
                 if not content or len(content) > 2000: return self.json({"error":"memory content must contain 1-2000 characters"},400)
                 STORE.write("UPDATE memory SET content=?, updated_at=? WHERE id=? AND project_id=?",(content,now(),mid,pid))
                 return self.json({"id":mid,"status":"updated"})
+            if route == "/api/conversations":
+                try:
+                    row=conversations.create_conversation(STORE,title=str(data.get("title") or ""),
+                        project_id=data.get("project_id") or None,provider_id=data.get("provider_id") or None,model=str(data.get("model") or ""))
+                except LookupError as error: return self.json({"error":str(error)},404)
+                return self.json(row,201)
+            if route.startswith("/api/conversations/") and route.endswith("/messages"):
+                cid=route.split("/")[3]; conversation=conversations.conversation_detail(STORE,cid)
+                if not conversation: return self.json({"error":"conversation not found"},404)
+                try:
+                    provider=conversations.resolve_provider(STORE,conversation,data.get("provider_id") or None)
+                    result=conversations.start_turn(STORE,conversation,str(data.get("content") or ""),provider=provider)
+                except LookupError as error: return self.json({"error":str(error)},404)
+                except ValueError as error: return self.json({"error":str(error)},400)
+                STORE.write("UPDATE conversations SET provider_id=?, model=?, updated_at=? WHERE id=?",(provider["id"],provider["model"],now(),cid))
+                return self.json(result,202)
+            if route.startswith("/api/conversations/") and route.endswith("/regenerate"):
+                cid=route.split("/")[3]; conversation=conversations.conversation_detail(STORE,cid)
+                if not conversation: return self.json({"error":"conversation not found"},404)
+                try:
+                    provider=conversations.resolve_provider(STORE,conversation,data.get("provider_id") or None)
+                    result=conversations.start_turn(STORE,conversation,"",provider=provider,regenerate=True)
+                except LookupError as error: return self.json({"error":str(error)},404)
+                except ValueError as error: return self.json({"error":str(error)},409)
+                return self.json(result,202)
+            if route.startswith("/api/conversations/") and route.endswith("/stop"):
+                parts=route.split("/"); cid=parts[3]; mid=parts[5]
+                row=STORE.one("SELECT * FROM messages WHERE id=? AND conversation_id=?",(mid,cid))
+                if not row: return self.json({"error":"message not found"},404)
+                if row["status"] not in conversations.ACTIVE_STATUSES:
+                    return self.json({"id":mid,"status":row["status"],"stopped":False,"reason":"message is not active"})
+                if not conversations.request_stop(mid):
+                    current=STORE.one("SELECT status FROM messages WHERE id=?",(mid,)) or {}
+                    return self.json({"id":mid,"status":current.get("status",row["status"]),"stopped":False,
+                                      "reason":"no running generation to stop"})
+                return self.json({"id":mid,"status":"stopping","stopped":True})
+            if route.startswith("/api/conversations/") and route.endswith("/task"):
+                cid=route.split("/")[3]; conversation=conversations.conversation_detail(STORE,cid)
+                if not conversation: return self.json({"error":"conversation not found"},404)
+                pid=data.get("project_id") or conversation.get("project_id")
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
+                if not project: return self.json({"error":"conversation has no project; supply project_id"},400)
+                prompt=str(data.get("prompt") or "").strip()
+                if not prompt:
+                    last=STORE.one("SELECT content FROM messages WHERE conversation_id=? AND role='user' ORDER BY created_at DESC, rowid DESC LIMIT 1",(cid,))
+                    prompt=str((last or {}).get("content") or "").strip()
+                if not prompt: return self.json({"error":"task prompt is required"},400)
+                plan=plan_for(prompt,repository_summary(Path(project["path"]))); tid=uid(); at=now()
+                STORE.write("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",(tid,project["id"],prompt,"planned",json.dumps(plan),at,at))
+                STORE.write("INSERT INTO conversation_tasks VALUES (?,?,?)",(cid,tid,at))
+                task_event(tid,"planner","info",f"Task created from conversation {cid}; repository summary completed.")
+                task_event(tid,"security","info","File changes still require an approved workspace and an approved round.")
+                return self.json({"id":tid,"status":"planned","plan":plan,"conversation_id":cid,"approval_required":True},201)
             if route == "/api/projects":
                 path=safe_project_path(data.get("path","")); pid=uid(); name=data.get("name") or path.name
                 STORE.write("INSERT INTO projects VALUES (?,?,?,?)",(pid,name,str(path),now())); return self.json({"id":pid,"name":name,"path":str(path)},201)
@@ -939,7 +1108,7 @@ class App(SimpleHTTPRequestHandler):
                 prompt=str(data.get("prompt","")).strip()
                 if not prompt: return self.json({"error":"task prompt is required"},400)
                 plan=plan_for(prompt, repository_summary(Path(project["path"]))); tid=uid(); t=now()
-                STORE.write("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",(tid,project["id"],prompt,"planned",json.dumps(plan),t,t))
+                STORE.write("INSERT INTO tasks (id,project_id,prompt,status,plan,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",(tid,project["id"],prompt,"planned",json.dumps(plan),t,t))
                 task_event(tid,"planner","info","Repository summary completed; implementation plan created.")
                 task_event(tid,"security","info","Secret-named files excluded from task context by default.")
                 return self.json({"id":tid,"status":"planned","plan":plan},201)
@@ -1146,11 +1315,9 @@ class App(SimpleHTTPRequestHandler):
                     STORE.write("UPDATE proposals SET status='cancelled' WHERE id=? AND status='pending'",(proposal["id"],))
                     task_event(tid,"orchestrator","warning",f"Round {round_row['round_number']} was cancelled before it started; nothing ran.")
                     return self.json({"round_id":round_row["id"],"round":round_row["round_number"],"status":"cancelled","ok":False,"results":[],"task_status":"cancelled","ledger":round_ledger(round_row["id"])},409)
-                claim=STORE.conn.execute("UPDATE proposals SET status='executing' WHERE id=? AND status='pending'",(proposal["id"],))
-                if claim.rowcount != 1: STORE.conn.rollback(); return self.json({"error":"Proposal is already being executed"},409)
-                round_claim=STORE.conn.execute("UPDATE rounds SET status='executing', updated_at=? WHERE id=? AND status='awaiting-approval'",(now(),round_row["id"]))
-                STORE.conn.commit()
-                if round_claim.rowcount != 1: return self.json({"error":"Round is already being executed"},409)
+                claimed=STORE.claim_execution(proposal["id"],round_row["id"])
+                if claimed!="ok":
+                    return self.json({"error":"Proposal is already being executed" if claimed=="proposal" else "Round is already being executed"},409)
                 op_ids={}
                 def on_event(kind,index,operation,result):
                     """Persist each operation before and after it runs, so a crash leaves a real ledger."""
@@ -1264,8 +1431,7 @@ class App(SimpleHTTPRequestHandler):
                 detail=approval_detail("agent-proposal", tid, workspace=proposal["workspace_branch"], workspace_path=proposal["workspace_path"], proposal=digest)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],detail))
                 if not permitted: return self.json({"error":"approved agent proposal for this exact workspace and digest required"},403)
-                claim=STORE.conn.execute("UPDATE proposals SET status='executing' WHERE id=? AND status='pending'",(proposal["id"],)); STORE.conn.commit()
-                if claim.rowcount != 1: return self.json({"error":"Proposal is already being executed"},409)
+                if STORE.claim_execution(proposal["id"])!="ok": return self.json({"error":"Proposal is already being executed"},409)
                 outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=lambda: bool(cancellation_row(tid))))
                 final="executed" if outcome["ok"] else "failed"
                 STORE.write("UPDATE proposals SET status=?, results=? WHERE id=?",(final,json.dumps(outcome["operations"]),proposal["id"]))
@@ -1320,8 +1486,21 @@ class App(SimpleHTTPRequestHandler):
             return self.json({"error":"not found"},404)
         except (ValueError, sqlite3.IntegrityError) as e: return self.json({"error":str(e)},400)
         except json.JSONDecodeError: return self.json({"error":"invalid JSON"},400)
+    def do_DELETE(self):
+        route=self.route()
+        if route.startswith("/api/conversations/") and len(route.split("/"))==4:
+            result=conversations.delete_conversation(STORE,route.split("/")[3])
+            return self.json(result) if result else self.json({"error":"conversation not found"},404)
+        return self.json({"error":"not found"},404)
     def do_PATCH(self):
         route=self.route()
+        if route.startswith("/api/conversations/") and len(route.split("/"))==4:
+            cid=route.split("/")[3]
+            try: row=conversations.update_conversation(STORE,cid,self.body())
+            except LookupError as error: return self.json({"error":str(error)},404)
+            except ValueError as error: return self.json({"error":str(error)},400)
+            except json.JSONDecodeError: return self.json({"error":"invalid JSON"},400)
+            return self.json(row) if row else self.json({"error":"conversation not found"},404)
         if route.startswith("/api/approvals/"):
             aid=route.split("/")[3]; data=self.body(); status=data.get("status")
             if status not in {"approved","rejected"}: return self.json({"error":"status must be approved or rejected"},400)
