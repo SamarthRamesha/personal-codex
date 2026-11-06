@@ -1,10 +1,13 @@
 """Conversation persistence and genuine streamed assistant output.
 
-Every provider call here is a deterministic injectable transport; no model and no socket are used.
-The HTTP tests exercise the real control plane, including SSE token delivery and resumption.
+Provider replies come from a deterministic injected transport, so no model is required and no
+vendor endpoint is contacted. The HTTP tests exercise the real control plane on a loopback
+listener -- SSE token delivery, resumption and stop -- and one test deliberately points
+provider discovery at a refused loopback port to prove it fails closed.
 """
 import json
 import os
+import socket
 import tempfile
 import threading
 import time
@@ -29,6 +32,18 @@ def streaming_transport(pieces=("Hello", " world"), delay=0.0):
             request["on_text"](piece)
         return {"text": "".join(pieces), "model": request.get("model"), "streamed": True}
     return transport
+
+
+def unreachable_loopback_endpoint():
+    """A loopback endpoint that is deterministic rather than environmental.
+
+    The port is bound but never listened on, so a connection attempt is refused
+    immediately and discovery must fail closed as "unreachable" whatever the host
+    happens to be running on the default Ollama port 11434.
+    """
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    blocker.bind(("127.0.0.1", 0))
+    return f"http://127.0.0.1:{blocker.getsockname()[1]}", blocker
 
 
 def slow_transport():
@@ -271,7 +286,9 @@ class ConversationHttpTests(unittest.TestCase):
         self.thread = threading.Thread(target=self.http.serve_forever, daemon=True); self.thread.start()
         self.base = f"http://127.0.0.1:{self.http.server_port}"
         self.project = self.post("/api/projects", {"path": str(self.repo), "name": "Fixture"})
-        self.provider = self.post("/api/providers", {"kind": "ollama", "endpoint": "http://127.0.0.1:11434", "model": "fixture:1b"})
+        self.provider_endpoint, self.endpoint_blocker = unreachable_loopback_endpoint()
+        self.addCleanup(self.endpoint_blocker.close)
+        self.provider = self.post("/api/providers", {"kind": "ollama", "endpoint": self.provider_endpoint, "model": "fixture:1b"})
 
     def tearDown(self):
         conversations.TRANSPORT = self.old_transport
@@ -379,7 +396,8 @@ class ConversationHttpTests(unittest.TestCase):
         listing = self.get("/api/models")
         self.assertEqual(len(listing["providers"]), 1)
         self.assertEqual(listing["providers"][0]["model"], "fixture:1b")
-        # No Ollama is listening here, so live discovery must fail closed with a class, not a fake list.
+        # The fixture endpoint is bound but not listening, so live discovery must fail closed
+        # with a class, not a fake list -- independent of anything running on 11434.
         with self.assertRaises(urllib.error.HTTPError) as unreachable:
             self.get(f"/api/providers/{self.provider['id']}/models")
         self.assertEqual(unreachable.exception.code, 502)
