@@ -62,7 +62,9 @@ Not implemented yet: provider-native tool calling, a semantic/vector index, desk
 - Node.js only for `node --check web/app.js`; the dashboard itself has no build step.
 - Optional: [Ollama](https://ollama.com) or any OpenAI-compatible local server.
 
-No packages need installing: `pip install` is not required for the app or the tests.
+No packages need installing for the app or the tests. The optional Respan Gateway integration
+(`respan-gateway==0.3.0`) is declared in `requirements.txt`; install it from wheels only with
+`pip install --only-binary=:all: -r requirements.txt` inside a virtual environment.
 
 ## Run
 
@@ -96,6 +98,42 @@ python3 app/server.py
 ```
 
 The key is read only when an approved invocation runs, is sent only in the `Authorization` header, and is never stored, returned, or logged.
+
+### Local Respan Gateway (optional)
+
+The pinned `respan-gateway==0.3.0` integration routes one provider call through the open-source
+[Respan Gateway](https://github.com/respanai/respan-gateway?utm_source=freebuff&utm_medium=paid&utm_campaign=respan-gateway&bfcid=bfc_1.eyJpZCI6Ijc1NTA5Yjg1LTIwNDAtNGIwMC04MTFjLTkzNWFmZmUzNGVkYyIsImMiOiIyMDM2ODZkZS1mMzg0LTQ4NTQtYmViNC1hYzBiYWRmNmM1NTUiLCJrIjoiM2IxMGE4YmUtNzgyOS00MmJhLWFmNmEtYmI0YWUxZTRhY2Y4IiwiaWF0IjoxNzkzODgyMzMyfQ.XD_0nrLykffN6GdfZHgLtzA8DH3VooitSVkwVie7jQo), served in this process on a
+loopback port it chooses itself (`gw.serve(port=0)`). The gateway holds the developer's own provider
+keys — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `env:NAME` references in a local
+`gateway.toml` — and adds its routing, retry and fallback rules. Personal Codex keeps its single
+hardened HTTP boundary: it sends the gateway no credential, applies the same byte caps, redirect
+refusal and redaction, and still requires an approval for every call.
+
+```sh
+python3 -m venv .venv && . .venv/bin/activate
+pip install --only-binary=:all: -r requirements.txt
+export OPENAI_API_KEY="…"        # the gateway's own key; keep it out of git
+python3 app/server.py
+```
+
+Register a provider with kind `respan-gateway` and the model the gateway should route. Leave
+`endpoint` and `secret_ref` empty: the provider record stores neither, and the loopback port is
+chosen per process, so the approval binding stays stable. Round approvals, budgets, streaming and
+response validation are unchanged. Nothing is exported: Respan signup, `RESPAN_API_KEY` and hosted
+credits are not used. Keep the listener on loopback — without `client_keys` in its config, anyone
+who reaches it spends your keys.
+
+Check the route without a key or network:
+
+```sh
+python3 scripts/gateway_check.py          # add --json for a machine-readable report
+```
+
+It starts a loopback fixture provider, starts the gateway against it, then runs the app path —
+register provider → request approval → approve → invoke — plus the streaming round path. Observed on
+2026-11-05: every check reported `ok`, the fixture reply came back through the gateway (103 bytes, in
+the plain and streamed path) and validated as an agent proposal. That proves routing, approval
+binding and response validation; no live provider request was made in that run.
 
 ### Cloud endpoints
 
@@ -216,7 +254,7 @@ python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py
 node --check web/app.js
 ```
 
-`tests/test_server.py` covers repository filtering, planning, approvals, worktree, command execution, release, merge and branch deletion. `tests/test_providers.py` runs both adapters against an ephemeral loopback stub server (malformed JSON, HTTP errors, redirects, refusal, timeout, oversize, credentials). `tests/test_tools.py` covers the tool schema, path/symlink containment, patch hash binding, execution ordering, the full proposal → approval → execution API lifecycle including stale-file rejection, and the iterative round loop: a failing round followed by a corrected passing round and an evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation. `tests/test_ui.py` is a browser-free dashboard contract check (element IDs, wiring, routed API paths, local-only assets). `tests/test_context.py` covers the context engine (manifest, `.gitignore` and secret exclusion, symlink containment, ranking and determinism, byte and file caps, Python/JS outlines, untrusted-data framing) and the project-memory API (scoping, credential rejection, edit, delete). The round suite also covers cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted operations not being replayed, invocation and prompt budget refusal, explicit budget reset, and context visibility/digest binding. `tests/test_streaming.py` covers streaming accumulation and rejection (missing terminal marker, malformed chunk, oversized stream, cancellation, sanitised HTTP errors), model discovery, error redaction, and the live diagnostic harness (unreachable service, no models, missing explicit model, valid probe, invalid JSON). The memory suite covers evidence requirements, duplicate refusal, credential refusal, explicit approval/rejection, provenance, staleness labelling and retrieval bounds. No live model and no external network are used.
+`tests/test_server.py` covers repository filtering, planning, approvals, worktree, command execution, release, merge and branch deletion. `tests/test_providers.py` runs both adapters against an ephemeral loopback stub server (malformed JSON, HTTP errors, redirects, refusal, timeout, oversize, credentials). `tests/test_tools.py` covers the tool schema, path/symlink containment, patch hash binding, execution ordering, the full proposal → approval → execution API lifecycle including stale-file rejection, and the iterative round loop: a failing round followed by a corrected passing round and an evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation. `tests/test_ui.py` is a browser-free dashboard contract check (element IDs, wiring, routed API paths, local-only assets). `tests/test_context.py` covers the context engine (manifest, `.gitignore` and secret exclusion, symlink containment, ranking and determinism, byte and file caps, Python/JS outlines, untrusted-data framing) and the project-memory API (scoping, credential rejection, edit, delete). The round suite also covers cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted operations not being replayed, invocation and prompt budget refusal, explicit budget reset, and context visibility/digest binding. `tests/test_gateway.py` covers the Respan Gateway provider (metadata rules, no stored endpoint or secret, loopback-only approval binding, the missing-package message, and a routed invocation plus streamed round against a loopback fixture). `tests/test_streaming.py` covers streaming accumulation and rejection (missing terminal marker, malformed chunk, oversized stream, cancellation, sanitised HTTP errors), model discovery, error redaction, and the live diagnostic harness (unreachable service, no models, missing explicit model, valid probe, invalid JSON). The memory suite covers evidence requirements, duplicate refusal, credential refusal, explicit approval/rejection, provenance, staleness labelling and retrieval bounds. No live model and no external network are used.
 
 ## Project documents
 
