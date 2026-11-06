@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, providers, tools  # script execution puts app/ on sys.path
+    import context, gateway, providers, tools  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, providers, tools
+    from app import context, gateway, providers, tools
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -45,7 +45,7 @@ MAX_CONTEXT_BYTES = env_int("PERSONAL_CODEX_MAX_CONTEXT_BYTES", 60_000, 2_000, 4
 MAX_INVOCATIONS = env_int("PERSONAL_CODEX_MAX_INVOCATIONS", 12, 1, 100)
 USAGE_FIELDS = ("prompt_bytes", "response_bytes", "test_output_bytes", "context_bytes", "invocations")
 ROUND_ACTIVE = {"awaiting-approval", "executing"}
-PROVIDER_KINDS = {"ollama", "openai-compatible"}
+PROVIDER_KINDS = {"ollama", "openai-compatible", gateway.GATEWAY_KIND}
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 ENV_REF_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -127,6 +127,13 @@ def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: s
     """Validate metadata only; this function never reads an environment secret or contacts a provider."""
     if kind not in PROVIDER_KINDS: raise ValueError("Unsupported provider kind")
     if not model: raise ValueError("model is required")
+    if kind == gateway.GATEWAY_KIND:
+        # The in-process gateway chooses its loopback port per process, so a provider record stores no
+        # endpoint and no secret: the gateway resolves its own provider keys.
+        if endpoint: raise ValueError("A respan-gateway provider resolves its loopback endpoint at call time; leave endpoint empty")
+        if secret_ref: raise ValueError("A respan-gateway provider stores no secret reference; the gateway resolves its provider keys")
+        if cloud_allowed: raise ValueError("A respan-gateway provider is loopback only and needs no cloud consent")
+        return {"kind": kind, "endpoint": "", "model": model, "secret_ref": "", "cloud_allowed": 0}
     parsed = urlparse(endpoint)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError("Provider endpoint must be an absolute http(s) URL without embedded credentials")
@@ -138,7 +145,7 @@ def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: s
 
 def provider_capabilities(provider: dict) -> dict:
     """Describe the adapter boundary without invoking a provider or reading a secret."""
-    return {"id": provider["id"], "kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "cloud_allowed": bool(provider["cloud_allowed"]), "supports_streaming": True, "supports_tool_calls": provider["kind"] == "openai-compatible", "invocation_requires_approval": True}
+    return {"id": provider["id"], "kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "cloud_allowed": bool(provider["cloud_allowed"]), "supports_streaming": True, "supports_tool_calls": provider["kind"] in {"openai-compatible", gateway.GATEWAY_KIND}, "local_gateway": provider["kind"] == gateway.GATEWAY_KIND, "invocation_requires_approval": True}
 
 def validate_provider_prompt(prompt) -> str:
     """Reject empty or oversized provider requests before any approval or transport use."""
@@ -165,6 +172,7 @@ PROVIDER_TRANSPORT = None
 def active_provider_transport(provider: dict):
     """Resolve the transport per invocation so credentials are read only at call time."""
     if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
+    if provider.get("kind") == gateway.GATEWAY_KIND: return gateway.transport()
     return providers.transport_for(provider, provider.get("secret_ref") or "")
 
 STREAM_PROVIDER = os.getenv("PERSONAL_CODEX_STREAM_PROVIDER", "0") == "1"
@@ -177,6 +185,8 @@ def round_transport(provider: dict, stop_check=None, on_chunk=None):
             streamer = providers.OllamaStreamTransport()
         elif provider.get("kind") == "openai-compatible":
             streamer = providers.OpenAIStreamTransport(provider.get("secret_ref") or "")
+        elif provider.get("kind") == gateway.GATEWAY_KIND:
+            streamer = gateway.stream_transport()
         else:
             streamer = None
         if streamer is not None:
@@ -195,7 +205,7 @@ def provider_health(provider: dict) -> dict:
     last = STORE.one("SELECT * FROM invocations WHERE provider_id=? ORDER BY created_at DESC LIMIT 1", (provider["id"],))
     issues = []
     if not provider.get("model"): issues.append("no model configured")
-    if not provider.get("endpoint"): issues.append("no endpoint configured")
+    if not provider.get("endpoint") and provider.get("kind") != gateway.GATEWAY_KIND: issues.append("no endpoint configured")
     if not provider.get("enabled"): issues.append("provider is disabled")
     return {"id": provider["id"], "kind": provider["kind"], "model": provider.get("model"), "endpoint": provider.get("endpoint"),
             "cloud_allowed": bool(provider.get("cloud_allowed")), "last_latency_ms": provider.get("last_latency_ms"),

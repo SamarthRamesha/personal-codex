@@ -1,0 +1,4 @@
+# Optional integration dependency: route the approved provider workflow through the
+# local Respan Gateway. The app and its test suite itself remain standard-library only.
+# Install from wheels only: pip install --only-binary=:all: -r requirements.txt
+respan-gateway==0.3.0
