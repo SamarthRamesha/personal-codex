@@ -13,6 +13,10 @@ Typical use on the owner's Mac:
 Exit codes: 0 diagnostic passed, 2 no usable model, 3 the model did not return a valid proposal,
 4 the provider failed (unreachable, timeout, HTTP error).
 
+Passing this diagnostic proves the endpoint answers with schema-valid JSON and, with --stream, that
+its NDJSON stream terminates correctly. It does not prove a coding round works: use the
+approval-gated round flow for that, and read DEVELOPMENT_LOG.md before trusting a model.
+
 Nothing here stops the approval-gated product flow from being the only path that edits code.
 """
 from __future__ import annotations
@@ -32,6 +36,19 @@ PROBE_PROMPT = (
     '{"summary":"one short sentence","status":"continue","operations":[{"tool":"list_files","path":"."}]}'
 )
 MAX_REPORTED_BYTES = 10_000_000
+NEXT_STEPS = {
+    "unreachable": ["Confirm the service is running and nothing else owns the port.",
+                    "On macOS: `brew install ollama` (or the official installer), then `ollama serve`.",
+                    "Verify with `curl -s http://127.0.0.1:11434/api/tags`."],
+    "timeout": ["Choose a smaller model, or rerun with a larger `--timeout`.",
+                "Check memory pressure: a 16 GB machine should stay at or below ~14B parameters per model."],
+    "unauthorised": ["The endpoint rejected the request; this diagnostic never sends credentials, so check the service."],
+    "no-model": ["Install a model explicitly, for example `ollama pull qwen2.5-coder:7b`.",
+                 "Then rerun with the exact identifier printed by `--discover-models`."],
+    "schema": ["The model answered but not with the required JSON object.",
+               "Try a model tuned for instruction/code following, or rerun to see whether it was a one-off.",
+               "Do not weaken Personal Codex's schema to accommodate prose output."],
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--discover-models", action="store_true", help="list locally installed models and exit")
     parser.add_argument("--timeout", type=float, default=120.0, help="seconds for the probe request")
     parser.add_argument("--json", action="store_true", help="print a machine-readable report")
+    parser.add_argument("--stream", action="store_true",
+                        help="also stream the probe and require a clean terminal chunk")
     parser.add_argument("--cloud-allowed", action="store_true", help="acknowledge a non-loopback endpoint")
     return parser
 
@@ -57,6 +76,7 @@ def run(args) -> tuple[int, dict]:
         check("service reachable", False, providers.redact_provider_text(str(error)))
         report["failure_class"] = providers.classify_provider_error(error)
         report["models"] = []
+        report["next"] = NEXT_STEPS.get(report["failure_class"], NEXT_STEPS["unreachable"])
         return 4, report
     report["models"] = models
     check("service reachable", True, f"{len(models)} installed model(s)")
@@ -64,17 +84,24 @@ def run(args) -> tuple[int, dict]:
     if args.discover_models:
         if not models:
             check("model available", False, "no installed models; run `ollama pull <model>` on the owner's machine")
+            report["next"] = NEXT_STEPS["no-model"]
         else:
             check("model available", True, "run again with --model <name> to probe a chosen model")
         return (0 if models else 2), report
 
     if not models:
         check("model available", False, "no installed models; run `ollama pull <model>` on the owner's machine")
+        report["next"] = NEXT_STEPS["no-model"]
         return 2, report
     if not args.model:
         check("model available", False, "select one explicitly with --model (installed models are listed above)")
+        report["next"] = NEXT_STEPS["no-model"]
         return 2, report
     check("model available", args.model in models, f"{args.model} {'is' if args.model in models else 'is NOT'} installed")
+    if args.model not in models:
+        # Never probe a guessed identifier: an installed list is the only source of model names.
+        report["next"] = NEXT_STEPS["no-model"]
+        return 2, report
 
     started = time.time()
     try:
@@ -97,9 +124,28 @@ def run(args) -> tuple[int, dict]:
     except tools.ToolCallError as error:
         check("proposal schema", False, str(error)[:300])
         report["response_preview"] = text[:400]
+        report["next"] = NEXT_STEPS["schema"]
         return 3, report
     check("proposal schema", True, f"status={parsed['status']}, {len(parsed['operations'])} operation(s)")
     report["proposal"] = {"status": parsed["status"], "operations": len(parsed["operations"])}
+
+    if args.stream:
+        deltas = []
+        started = time.time()
+        try:
+            streamed = providers.OllamaStreamTransport(timeout=args.timeout)({
+                "endpoint": args.endpoint, "model": args.model, "prompt": PROBE_PROMPT,
+                "cloud_allowed": args.cloud_allowed, "on_text": deltas.append})
+        except providers.ProviderTransportError as error:
+            check("streaming completed", False, providers.redact_provider_text(str(error)))
+            report["failure_class"] = providers.classify_provider_error(error)
+            report["next"] = NEXT_STEPS.get(report["failure_class"], [])
+            return 4, report
+        report["stream"] = {"chunks": len(deltas), "delta_bytes": sum(len(delta) for delta in deltas),
+                            "latency_ms": int((time.time() - started) * 1000),
+                            "text_matches": streamed.get("text") == "".join(deltas)}
+        check("streaming completed", True, f"{len(deltas)} chunk(s), {report['stream']['delta_bytes']} delta bytes")
+        check("streamed text is complete", bool(streamed.get("text")), "terminal marker received with assistant text")
     return 0, report
 
 
@@ -111,6 +157,11 @@ def main(argv=None) -> int:
         return code
     for entry in report.get("checks", []):
         print(f"[{'ok' if entry['ok'] else 'FAIL'}] {entry['check']}: {entry['detail']}")
+    if report.get("stream"):
+        stream = report["stream"]
+        print(f"stream: {stream['chunks']} chunk(s), {stream['delta_bytes']} bytes, {stream['latency_ms']} ms")
+    for step in report.get("next", []):
+        print(f"next: {step}")
     if "models" in report:
         print(f"installed models: {', '.join(report['models']) or '(none)'}")
     if "latency_ms" in report:
