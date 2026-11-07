@@ -2,7 +2,7 @@
 
 ## Mission 1B authoritative implementation checkpoint — 2026-11-07
 
-The Mission 1B user directive supersedes the earlier AFK milestones below. Continue existing branch and preserve all history. No deployment, GitHub publication, server write, persistent Mac service, inbound listener or model download is approved. Do not read/stage/delete/publish the pre-existing untracked diagnostic. Exact targets/access/approval queue remain outside Git in current outputs. No new user changes were found at entry; starting source was 6c0c101.
+The Mission 1B user directive supersedes the earlier AFK milestones below. Continue existing branch and preserve all history. No deployment, GitHub publication, server write, persistent Mac service, externally reachable listener or model download is approved. Only disposable authorised loopback HTTP/TLS tests were used. Do not read/stage/delete/publish the pre-existing untracked diagnostic. Exact targets/access/approval queue remain outside Git in current outputs. No new user changes were found at entry; starting source was 6c0c101. Mission1B implementation saved locally as `440c78afd252551fbb5a8347ccd36f5ce7461449`; a documentation receipt follows. Run git log for current tip.
 
 ### Current implementation
 
