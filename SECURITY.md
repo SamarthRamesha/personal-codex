@@ -1,5 +1,17 @@
 # Security model
 
+## Current security boundary — 2026-11-07
+
+Read `docs/THREAT_MODEL.md` for the current threat matrix and residual risks. The inventory below preserves prior work and is superseded where it describes authentication/TLS/CSP/streaming as absent.
+
+The default entrypoint binds loopback. A remote bind is allowed only for an explicit Tailscale address with an owner token file and TLS certificate/key; wildcard/public/ordinary LAN binds fail before listening. No Tailscale/router/firewall settings are changed by this code. Sensitive APIs, streams and mutations require the configured owner token or valid expiring cookie. A deliberately unauthenticated loopback development mode remains available. Owner auth does not replace exact task approvals or OS isolation.
+
+Token files must be owner-only regular files and are opened without following symlinks. Tokens never appear in request logs, browser storage or the database. Native disconnect drops credentials and backend data. Cookie sessions are hashed in memory, expire after one hour and are revoked on logout/restart; the long-lived bearer token is revoked by replacing its file and restarting. No multi-user authorization or encrypted credential store is implemented.
+
+Host/Origin/Sec-Fetch checks, strict JSON/framing/body bounds, request timeouts and existing security headers defend the application boundary. Cloud chat refuses transmission instead of approving itself. The optional external gateway is disabled unless explicitly enabled and still requires network approval per task call. Default operation has no cloud fallback. Round cancellation prevents a late provider response from creating a runnable proposal.
+
+**Execution limitation:** approved tests still execute host-accessible repository code. Command allowlisting, worktrees and digest approvals are not an OS filesystem/network sandbox. Do not claim arbitrary untrusted repositories are safe or deploy such execution alongside family backups until OS containment and egress policy are implemented and tested. No server changes were performed in this session.
+
 - Default listen address is `127.0.0.1`; it is not a LAN service.
 - Secret-named files (`.env`, SSH key defaults, credentials files) are omitted from repository summaries.
 - Secret values are not accepted by the provider API. Store secrets externally and enter only an environment-variable reference.

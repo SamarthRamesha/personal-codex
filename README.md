@@ -2,11 +2,17 @@
 
 Personal Codex is a private, local-first AI coding control plane for macOS. It connects a registered Git repository, a local or explicitly consented model provider, and a task workspace where an agent can propose — and you can approve — small, auditable code changes.
 
-Nothing is autonomous by default. A model may *propose* file edits and test commands as strict JSON; Personal Codex validates them, shows you the exact digest, and only applies them to an isolated Git worktree after you approve that exact proposal. The service listens on loopback only and has no third-party runtime dependencies.
+Nothing is autonomous by default. A model may *propose* file edits and test commands as strict JSON; Personal Codex validates them, shows you the exact digest, and only applies them to an isolated Git worktree after you approve that exact proposal. The Python backend defaults to loopback and uses the standard library. The native client has pinned React/Tauri dependencies; remote serving requires explicit authenticated TLS configuration on a Tailscale IP.
 
 ## Status
 
-Working iterative coding loop, standard library only (Python 3.11+ / tested on 3.12 and 3.13). There is no installer, no desktop shell, and no remote worker yet. Everything runs from `python3 app/server.py`.
+Updated 2026-11-07: native Tauri + React + TypeScript Mac client, persistent streaming chat, owner authentication, guarded private TLS listener, project file previews, exact approvals/diffs, approved commands, diagnostics and verified SQLite snapshots are implemented. **Mission 1 is PARTIAL**: JARVIS SSH authentication was rejected, so no ZimaOS deployment or server-model evaluation has occurred.
+
+The installed Mac `qwen2.5-coder:14b` completed a genuine synthetic coding workflow in 110.7 seconds, including patch, tests, evidence-checked completion and restart persistence. `llama3.2:3b` produced a valid patch and tests but repeated work instead of completing. No model was downloaded. These are local Mac observations, not server or general-quality certifications.
+
+Verification: 177 Python tests discovered; HTTP-enabled run passed with 4 skips, default run passed with 34 skips; TypeScript/production build passed; 2 Vitest framing tests and 1 Rust connection-policy test passed. The actual Mac app was exercised, including token authentication and refusal of an untrusted TLS certificate.
+
+Start the backend with `python3 app/server.py`; then follow [desktop setup](desktop/README.md). See the [criterion-by-criterion acceptance evidence](docs/MISSION_1_ACCEPTANCE.md), [threat review](docs/THREAT_MODEL.md), and [private deployment instructions](DEPLOYMENT.md). The Python backend remains authoritative for approvals. The native file pane is read-only and its terminal panel is an approved command runner; a general editor and PTY terminal remain planned.
 
 ## Architecture
 
@@ -53,7 +59,7 @@ Python control plane (app/server.py)  ──  SQLite (data/personal_codex.db)
 - **Diagnose a live provider** with `scripts/live_provider_check.py`: model discovery, a schema-validated probe, latency and byte counts, sanitised errors, and no repository writes.
 - Inspect provider status (`ready` / `needs-attention`) and the last observed latency without contacting the provider.
 
-Not implemented yet: provider-native tool calling, a semantic/vector index, desktop shell, ZimaOS worker, login/TLS, encrypted secret storage, conflict-resolution tooling, and browser automation tests. A live model round has still never been completed in this environment (see below).
+Not implemented yet: provider-native tool calling, semantic/vector retrieval, deployed ZimaOS backend, OS-level execution/egress isolation, encrypted credential storage, general editor/PTY, signed/notarized distribution, automatic updates, scheduled backups, and broad UI regression automation. Native launch/auth/chat/workspace checks and a genuine Mac model workflow have been performed; remote operation remains blocked.
 
 ## Requirements
 
@@ -69,13 +75,13 @@ No packages need installing for the app or the tests. The optional Respan Gatewa
 ## Run
 
 ```sh
-git clone https://github.com/SamarthRamesha/personal-codex.git
+git clone --branch personal-codex/stabilization https://github.com/SamarthRamesha/personal-codex.git
 cd personal-codex
 python3 app/server.py
 # open http://127.0.0.1:8787
 ```
 
-The database is created at `data/personal_codex.db` (gitignored). Override the listener with `PERSONAL_CODEX_HOST` and `PERSONAL_CODEX_PORT`; keep it on loopback. Do not expose this service to a LAN or the internet — it has no authentication or TLS.
+The database defaults to `data/personal_codex.db`; the entire data directory is Git-ignored. `PERSONAL_CODEX_DATA` selects a dedicated owned directory. Loopback development is unauthenticated unless `PERSONAL_CODEX_TOKEN_FILE` is configured. Non-loopback startup is refused unless the bind address is a Tailscale IP and owner-token authentication plus TLS certificate/key are configured. Wildcard, public and ordinary LAN binds are refused. See `DEPLOYMENT.md`; JARVIS has not been deployed.
 
 ## Configure a provider
 
@@ -99,7 +105,9 @@ python3 app/server.py
 
 The key is read only when an approved invocation runs, is sent only in the `Authorization` header, and is never stored, returned, or logged.
 
-### Local Respan Gateway (optional)
+### Local Respan Gateway (optional, disabled by default)
+
+**2026-11-07 policy:** this gateway may route requests externally despite its local hop. It requires explicit `PERSONAL_CODEX_ENABLE_GATEWAY=1` plus a separate bound `network` approval for task invocations. It is absent from native local-provider selection. The historical integration instructions below do not constitute permission to enable it or supply credentials. No hosted integration was used in this milestone.
 
 The pinned `respan-gateway==0.3.0` integration routes one provider call through the open-source
 [Respan Gateway](https://github.com/respanai/respan-gateway?utm_source=freebuff&utm_medium=paid&utm_campaign=respan-gateway&bfcid=bfc_1.eyJpZCI6Ijc1NTA5Yjg1LTIwNDAtNGIwMC04MTFjLTkzNWFmZmUzNGVkYyIsImMiOiIyMDM2ODZkZS1mMzg0LTQ4NTQtYmViNC1hYzBiYWRmNmM1NTUiLCJrIjoiM2IxMGE4YmUtNzgyOS00MmJhLWFmNmEtYmI0YWUxZTRhY2Y4IiwiaWF0IjoxNzkzODgyMzMyfQ.XD_0nrLykffN6GdfZHgLtzA8DH3VooitSVkwVie7jQo), served in this process on a
@@ -204,7 +212,7 @@ Memory is not free-form model text. A proposal can only be created after a round
 
 ## Provider streaming and diagnostics
 
-`OllamaStreamTransport` reads NDJSON chunks with `http.client` under a byte cap and a chunk cap, ignores proxies, refuses redirects and non-loopback hosts without cloud consent, honours a cancellation check between chunks, and fails on malformed chunks, error chunks, missing terminal `done`, oversized output or empty text. Only the completed, validated text can enter the approval lifecycle; partial output is never parsed as a proposal. Streaming is opt-in with `PERSONAL_CODEX_STREAM_PROVIDER=1` and covers both Ollama NDJSON and OpenAI-compatible SSE (`data:` frames, terminated by `[DONE]`); an unterminated SSE stream is rejected, and a missing credential fails before any request.
+`OllamaStreamTransport` reads NDJSON chunks with `http.client` under a byte cap and a chunk cap, ignores proxies, refuses redirects and non-loopback hosts without cloud consent, honours a cancellation check between chunks, and fails on malformed chunks, error chunks, missing terminal `done`, oversized output or empty text. Only the completed, validated text can enter the approval lifecycle; partial output is never parsed as a proposal. Streaming defaults on (`PERSONAL_CODEX_STREAM_PROVIDER=1`); set `0` only for legacy non-streaming diagnostics and covers both Ollama NDJSON and OpenAI-compatible SSE (`data:` frames, terminated by `[DONE]`); an unterminated SSE stream is rejected, and a missing credential fails before any request.
 
 `scripts/live_provider_check.py` is the only component intended to talk to a real model, and only when a human runs it. It lists installed models, requires an explicitly named model, sends one tiny probe, validates the JSON against the round schema, and reports latency, byte counts and sanitised errors. Exit codes: 0 pass, 2 no usable model, 3 invalid proposal, 4 provider failure. It never registers a project or modifies a repository.
 
@@ -243,18 +251,18 @@ Provider latency is unknowable here because no model is installed; the diagnosti
 - Cumulative prompt, response, test-output, context and invocation budgets are enforced before a provider call; exhaustion stops the task instead of silently continuing, and only an explicit confirmed reset clears it.
 - Merge and branch deletion are separate critical approvals; a dirty target worktree is refused.
 
-Known limitations: no OS sandboxing, no guaranteed address-space enforcement on every OS, no encrypted secret store, no CSP headers, no authentication, and no TLS.
+Known limitations: no OS execution sandbox or guaranteed egress isolation, no guaranteed address-space enforcement on every OS, no encrypted secret store, no multi-user/project-scoped authorization, and no verified JARVIS deployment. CSP, owner authentication and configured TLS are implemented. Exact command approval does not make malicious repository test code safe.
 
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -v                              # 126 tests; listener-gated ones skipped
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 126 tests, disposable fixtures
+python3 -m unittest discover -s tests -v                              # 177 discovered, OK (skipped=34)
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # 177 discovered, OK (skipped=4)
 python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py
 node --check web/app.js
 ```
 
-`tests/test_server.py` covers repository filtering, planning, approvals, worktree, command execution, release, merge and branch deletion. `tests/test_providers.py` runs both adapters against an ephemeral loopback stub server (malformed JSON, HTTP errors, redirects, refusal, timeout, oversize, credentials). `tests/test_tools.py` covers the tool schema, path/symlink containment, patch hash binding, execution ordering, the full proposal → approval → execution API lifecycle including stale-file rejection, and the iterative round loop: a failing round followed by a corrected passing round and an evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation. `tests/test_ui.py` is a browser-free dashboard contract check (element IDs, wiring, routed API paths, local-only assets). `tests/test_context.py` covers the context engine (manifest, `.gitignore` and secret exclusion, symlink containment, ranking and determinism, byte and file caps, Python/JS outlines, untrusted-data framing) and the project-memory API (scoping, credential rejection, edit, delete). The round suite also covers cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted operations not being replayed, invocation and prompt budget refusal, explicit budget reset, and context visibility/digest binding. `tests/test_gateway.py` covers the Respan Gateway provider (metadata rules, no stored endpoint or secret, loopback-only approval binding, the missing-package message, and a routed invocation plus streamed round against a loopback fixture). `tests/test_streaming.py` covers streaming accumulation and rejection (missing terminal marker, malformed chunk, oversized stream, cancellation, sanitised HTTP errors), model discovery, error redaction, and the live diagnostic harness (unreachable service, no models, missing explicit model, valid probe, invalid JSON). The memory suite covers evidence requirements, duplicate refusal, credential refusal, explicit approval/rejection, provenance, staleness labelling and retrieval bounds. No live model and no external network are used.
+`tests/test_server.py` covers repository filtering, planning, approvals, worktree, command execution, release, merge and branch deletion. `tests/test_providers.py` runs both adapters against an ephemeral loopback stub server (malformed JSON, HTTP errors, redirects, refusal, timeout, oversize, credentials). `tests/test_tools.py` covers the tool schema, path/symlink containment, patch hash binding, execution ordering, the full proposal → approval → execution API lifecycle including stale-file rejection, and the iterative round loop: a failing round followed by a corrected passing round and an evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, and cancellation. `tests/test_ui.py` is a browser-free dashboard contract check (element IDs, wiring, routed API paths, local-only assets). `tests/test_context.py` covers the context engine (manifest, `.gitignore` and secret exclusion, symlink containment, ranking and determinism, byte and file caps, Python/JS outlines, untrusted-data framing) and the project-memory API (scoping, credential rejection, edit, delete). The round suite also covers cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted operations not being replayed, invocation and prompt budget refusal, explicit budget reset, and context visibility/digest binding. `tests/test_gateway.py` covers the Respan Gateway provider (metadata rules, no stored endpoint or secret, network approval even for its loopback hop, the missing-package message, and a routed invocation plus streamed round against a loopback fixture). `tests/test_streaming.py` covers streaming accumulation and rejection (missing terminal marker, malformed chunk, oversized stream, cancellation, sanitised HTTP errors), model discovery, error redaction, and the live diagnostic harness (unreachable service, no models, missing explicit model, valid probe, invalid JSON). The memory suite covers evidence requirements, duplicate refusal, credential refusal, explicit approval/rejection, provenance, staleness labelling and retrieval bounds. No live model and no external network are used.
 
 ## Project documents
 
@@ -265,5 +273,5 @@ node --check web/app.js
 1. A verified live Ollama round on the owner's machine (the immediate priority).
 2. Provider-native tool calls.
 3. A lightweight semantic retrieval benchmark before any embedding dependency is considered.
-4. Tauri desktop shell over the loopback API.
+4. Extend native parity: editor, PTY, memory and Git review controls; native shell is implemented.
 5. Mutually authenticated ZimaOS worker on a private network.

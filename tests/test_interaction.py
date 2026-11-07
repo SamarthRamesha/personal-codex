@@ -140,6 +140,7 @@ class DiffReviewTests(unittest.TestCase):
         entry = review["files"][0]
         self.assertEqual(entry["occurrences"], 0)
         self.assertTrue(entry["patch_preview_only"])
+        self.assertTrue(review["stale"], "an unmatched patch cannot be presented as executable")
         self.assertIn("+new", "\n".join(entry["diff"]))
 
 
@@ -263,7 +264,7 @@ class InteractionApiTests(unittest.TestCase):
         server.task_event(task["id"], "executor", "info", "second-streamed-event")
         first = server.STORE.one("SELECT rowid AS seq FROM events WHERE task_id=? AND message='first-streamed-event'", (task["id"],))
         with socket.create_connection(("127.0.0.1", self.http.server_port), timeout=10) as sock:
-            sock.sendall((f"GET /api/tasks/{task['id']}/events/stream HTTP/1.1\r\nHost: localhost\r\n"
+            sock.sendall((f"GET /api/tasks/{task['id']}/events/stream HTTP/1.1\r\nHost: localhost:{self.http.server_port}\r\n"
                           f"Last-Event-ID: {first['seq']}\r\n\r\n").encode())
             data = b""
             deadline = time.time() + 8

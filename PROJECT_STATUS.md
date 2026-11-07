@@ -1,5 +1,25 @@
 # Project status
 
+## Current verified checkpoint — 2026-11-07
+
+Branch: `personal-codex/stabilization`, reconciled from remote `12a24d5` without changing `main` or the existing untracked diagnostic. Repository: `https://github.com/SamarthRamesha/personal-codex`.
+
+**Mission 1: PARTIAL.** Native Mac client and genuine local-model coding work now function; server deployment is blocked on SSH authentication. The user confirmed JARVIS at `<server-tailscale-ip>`, user `<ssh-user>`, home `/DATA`. Tailscale is running and JARVIS is online/active. Authorized read-only SSH reached the host but the configured identity was rejected. No server software, configuration, storage, certificates or tailnet settings were changed; no backup directories were accessed.
+
+Implemented this session: Tauri/React/TypeScript native application, original app icon, secure Rust connection bridge, owner-token/cookie authentication, request framing/size and Host/Origin hardening, restricted private TLS startup, independent data root, contained project file APIs, installed-model selection, atomic streamed-content/resume cursors, newest-message history, duplicate-turn/concurrency limits, cancellation-after-planning protection, atomic approval decisions and execution rollback, accurate native-tool capability metadata, safe cloud-chat refusal, default-disabled external gateway, pruned context traversal, own-data storage diagnostics, verified database snapshots and new-path restore.
+
+Native UI exercised on the actual Mac: history, streaming/stop, files, task/test evidence, proposals/diffs, snapshot creation, disconnect/reconnect, missing-token refusal, owner authentication, untrusted-TLS refusal with no fallback. The local release client still requires a separately running backend; no service was installed. File pane is read-only and terminal is an exact-approved command runner, not an editor/PTY.
+
+Real inference: installed `qwen2.5-coder:14b` passed the synthetic authenticated chat → approved worktree → real patch → passing test → model completion → restart persistence workflow. Total 110,671 ms; plan 65,546 ms. Installed `llama3.2:3b` passed chat/streaming and a coding round but failed to conclude reliably. No weights or inference engines were installed. Tokens/s and peak RAM remain unmeasured; no ZimaOS model is selected.
+
+Tests: HTTP-enabled Python suite 177 discovered, OK (4 skips); default 177, OK (34 skips); Python compilation, dashboard JS syntax, TypeScript and Vite build passed; 2 Vitest tests and 1 Rust test passed. Optional gateway dependency is absent (3 skips); Linux `/proc` child check is inapplicable on Mac (1 skip). Browser/native UI checks are manual CUA evidence, not a broad automated UI suite.
+
+See `docs/MISSION_1_ACCEPTANCE.md` for every PASS/PARTIAL/BLOCKED criterion and `docs/THREAT_MODEL.md` for the remaining OS sandbox, egress, server deployment, resource scheduling and update gaps. Do not describe this checkpoint as the finished autonomous environment.
+
+## Historical checkpoint follows
+
+The dated inventory below is preserved for project history. The current checkpoint above supersedes old test counts, branch references and claims that no desktop, authentication, TLS or real-model proof exists.
+
 Updated: 2026-11-02 (Asia/Kolkata)
 
 ## Current milestone: interactive execution — cancellation, live activity, diff review and search

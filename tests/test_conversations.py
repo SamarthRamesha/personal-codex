@@ -258,6 +258,48 @@ class ConversationStoreTests(unittest.TestCase):
         self.assertEqual(events[-1][1]["status"], "stopped")
         self.assertIn("restarted", events[-1][1]["error"])
 
+    def test_selected_model_is_verified_against_local_discovery(self):
+        from unittest.mock import patch
+        row=self.conversation()
+        row["model"]="installed-alternative"
+        with patch.object(conversations.providers,'discover_models',return_value=['installed-alternative']):
+            selected=conversations.resolve_provider(self.store,row,None)
+            self.assertEqual(selected['model'],'installed-alternative')
+        with patch.object(conversations.providers,'discover_models',return_value=['other-model']):
+            with self.assertRaisesRegex(ValueError,'not installed'):
+                conversations.resolve_provider(self.store,row,None)
+
+    def test_cloud_chat_cannot_create_its_own_network_approval(self):
+        row = self.conversation()
+        provider = self.store.one("SELECT * FROM providers WHERE id=?", (self.provider_id,))
+        provider["cloud_allowed"] = 1
+        with self.assertRaisesRegex(ValueError, "Cloud chat is disabled"):
+            conversations.start_turn(self.store, row, "private text", provider=provider)
+        self.assertEqual(self.store.rows("SELECT * FROM approvals"), [])
+        self.assertEqual(conversations.message_history(self.store, row["id"]), [])
+
+    def test_history_keeps_the_newest_messages_and_resume_cursor(self):
+        row = self.conversation()
+        for n in range(5):
+            message = conversations.new_message(self.store, row["id"], "assistant", str(n))
+        seq = conversations.append_chunk(self.store, row["id"], message["id"], " delta")
+        history = conversations.message_history(self.store, row["id"], limit=2)
+        self.assertEqual([m["content"] for m in history], ["3", "4 delta"])
+        self.assertEqual(history[-1]["last_seq"], seq)
+
+    def test_duplicate_turn_is_rejected_without_persisting_a_second_user(self):
+        conversations.TRANSPORT = slow_transport()
+        row = self.conversation()
+        result = conversations.start_turn(self.store, row, "first")
+        try:
+            with self.assertRaisesRegex(ValueError, "active answer"):
+                conversations.start_turn(self.store, row, "second")
+            users = self.store.rows("SELECT content FROM messages WHERE role='user'")
+            self.assertEqual([m["content"] for m in users], ["first"])
+        finally:
+            conversations.request_stop(result["assistant_message_id"])
+            conversations.wait_for_message(self.store, result["assistant_message_id"])
+
     def test_a_missing_provider_is_refused_rather_than_guessed(self):
         row = conversations.create_conversation(self.store)
         with self.assertRaises(ValueError):

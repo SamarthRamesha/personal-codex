@@ -10,16 +10,16 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools  # script execution puts app/ on sys.path
+    import context, conversations, gateway, providers, tools, security, maintenance  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools
+    from app import context, conversations, gateway, providers, tools, security, maintenance
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data"
+DATA = Path(os.getenv("PERSONAL_CODEX_DATA", str(ROOT / "data"))).expanduser().resolve()
 DB_PATH = DATA / "personal_codex.db"
 WEB = ROOT / "web"
 SECRET_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519", "credentials.json"}
@@ -84,7 +84,7 @@ def uid() -> str: return str(uuid.uuid4())
 
 class Store:
     def __init__(self):
-        DATA.mkdir(exist_ok=True)
+        DATA.mkdir(parents=True, exist_ok=True)
         # One connection is shared by every HTTP thread and by streamed chat workers, so access is
         # serialized here: sqlite3 cannot start a transaction while another thread's commit is open.
         self.lock = threading.RLock()
@@ -143,6 +143,11 @@ class Store:
     def write(self, sql, args=()):
         with self.lock:
             self.conn.execute(sql, args); self.conn.commit()
+    def decide_approval(self, approval_id: str, status: str) -> bool:
+        with self.lock:
+            result=self.conn.execute("UPDATE approvals SET status=? WHERE id=? AND status='pending'",(status,approval_id))
+            self.conn.commit()
+            return result.rowcount == 1
     def claim_execution(self, proposal_id: str, round_id: str | None = None) -> str:
         """Take a pending proposal (and a round, when given) in one locked transaction.
 
@@ -161,10 +166,14 @@ class Store:
                 return "ok"
             round_claim = self.conn.execute("UPDATE rounds SET status='executing', updated_at=? WHERE id=? AND status='awaiting-approval'",
                                             (now(), round_id))
+            if round_claim.rowcount != 1:
+                self.conn.rollback()
+                return "round"
             self.conn.commit()
-            return "ok" if round_claim.rowcount == 1 else "round"
+            return "ok"
 
 STORE = Store()
+AUTH = security.OwnerAuth.from_env()
 
 def safe_project_path(value: str) -> Path:
     p = Path(value).expanduser().resolve()
@@ -193,7 +202,7 @@ def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: s
 
 def provider_capabilities(provider: dict) -> dict:
     """Describe the adapter boundary without invoking a provider or reading a secret."""
-    return {"id": provider["id"], "kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "cloud_allowed": bool(provider["cloud_allowed"]), "supports_streaming": True, "supports_tool_calls": provider["kind"] in {"openai-compatible", gateway.GATEWAY_KIND}, "local_gateway": provider["kind"] == gateway.GATEWAY_KIND, "invocation_requires_approval": True}
+    return {"id": provider["id"], "kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "cloud_allowed": bool(provider["cloud_allowed"]), "supports_streaming": True, "supports_tool_calls": False, "validated_json_proposals": True, "model_capabilities_verified": False, "external_routing_requires_opt_in": provider["kind"] == gateway.GATEWAY_KIND, "local_gateway": provider["kind"] == gateway.GATEWAY_KIND, "invocation_requires_approval": True}
 
 def validate_provider_prompt(prompt) -> str:
     """Reject empty or oversized provider requests before any approval or transport use."""
@@ -207,7 +216,7 @@ def provider_invocation_detail(task_id: str, provider: dict, prompt: str) -> str
 
 def provider_approval_kind(provider: dict) -> str:
     """A cloud transmission needs its own network consent; a loopback call needs invocation approval only."""
-    return "network" if provider["cloud_allowed"] else "provider-invoke"
+    return "network" if provider["cloud_allowed"] or provider.get("kind") == gateway.GATEWAY_KIND else "provider-invoke"
 
 def unavailable_provider_transport(request: dict) -> dict:
     """Optional fail-closed transport for tests and hardened deployments."""
@@ -219,14 +228,18 @@ PROVIDER_TRANSPORT = None
 
 def active_provider_transport(provider: dict):
     """Resolve the transport per invocation so credentials are read only at call time."""
+    if provider.get("kind") == gateway.GATEWAY_KIND and os.getenv("PERSONAL_CODEX_ENABLE_GATEWAY") != "1":
+        raise ProviderTransportError("Optional gateway is disabled; enabling it requires explicit external-routing consent")
     if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
     if provider.get("kind") == gateway.GATEWAY_KIND: return gateway.transport()
     return providers.transport_for(provider, provider.get("secret_ref") or "")
 
-STREAM_PROVIDER = os.getenv("PERSONAL_CODEX_STREAM_PROVIDER", "0") == "1"
+STREAM_PROVIDER = os.getenv("PERSONAL_CODEX_STREAM_PROVIDER", "1") == "1"
 
 def round_transport(provider: dict, stop_check=None, on_chunk=None):
     """Pick the adapter for one approved round call. Streaming is opt-in and never changes the prompt."""
+    if provider.get("kind") == gateway.GATEWAY_KIND and os.getenv("PERSONAL_CODEX_ENABLE_GATEWAY") != "1":
+        raise ProviderTransportError("Optional gateway is disabled; enabling it requires explicit external-routing consent")
     if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
     if STREAM_PROVIDER:
         if provider.get("kind") == "ollama":
@@ -768,7 +781,43 @@ def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None) 
         output_path.unlink(missing_ok=True)
 
 class App(SimpleHTTPRequestHandler):
-    def log_message(self, fmt, *args): print("[personal-codex] " + fmt % args)
+    def log_message(self, fmt, *args):
+        # Do not log paths/query strings, headers, credentials or request bodies.
+        print(f"[personal-codex] {self.command} {args[1] if len(args) > 1 else 'request'}")
+    def parse_request(self):
+        if not super().parse_request(): return False
+        self.connection.settimeout(15)
+        port = self.server.server_port
+        configured = os.getenv("PERSONAL_CODEX_SERVER_NAME", "").lower()
+        bound = self.server.server_address[0]
+        hosts = {f"{'['+bound+']' if ':' in bound else bound}:{port}"}
+        if security.is_loopback(bound): hosts.update({f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"})
+        if configured: hosts.add(f"{configured}:{port}")
+        tls = isinstance(self.connection, __import__('ssl').SSLSocket)
+        if port == (443 if tls else 80): hosts.update({host.rsplit(':', 1)[0] for host in list(hosts)})
+        error = security.request_origin_error(self.headers, hosts, tls=tls)
+        if error:
+            self.json({"error":error},403); return False
+        if self.command in {"POST", "PATCH", "DELETE"}:
+            lengths = self.headers.get_all("Content-Length", [])
+            if self.headers.get("Transfer-Encoding") or len(lengths) > 1:
+                self.json({"error":"Ambiguous request framing"},400); return False
+            try: length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self.json({"error":"Invalid Content-Length"},400); return False
+            if length < 0 or length > security.MAX_BODY_BYTES:
+                self.json({"error":"Request body exceeds limit"},413); return False
+            if length and self.headers.get_content_type() != "application/json":
+                self.json({"error":"Content-Type must be application/json"},415); return False
+        public = self.command == "GET" and self.route() in {"/api/health", "/", "/app.js", "/style.css"}
+        login = self.command == "POST" and self.route() == "/api/session"
+        if not public and not login and not AUTH.authorized(self.headers):
+            self.json({"error":"Owner authentication required"},401); return False
+        return True
+    def do_HEAD(self):
+        self.json({"error":"Method not supported"},405)
+    def do_OPTIONS(self):
+        self.json({"error":"Cross-origin access is disabled"},405)
     def security_headers(self, api=False):
         """Loopback responses still get a restrictive policy; the UI needs no remote origins."""
         self.send_header("X-Content-Type-Options","nosniff")
@@ -783,11 +832,22 @@ class App(SimpleHTTPRequestHandler):
     def json(self, payload, status=200):
         body=json.dumps(payload).encode(); self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.security_headers(api=True); self.end_headers(); self.wfile.write(body)
     def body(self):
-        length=int(self.headers.get("Content-Length",0)); return json.loads(self.rfile.read(length) or b"{}")
+        length=int(self.headers.get("Content-Length",0))
+        try: data=json.loads(self.rfile.read(length) or b"{}")
+        except (json.JSONDecodeError, UnicodeDecodeError): raise ValueError("invalid JSON") from None
+        if not isinstance(data, dict): raise ValueError("JSON body must be an object")
+        return data
     def route(self): return urlparse(self.path).path
     def do_GET(self):
         route=self.route()
-        if route == "/api/health": return self.json({"ok":True,"version":"0.1.0","mode":"local-control-plane"})
+        if route == "/api/health": return self.json({"ok":True,"version":"0.2.0","mode":"private-control-plane" if AUTH.enabled else "loopback-development"})
+        if route == "/api/diagnostics":
+            try: return self.json(maintenance.diagnostics(DATA))
+            except (OSError,ValueError): return self.json({"error":"Storage diagnostics unavailable; verify resource configuration"},503)
+        if route == "/api/connection":
+            return self.json({"ok":True,"authenticated":AUTH.enabled,"api_version":1,"session_ttl_seconds":AUTH.ttl,
+                              "server_name":os.getenv("PERSONAL_CODEX_SERVER_NAME", "local"),
+                              "inference":"explicit-provider-only","cloud_fallback":False})
         if route == "/api/projects": return self.json(STORE.rows("SELECT * FROM projects ORDER BY created_at DESC"))
         if route == "/api/tasks": return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/events"):
@@ -881,6 +941,15 @@ class App(SimpleHTTPRequestHandler):
             tid=route.split("/")[3]; proposal=STORE.one("SELECT * FROM proposals WHERE task_id=? ORDER BY created_at DESC LIMIT 1",(tid,))
             if not proposal: return self.json({"task_id":tid,"status":"absent"})
             return self.json({**proposal,"operations":json.loads(proposal["operations"]),"results":json.loads(proposal["results"] or "[]")})
+        if route.startswith("/api/projects/") and route.endswith(("/files", "/file")):
+            pid=route.split("/")[3]; project=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
+            if not project: return self.json({"error":"project not found"},404)
+            root=Path(project["path"]); inventory=context.walk(root)
+            if route.endswith("/files"): return self.json({"files":inventory,"limit":context.MAX_WALK_FILES})
+            name=(parse_qs(urlparse(self.path).query).get("path") or [""])[0]
+            if name not in inventory: return self.json({"error":"file is not in the permitted project inventory"},403)
+            try: return self.json(tools.read_file(root,name,64_000))
+            except (ValueError,OSError): return self.json({"error":"file unavailable"},404)
         if route.startswith("/api/projects/") and route.endswith("/summary"):
             pid=route.split("/")[3]; p=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             return self.json(repository_summary(Path(p["path"]))) if p else self.json({"error":"not found"},404)
@@ -1003,6 +1072,19 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            if route == "/api/maintenance/backup":
+                try: return self.json(maintenance.snapshot(STORE,DATA,DB_PATH),201)
+                except (ValueError,OSError,sqlite3.Error) as error: return self.json({"error":str(error)},409)
+            if route == "/api/session":
+                if not AUTH.enabled: return self.json({"error":"Owner authentication is not configured"},409)
+                try: value=AUTH.login(str(data.get("token", "")), self.client_address[0])
+                except PermissionError as error: return self.json({"error":str(error)},401)
+                self.send_response(200)
+                secure="; Secure" if isinstance(self.connection, __import__('ssl').SSLSocket) else ""
+                self.send_header("Set-Cookie",f"{security.COOKIE}={value}; HttpOnly; SameSite=Strict; Path=/; Max-Age={AUTH.ttl}{secure}")
+                self.send_header("Content-Type","application/json")
+                self.security_headers(api=True); self.end_headers(); self.wfile.write(b'{"authenticated":true}')
+                return
             if route.startswith("/api/tasks/") and route.endswith("/agent/memory/propose"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
@@ -1258,6 +1340,9 @@ class App(SimpleHTTPRequestHandler):
                     task_event(tid,"security","warning",f"Round {number} repeated an identical provider response; it was refused.")
                     return self.json({"error":"provider repeated an identical response; request a genuinely different next step","round":number},409)
                 STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],prompt_sha,result["text"],now()))
+                if cancellation_row(tid):
+                    task_event(tid,"security","warning","Provider response arrived after cancellation; no proposal was published.")
+                    return self.json({"error":"task was cancelled during planning; its response was retained but cannot execute"},409)
                 parsed=tools.parse_round_proposal(result["text"])
                 if parsed["status"]=="continue":
                     operations=tools.bind_hashes(Path(workspace["path"]), parsed["operations"])
@@ -1488,29 +1573,53 @@ class App(SimpleHTTPRequestHandler):
         except json.JSONDecodeError: return self.json({"error":"invalid JSON"},400)
     def do_DELETE(self):
         route=self.route()
+        if route == "/api/session":
+            AUTH.logout(self.headers)
+            self.send_response(200); self.send_header("Set-Cookie",f"{security.COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+            self.security_headers(api=True); self.end_headers(); self.wfile.write(b'{"authenticated":false}'); return
         if route.startswith("/api/conversations/") and len(route.split("/"))==4:
             result=conversations.delete_conversation(STORE,route.split("/")[3])
             return self.json(result) if result else self.json({"error":"conversation not found"},404)
         return self.json({"error":"not found"},404)
     def do_PATCH(self):
         route=self.route()
+        try: data=self.body()
+        except ValueError as error: return self.json({"error":str(error)},400)
         if route.startswith("/api/conversations/") and len(route.split("/"))==4:
             cid=route.split("/")[3]
-            try: row=conversations.update_conversation(STORE,cid,self.body())
+            try: row=conversations.update_conversation(STORE,cid,data)
             except LookupError as error: return self.json({"error":str(error)},404)
             except ValueError as error: return self.json({"error":str(error)},400)
             except json.JSONDecodeError: return self.json({"error":"invalid JSON"},400)
             return self.json(row) if row else self.json({"error":"conversation not found"},404)
         if route.startswith("/api/approvals/"):
-            aid=route.split("/")[3]; data=self.body(); status=data.get("status")
+            aid=route.split("/")[3]; status=data.get("status")
             if status not in {"approved","rejected"}: return self.json({"error":"status must be approved or rejected"},400)
             approval=STORE.one("SELECT * FROM approvals WHERE id=?",(aid,))
             if not approval: return self.json({"error":"approval not found"},404)
             if approval["status"] != "pending": return self.json({"error":"approval has already been decided"},409)
-            STORE.write("UPDATE approvals SET status=? WHERE id=?",(status,aid)); return self.json({"id":aid,"status":status})
+            if not STORE.decide_approval(aid,status): return self.json({"error":"approval has already been decided"},409)
+            return self.json({"id":aid,"status":status})
         return self.json({"error":"not found"},404)
 
-if __name__ == "__main__":
+def main():
+    import socket
+    import ssl
     host=os.getenv("PERSONAL_CODEX_HOST","127.0.0.1"); port=int(os.getenv("PERSONAL_CODEX_PORT","8787"))
-    print(f"Personal Codex control plane: http://{host}:{port}")
-    ThreadingHTTPServer((host,port),App).serve_forever()
+    cert=os.getenv("PERSONAL_CODEX_TLS_CERT", ""); key=os.getenv("PERSONAL_CODEX_TLS_KEY", "")
+    if bool(cert) != bool(key): raise ValueError("TLS requires both certificate and private key")
+    security.private_bind(host, AUTH.enabled, bool(cert and key))
+    class PrivateServer(ThreadingHTTPServer):
+        daemon_threads = True
+        address_family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    http=PrivateServer((host,port),App)
+    if cert:
+        tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); tls.minimum_version=ssl.TLSVersion.TLSv1_2
+        tls.load_cert_chain(cert,key); http.socket=tls.wrap_socket(http.socket,server_side=True)
+    print(f"Personal Codex control plane: {'https' if cert else 'http'}://{host}:{port}")
+    try: http.serve_forever()
+    except KeyboardInterrupt: pass
+    finally: http.server_close()
+
+if __name__ == "__main__":
+    main()

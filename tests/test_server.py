@@ -172,6 +172,12 @@ class ExecutionClaimTests(unittest.TestCase):
         self.assertIsNotNone(self.store.one("SELECT id FROM projects WHERE id='p2'"))
         self.assertEqual(self.store.one("SELECT status FROM rounds WHERE id='round-1'")['status'],'awaiting-approval')
 
+    def test_losing_the_round_claim_rolls_back_the_proposal_claim(self):
+        self.store.write("UPDATE rounds SET status='cancelled' WHERE id='round-1'")
+        self.assertEqual(self.store.claim_execution('prop-1','round-1'),'round')
+        self.assertEqual(self.store.one("SELECT status FROM proposals WHERE id='prop-1'")['status'],'pending')
+        self.assertEqual(self.store.one("SELECT status FROM rounds WHERE id='round-1'")['status'],'cancelled')
+
     def test_streamed_chat_writes_survive_a_concurrent_claim(self):
         conversation=conversations.create_conversation(self.store)
         message=conversations.new_message(self.store,conversation['id'],'assistant','',status='streaming')

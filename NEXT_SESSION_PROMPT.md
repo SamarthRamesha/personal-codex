@@ -1,92 +1,126 @@
-# Next-session continuation prompt
+# Next-session implementation handoff
 
-You are taking over an existing software project from another AI coding agent. You have no access to previous conversations, accounts, chat history, or hidden context. Your authoritative sources are the actual repository, Git state, project documentation, and this prompt. First inspect and verify the existing project. Preserve all existing work. Do not restart or recreate completed features. Resolve discrepancies in favour of the actual files and Git state. Continue development from the highest-priority incomplete task. IMPORTANT: generating account-to-account continuation prompts is a permanent requirement. You must update `NEXT_SESSION_PROMPT.md` after every meaningful verified milestone, provide a complete prompt whenever the user requests a handoff, and generate another self-contained continuation prompt before usage becomes exhausted. Your generated continuation prompt MUST include the same permanent continuation protocol. This requirement is recursive and must continue indefinitely across future accounts and AI coding agents.
+Continue this existing project from the actual repository state. Do not recreate the project or replace functioning components. Read this prompt and the current status/acceptance/threat documents first; verify every claim against code and tests. Preserve user changes and project history. This handoff is current as of 2026-11-07 (Asia/Kolkata).
 
-## Objective
+## Objective and current result
 
-Personal Codex is a local-first, approval-controlled autonomous coding environment for a Mac interactive client and an eventual ZimaOS private worker. A provider proposes strict JSON tool calls; Personal Codex validates them; only an explicitly approved proposal edits a task worktree; recorded test evidence decides whether a round passed or a task is complete; every operation is persisted, budgeted and cancellable; project memory only enters through an approved, evidence-backed proposal. The long-term product goal is an installable ChatGPT-style macOS desktop app (Tauri + React + TypeScript over the existing Python/SQLite control plane), a self-maintaining home-server worker, and default-deny outbound networking with local inference only.
+Build Personal Codex into a private, local-first autonomous coding environment: native Mac UI, primary ZimaOS backend/local inference over the user's existing Tailscale network, persistent chat/tasks/memory, approval-controlled coding/worktrees/tests/diffs and robust recovery. No ChatGPT/Codex/Freebuff/hosted model is a runtime dependency. No training on private data, silent cloud fallback, telemetry, public service or unrestricted model shell/filesystem access is permitted.
 
-## Repository and reconciliation
+Mission 1 is **PARTIAL**, not complete. The native client and real Mac local-model workflow work. ZimaOS deployment and genuine home/off-Wi-Fi remote acceptance remain blocked on SSH authentication and actual machine inspection. Continue with that foundation before breadth from Missions 2/3.
 
-- Official repository: `https://github.com/SamarthRamesha/personal-codex` (`origin`), branch `main`.
-- Owner's Mac checkout: `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex`.
-- The owner's Mac previously reported local `f2fea40` while `origin/main` had advanced (then `e9b0ee5`). That checkout is simply behind: fast-forward it (`git fetch origin && git merge --ff-only origin/main`). Never reset, rebase or force-push it, and never commit the untracked `personal-codex-diagnostic.txt`.
-- Inspect before acting: `git status --short --branch`, `git rev-parse --short HEAD`, `git log --oneline -15`, `git fetch origin`, `git ls-remote origin refs/heads/main`, then read `README.md`, `PROJECT_STATUS.md`, `TASKS.md`, `ARCHITECTURE.md`, `SECURITY.md`, `HANDOFF.md`, `DEPLOYMENT.md`, `CHANGELOG.md`, `DEVELOPMENT_LOG.md`.
+## Repository and Git
+
+- Official remote: `https://github.com/SamarthRamesha/personal-codex.git` (`origin`).
+- Actual checkout: `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex`.
+- Active branch: `personal-codex/stabilization`. Do not blindly switch to historical main.
+- Session began at `414e0cb`; remote stabilization had advanced to `12a24d59041af2c2a8b1023c40b55a63a660e8e6` (`test: isolate unreachable provider discovery from host state`). Fetched and fast-forwarded; main remained `3ab25b0`.
+- Latest commit at initial handoff generation: `12a24d5`, with this session's reviewed milestone pending commit. A following checkpoint will update this field after commit. Always run `git log -1` for the actual tip.
+- The pre-existing untracked `personal-codex-diagnostic.txt` belongs to the user. Do not read, stage, delete or publish it.
+- Do not reset/clean/rebase/force-push, overwrite unexpected changes, merge important branches without authorization or publish private application data. Push completed safe milestones to the existing stabilization branch when authentication/state permit. Remote private host metadata is intentionally absent from Git.
 
 ## Architecture
 
-- `app/server.py` — standard-library loopback control plane (`127.0.0.1:8787`, `PERSONAL_CODEX_HOST`/`PERSONAL_CODEX_PORT`): approvals, worktrees, command executor, provider invocation, multi-round loop, cancellation (including subprocess termination), operation ledger, budgets, context binding, memory promotion, provider health, SSE event stream, diff review, repository search, HTTP API.
-- `app/tools.py` — closed agent tool schema, workspace containment, hash-bound patches, bounded execution with `stop_check`/`on_event`, round proposal parsing, `review_operations` (diff + digest stale detection), round feedback, completion evidence.
-- `app/context.py` — bounded context selection, manifest, `.gitignore`/secret/`.git` exclusion, symlink containment, Python `ast`/JS outlines, deterministic ranking and digest, untrusted prompt block, and `search()`.
-- `app/providers.py` — Ollama and OpenAI-compatible adapters (non-streaming and streaming), `discover_models`, `discover_models_retrying`, `classify_provider_error`, `redact_provider_text`, redirect/proxy refusal, loopback re-check, timeouts and byte caps.
-- `scripts/live_provider_check.py` — read-only live diagnostic (discovery, explicit model, schema probe, latency/bytes, sanitised errors, exit 0/2/3/4).
-- `web/index.html`, `web/app.js`, `web/style.css` — dependency-free dashboard: approvals, rounds, ledger, budgets, context, memory, provider status, diff review, repository search, live SSE activity.
-- SQLite `data/personal_codex.db` (gitignored): `projects`, `tasks`, `events`, `approvals`, `providers`, `workspaces`, `executions`, `invocations`, `proposals`, `rounds`, `operations`, `usage`, `cancellations`, `contexts`, `memory`, `memory_proposals`. Additive `MIGRATIONS` widen older databases.
-- Tests: `test_server.py`, `test_providers.py`, `test_tools.py`, `test_context.py`, `test_streaming.py`, `test_interaction.py`, `test_ui.py`.
+- `app/server.py`: standard-library HTTP API, SQLite Store/schema/additive migrations, immutable digest approvals, projects/tasks/worktrees/Git merge recovery, provider/agent rounds, operation ledger, cancellation/budgets/context/memory, SSE, contained file APIs, connection/diagnostics/backup routes. Backend is authoritative; UI never authorizes itself.
+- `app/security.py`: owner-only regular token-file validation with no symlink following; bearer token and hashed in-memory cookie sessions (one-hour TTL, bounded sessions/login throttling); Host/Origin/Sec-Fetch checks; non-loopback binding requires an explicit Tailscale IP plus authentication and TLS. Loopback unauthenticated development mode remains explicit.
+- `app/conversations.py`: persistent conversations/messages/chunks; actual streamed tokens; atomic content/resume cursor; newest bounded history; at most one active answer per chat and two total chat generations; cloud chat disabled until separately reviewed consent exists; stop/error text is display-only.
+- `app/providers.py`: hardened Ollama and OpenAI-compatible transports/discovery, NDJSON/SSE terminal validation, timeout/size/redirect/proxy protections, redaction. Round streaming now defaults on (`PERSONAL_CODEX_STREAM_PROVIDER=1`). Native provider-tool handling is absent and capability metadata says so.
+- `app/gateway.py`: historical optional Respan integration, **disabled by default**. Runtime requires explicit `PERSONAL_CODEX_ENABLE_GATEWAY=1` and a separate `network` approval even though its first hop is local. No external gateway was used this session.
+- `app/tools.py`: closed list/read/hash-bound exact patch/approved test protocol, containment, bounded diff review; unmatched patches are now stale. Allowlisting/worktrees are **not** an OS sandbox.
+- `app/context.py`: deterministic bounded lexical/docs/symbol context and search, `.gitignore`/secret filtering; walks now prune ignored/generated directories rather than sorting an entire recursive tree.
+- `app/maintenance.py`: own-data-only usage/CPU/load diagnostics, free-reserve/quota-checked private SQLite snapshots, integrity/SHA verification, seven-snapshot refusal without deletion, 30-second snapshot budget, restore to new files only.
+- `desktop/`: Tauri 2 + React 19 + TypeScript + Vite client; Rust credential/HTTP bridge with verified HTTPS, private URL policy, redirect/proxy refusal, bounded responses/streams, no privileged plugins or updater. JS stores only backend URL, never token. Streaming resumes by persisted cursor with bounded retries; mutations are not retried automatically. Source icon is original SVG.
+- `web/`: existing dependency-free dashboard retained, including features without native parity. Cookie API exists but browser login UI is pending.
+- `PERSONAL_CODEX_DATA` selects a dedicated backend data root; defaults to repo `data/`, fully Git-ignored. SQLite default filename `personal_codex.db`.
 
-## Completed and verified
+## Completed in this milestone
 
-Repository registration; bounded non-secret summaries; four-stage plans; approval-gated worktrees; exact-command execution (no shell, allowlist, task worktree only, 1–300 s, child limits, redacted bounded output); immutable approvals; clean release with a recovery branch; read-only merge preview; critical-approved merge bound to reviewed commit IDs; separately approved branch deletion; provider metadata validation; approval-gated invocation with a digest-bound ledger; loopback vs cloud `network` approval separation; single-cycle agent lifecycle; persistent multi-round loop with per-round approvals, bounded test feedback, evidence-checked completion and restart recovery; per-operation cancellation; operation ledger; cumulative budgets with explicit reset; bounded context engine; project memory with evidence-backed promotion (dedupe, credential refusal, provenance, staleness, relevance-ranked retrieval, completion summary proposal that stays pending); bounded streaming for both provider families; failure classification with a single read-only discovery retry; provider health/latency from stored state; read-only live diagnostic harness.
+Native Mac app with conversations/history/search, projects, actual local-provider/model discovery and selection, real Markdown/code streaming, copy/stop/retry, chat-to-task, safe file previews, task/proposal/operation/diff inspection, exact approval decisions, approved command execution, cancellation, round/test evidence, diagnostics and snapshot controls. File pane is read-only and terminal is an approved command runner; no general editor or PTY exists.
 
-Milestone 6 (commit `faffca7`) closed the interactive gaps:
+Added application auth/private TLS listener policy, object/body/framing limits, browser origin/rebinding defenses and method/status-only HTTP logs. Removed chat's self-created cloud approvals, disabled external gateway by default, corrected unverified native-tool capabilities. Fixed atomic approval races, proposal/round claim rollback, cancellation arriving during provider planning, history truncation, duplicate chat sends, atomic stream cursors and stale diff presentation. Native disconnect clears credentials and prior backend selections/data; failed reconnection leaves no fallback connection.
 
-- Cancellation reaches the running subprocess: `execute_in_workspace(..., stop_check=)` polls every 200 ms, SIGTERMs the process group, escalates to SIGKILL after 1.5 s, preserves partial output, and returns exit code 130 with `cancelled: true`. The tool layer records a stopped command as `cancelled` (not a failed test), and remaining operations never start.
-- `GET /api/tasks/{id}/events/stream` — Server-Sent Events over the persisted `events` table, ids are SQLite rowids, `Last-Event-ID`/`?after=` resume without replay, bounded to 500 events / 120 s, keep-alive comments, clean close on a dead client.
-- `GET /api/tasks/{id}/agent/diff` — unified diff per pending `apply_patch`, bound digest, current digest, occurrence count, `stale` flag; the dashboard disables execution when stale or the digest no longer matches.
-- `GET /api/projects/{id}/search?q=&limit=` — case-insensitive, `.gitignore`-aware, never returns secret-named files, symlinks or generated directories; capped at 50 matches and 220 characters per line.
-- Every response sends `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cache-Control: no-store`, and a CSP (`default-src 'self'` for the dashboard with no inline script/style, `default-src 'none'` for JSON).
+Verified database snapshot/restore, capacity/retention failures and symlink/corruption handling. No auto-deletion, model download, vector database or additional inference engine was added.
 
-## Git state (verify, do not assume)
+## Exact files changed
 
-Latest published commit at this handoff: `faffca7` (on top of `e9b0ee5`, `b3cce58`, `bb7d9b7`, `5e4267f`, `7055b31`, `7aaedf3`, `cc334d1`, `cdc35a2`, `8240bef`). Working tree was clean; the dev branch was `freebuff/b3647b5f9c91c9d2a6c41d37`. Re-verify with `git fetch origin` and `git ls-remote origin refs/heads/main`.
+Application: `.gitignore`, `app/context.py`, `app/conversations.py`, `app/server.py`, `app/tools.py`, new `app/security.py`, `app/maintenance.py`.
+Scripts: `scripts/gateway_check.py`, new `inspect_host.sh`, `live_coding_check.py`, `private_backend.py`, `restore_database.py`.
+Tests: `tests/test_conversations.py`, `test_gateway.py`, `test_interaction.py`, `test_server.py`, new `test_security.py`, `test_maintenance.py`.
+Native: `desktop/package.json`, `package-lock.json`, `tsconfig.json`, `vite.config.ts`, `index.html`, `README.md`, `app-icon.svg`, `src/App.tsx`, `src/api.ts`, `src/api.test.ts`, `src/main.tsx`, `src/style.css`, `src-tauri/Cargo.toml`, `Cargo.lock`, `build.rs`, `tauri.conf.json`, `capabilities/default.json`, `src/main.rs`, generated Mac PNG/ICNS icon files. Build products/node_modules/toolchains are not tracked.
+Docs: `README.md`, `PROJECT_STATUS.md`, `TASKS.md`, `ARCHITECTURE.md`, `SECURITY.md`, `DEPLOYMENT.md`, `HANDOFF.md`, `CHANGELOG.md`, `DEVELOPMENT_LOG.md`, this handoff, new `docs/MISSION_1_ACCEPTANCE.md`, `docs/THREAT_MODEL.md`. Prior milestone documentation is preserved as historical sections.
 
-## Environment
+## Tests and genuine integration evidence
 
-Owner's Mac: Apple Silicon MacBook Air M3, 16 GB unified memory, macOS, Python 3.13.9, Node 24.22.1, npm 11.19.1, Git 2.50.1, SQLite. Cargo/Rust was **not** on PATH, so a Tauri build has never been attempted. Cloud workspaces run Linux with Python 3.12.3 and Node 26.13.0. No third-party Python packages. Ollama is not installed in the cloud workspace and nothing listens on `127.0.0.1:11434`; the owner's Mac also reported `ollama: command not found`. ZimaOS connection details have never been supplied — do not probe or deploy.
+- Reconciled baseline: 156 tests discovered, HTTP-enabled OK with 4 skips.
+- Final: `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` → 177 discovered, 173 executed, OK (skipped=4), 46.327 s.
+- Default: `python3 -m unittest discover -s tests -v` → 177 discovered, 143 executed, OK (skipped=34), 20.701 s.
+- Skips: optional gateway dependency absent (3), Linux `/proc` process test inapplicable on macOS (1); default additionally skips opt-in listeners (30). No test was removed/weakened.
+- `python3 -m py_compile app/*.py scripts/*.py`, `node --check web/app.js`, `git diff --check` passed.
+- `cd desktop && npm run build && npm test` → TypeScript/Vite production build and 2 Vitest SSE-framing tests passed.
+- `cd desktop/src-tauri && cargo test --locked -j 2` → 1 native URL-policy test passed. No lint suite is configured.
+- Debug and optimized native app bundles built. Optimized release build: 3m 28s, reported 12.92 MiB. Delivered app received an ad-hoc local signature; strict codesign verification passed. No Apple distribution identity or notarization.
+- Real installed `llama3.2:3b`: JSON probe 5,186 ms; streaming 2,031 ms / 23 chunks / 103 bytes; chat and patch/tests passed, but it repeated work instead of concluding. Record as PARTIAL.
+- Real installed `qwen2.5-coder:14b`: authenticated chat → approved fixture worktree → read/patch/test proposal → current digest-bound diff → separate approval → actual patch/test exit 0 → model completion accepted by evidence → conversation/task persistence after Store restart, all passed. Total 110,671 ms; proposal invocation 65,546 ms. One tiny synthetic fixture, not a model benchmark/server certification. No private repository was sent. No models were downloaded.
+- Actual native UI via CUA: launch, persisted history, a real streamed answer, stop, file preview, task/round/test/diff display, snapshot count 0→1, disconnect/reconnect, missing-token HTTP 401, valid synthetic owner auth, self-signed TLS refusal with no fallback, cleared prior data. Corrected issues found during review; optimized release launch inspected too. UI checks are manual evidence, not automated regression coverage.
 
-## Commands and verified results
+Full machine-local evidence/artifacts: `/Users/macbramesha/Documents/Codex/2026-11-07/files-pasted-by-the-user-personal/outputs`. Preserve the failed fixture evidence separately from the successful Qwen evidence. Do not publish databases, private deployment notes or diagnostics to GitHub.
+
+## Current services / hardware / access
+
+Mac: Apple Silicon arm64 (user-provided M3/16 GB); macOS 26.6; Python 3.13.9; Node 24.22.1; Command Line Tools installed. Cargo/Rust initially absent; user approved project dependencies and a project-isolated toolchain. Rust 1.99.1 installed at `/Users/macbramesha/Documents/Codex/2026-11-07/files-pasted-by-the-user-personal/work/toolchain/{cargo,rustup}` without shell/global changes. Add that Cargo bin directory to PATH and set CARGO_HOME/RUSTUP_HOME for builds; prefer two jobs. Mac free storage remained roughly 70–73 GB during work.
+
+Existing Ollama and Tailscale services were discovered and left untouched. Installed Mac models: llama3.2:3b (2.0 GB), qwen2.5-coder:14b (9.0 GB), gemma3:1b (815 MB). Their existence is not a recommendation to install them on ZimaOS. Tokens/s, peak RAM/pressure and model concurrency are unmeasured. No inference engine/model was installed.
+
+Tailscale Running; user-confirmed Linux home server online/active with a private route. User supplied exact SSH username/IP and `/DATA` home; exact targets are in local-only `PRIVATE_DEPLOYMENT_NOTES.md` outside Git, or rediscover through authorized Tailscale status. SSH with existing trust and BatchMode reached the host but was rejected (publickey,password). No server inventory, install, configuration change, backup access or deployment occurred. No tailnet/ACL/router changes were authorized.
+
+Temporary UI fixture backends on 8787/8788/8789 were stopped. The delivered native app was left open, disconnected. No Personal Codex production service is installed or running. Existing Ollama/Tailscale services remain as found.
+
+## Remaining risks and blockers
+
+SSH access is the immediate Mission 1 blocker. Actual ZimaOS CPU/ISA/RAM/GPU/OS/filesystem/services/model footprint remain unknown, so no server runtime/model has been selected. TLS hostname certificate provisioning and service install require review/approval; do not bypass certificate validation or substitute public exposure.
+
+Other incomplete items: OS-level filesystem/network sandboxing (approved tests still execute host-accessible code), multi-user/project-scoped auth, bounded global task scheduler, comprehensive quotas including external model storage, server supervision/scheduled backups, editor/PTY, attachments/audio/image/reasoning capabilities, native memory/Git parity, provider-native tools, retrieval benchmarks, signed/notarized distribution and update strategy. Optional features must not displace core remote acceptance. No training on private data.
+
+Resource policy: at least 200 GB free and an initial 75 GB total app/models/caches/logs/data allocation on the shared server. Code defaults to 200 GB reserve on Linux, 5 GB on Mac, and 75 GB owned-data budget. Diagnostics only count the dedicated data root; external Ollama weights must be measured and subtracted from the total allocation before deployment. No broad cleanup or family-backup changes, ever. Storage override values do not authorize exceeding the user's budget.
+
+## Exact next steps
+
+1. Verify Git/status/remotes and the latest checkpoint; do not discard the untracked diagnostic. Read acceptance/threat/deployment/native docs.
+2. Check whether the user has established SSH login. Do not ask for passwords/private keys in chat or modify login/security settings. Use the confirmed values in local private notes or authorized discovery.
+3. Run `scripts/inspect_host.sh` through authorized SSH, read-only. It avoids `/DATA` traversal and backups. If access still fails, preserve the exact blocker and continue independent work.
+4. Measure actual hardware/storage/services, count existing model footprint, confirm dedicated app storage/reserve. Do not install Docker/inference or pull models before this.
+5. Prepare concrete dedicated-account/storage/service/certificate/containment changes for review; request approval before server writes, installs, credentials, security settings or resource-limit exceptions. Preserve existing Tailscale ACLs/config and backups.
+6. Deploy authenticated verified TLS only after approval; verify native hostname identity, invalid auth, downtime, interruption/reconnection at home/off-Wi-Fi. Then complete real native→ZimaOS→local-model→approved patch/test→persisted result acceptance and record performance.
+7. Continue native parity and OS execution/egress isolation, then controlled multi-agent scheduling and reliability finish. Never present unverified controls as working.
+8. Update all checkpoint docs and regenerate this handoff after every meaningful verified milestone. Commit/push safe completed work; preserve unpushed commits if unavailable.
+
+## Resume commands
 
 ```sh
-python3 -m unittest discover -s tests -v                              # 126 tests, OK (skipped=19)
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v  # all 126 tests pass
-python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py scripts/live_provider_check.py
+cd /Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex
+git status --short --branch
+git log -8 --oneline
+git remote -v
+python3 -m unittest discover -s tests -v
+PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v
+python3 -m py_compile app/*.py scripts/*.py
 node --check web/app.js
-python3 app/server.py                                                # http://127.0.0.1:8787
-python3 scripts/live_provider_check.py --discover-models              # live, human-run on the Mac
+python3 app/server.py
+# Separate terminal:
+cd desktop
+npm ci
+npm run build
+npm test
+npm run tauri -- dev
 ```
 
-Coverage: approval-gated lifecycle; both adapter families including streaming and failure modes; tool containment; multi-round self-correction; per-round approvals; false completion; duplicate refusal; round limits; cancellation between operations and now mid-command (terminal process-group stop, partial output, exit 130, no lingering child); ledger persistence and interrupted recovery; budgets; context relevance/containment/determinism; memory proposal evidence, dedup, credential refusal, approval/rejection, provenance, staleness, retrieval bounds; diff/hash/stale semantics; search containment; stream resumption; security headers; dashboard contracts. A loopback smoke test returns 200 for `/` and `/app.js` and JSON from `/api/health`.
+`python3 scripts/live_coding_check.py --model <exact-installed-local-model> --output <new-owned-directory>` repeats only the synthetic local fixture. It intentionally refuses to approve arbitrary model edits/commands and retains failed evidence. Treat fixture auto-approvals as a constrained diagnostic, not human approval or remote acceptance.
 
-## Limitations (state these honestly, never as passes)
+## Security / permission constraints
 
-No live Ollama or OpenAI-compatible model has ever completed a round; every round used an injected transport. Streaming is opt-in (`PERSONAL_CODEX_STREAM_PROVIDER=1`) and there is no token-by-token UI rendering (activity is streamed, provider text is not). No browser automation in this environment: dashboard tests are static contracts plus HTTP tests, so browser and packaged-app checks are pending. No native desktop shell, no Tauri project, no ZimaOS worker, no login/TLS/remote protocol, no encrypted secret store, no OS-level egress enforcement or sandbox, no telemetry-free packaging verification, no model catalogue/update or benchmark subsystem, no self-maintenance scheduler/backups/restore tests, and no provider-native tool calling.
-
-## Highest-priority next tasks, in order
-
-1. **Live model proof (owner's Mac).** Install Ollama, pull a model, then `python3 scripts/live_provider_check.py --discover-models` and `--model <exact-model>`. Then complete one genuine approval-gated round through the UI on a disposable repository and record the real failure modes (JSON compliance, patch matching, context usefulness, second-round quality) in `DEVELOPMENT_LOG.md`. Never claim a live run that did not happen.
-2. **Desktop foundation (Phase 4).** Check `cargo --version`; if Rust is absent, document the blocker and prepare the app without claiming it builds. Build a Tauri + React + TypeScript shell that supervises the existing Python backend (single instance, crash recovery, clean shutdown, portable path resolution), keeping the backend authoritative for approvals. Do not remove the working dashboard until the shell has parity.
-3. **Stable app APIs before UI breadth.** Conversations/messages, streaming provider output, agent activity, diff review, approvals, model selection, attachments, cancellation, memory, health. Version and test them.
-4. **Self-maintenance (Phase 5).** Health history, bounded recovery with backoff and idempotency, SQLite backups with integrity checks and a tested restore into a temporary directory, log rotation, storage thresholds, maintenance dashboard, and a maintenance agent that may only propose patches through the existing approval flow.
-5. **Privacy enforcement (Phase 6).** Default-deny application egress with explicit loopback/home-server allowlisting, verified fail-closed behaviour at the OS boundary where possible, no cloud fallback, no telemetry. Document exactly which enforcement is tested and which is not.
-6. **Model lifecycle (Phase 7)** — trusted import manifest, hashes, licence/compatibility/storage checks, staged install, benchmark and rollback, no downloads of arbitrary weights and no fine-tuning on private data.
-7. **ZimaOS worker (Phase 8)** only after explicit authorization and connection details; mutually authenticated, encrypted, least privilege, same approval policy.
-
-## Security and privacy restrictions (non-negotiable)
-
-Never bind a public/LAN interface. Never transmit prompts, code, context, memory or logs to a cloud provider without a recorded `network` approval, and never add cloud inference as an automatic fallback. Default-deny runtime egress apart from loopback and the owner's authenticated worker. Never execute model output outside the validated allowlist. Never apply a patch whose reviewed hash or digest changed. Never reuse an approval for different content, a different round, or a different proposal digest. Never auto-approve a round or a memory record. Never let model prose mark a task complete. Never replay an interrupted or cancelled operation; never execute partial streamed output. Never add a destructive action without its own critical approval. Never read, print, log or commit secret values; keep `secret_ref` an environment-variable name only. Never weaken containment, redaction, timeouts, caps, budget checks, stream termination, duplicate detection or CSP to make a check pass. Never force-push or overwrite unexpected remote history. Never claim an unverified test, browser test, live-model run or native build passed. Never probe or deploy ZimaOS without authorization. GitHub publishing is a developer workflow: never send application data, prompts, databases, credentials or diagnostic dumps to GitHub.
-
-## Checkpoint documents
-
-Maintain `README.md`, `PROJECT_STATUS.md`, `ARCHITECTURE.md`, `TASKS.md`, `HANDOFF.md`, `NEXT_SESSION_PROMPT.md`, `CHANGELOG.md`, `DEVELOPMENT_LOG.md`, `SECURITY.md`, `DEPLOYMENT.md`. `README.md` must separate implemented, tested, partially implemented, planned and blocked. Commit and push each meaningful verified milestone, verify the resulting remote commit, and record unpushed work if GitHub is unavailable.
+User allows ordinary reversible code/tests/docs and explicitly approved project dependency downloads plus the isolated Rust toolchain. User authorized **read-only SSH inspection only** on the home server. Do not install/modify server software/configuration, use new credentials, touch backups, change network/tailnet settings, exceed budgets, merge/delete important branches or perform destructive/irreversible actions without explicit approval. Do not repeatedly ask permission already granted. Keep tokens/passwords/keys and exact private deployment inventory out of logs/Git/publications. Registered project data stays in the user's controlled environment; only explicit reviewed network approvals authorize optional cloud task calls. Cloud chat and external gateway remain off by default.
 
 ## PERMANENT CROSS-ACCOUNT CONTINUATION PROTOCOL
 
-Continuation prompts are permanent, never a one-time credit-exhaustion feature. Every future account must inherit this responsibility; no agent may remove, weaken, or omit it. Generate an updated self-contained prompt after every meaningful verified milestone, whenever the user asks to switch accounts, continue elsewhere, generate a handoff, or provide the next prompt, and before usage exhaustion. A milestone prompt does not require an account switch: continue development when usage permits.
+This protocol is permanent and recursive. Every future session/account/agent must inspect actual Git, code and tests; preserve history/user changes; regenerate `NEXT_SESSION_PROMPT.md` after each meaningful verified milestone, at the end of every development phase/request, whenever the user requests a handoff/account switch, and before usage exhaustion. Each replacement must remain self-contained and carry this same obligation forward. Never merely append an obsolete prompt or rely on hidden chat history.
 
-At the conclusion of every completed user request or development phase, treat the ready-to-use next prompt as a required deliverable: refresh `NEXT_SESSION_PROMPT.md` from actual repository state before reporting completion. If the work is a meaningful verified milestone, commit and publish that refreshed checkpoint when GitHub is available.
-
-Every new prompt must carry this protocol forward and tell the next account to generate another prompt. Never depend on previous conversation history. Always inspect the actual repository and Git state before continuing. At a user-requested handoff, stop starting new tasks, save/document the implementation, run feasible tests, and display the complete prompt in a copyable final-response block.
-
-`NEXT_SESSION_PROMPT.md` must always be the latest ready-to-use prompt. Every prompt must be self-contained and include: project objective; repository location and discovery; architecture; hardware; completed and incomplete work; branch, commit and uncommitted state; files changed; dependencies; commands and test results; limitations; deployment state; exact next task; security and privacy restrictions; GitHub and README rules; and this protocol. Never include passwords, API keys, tokens, or other secrets. This requirement is permanent and recursive across every account, model, and future development session.
-
-Publication verified on 2026-11-01/02 at `2526fb4`, `d4ab9d4`, `4ea8487`, `c37aee3`, `8240bef`, `cdc35a2`, `cc334d1`, `7055b31`, `7aaedf3`, `5e4267f`, `bb7d9b7`, `b3cce58`, `e9b0ee5`, `faffca7`. Always re-inspect the remote before assuming synchronization.
+Every handoff must include objective; actual architecture; repository/branch/latest verified commit and uncommitted state; completed work and exact changed files; commands/tests/results/skips; dependencies and hardware observations; running services; known issues/access blockers; prioritized next implementation steps; security/approval/resource constraints; Git/publication status and this protocol. Never include credentials or private diagnostic dumps. On an explicit handoff request, stop starting new work, save/test/document the checkpoint, commit/push when authorized/available and display the complete copyable prompt. In ordinary development continue meaningful implementation after a checkpoint while access/budget permit. Keep README and all status/security/deployment/history documents honest about implemented, tested, partial and blocked work.

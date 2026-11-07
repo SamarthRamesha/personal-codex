@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
 from fnmatch import fnmatch
 from pathlib import Path
@@ -77,23 +78,26 @@ def walk(root, patterns=None) -> list[str]:
     base = _root(root)
     patterns = gitignore_patterns(base) if patterns is None else patterns
     found: list[str] = []
-    for path in sorted(base.rglob("*")):
-        if len(found) >= MAX_WALK_FILES:
-            break
-        try:
-            if path.is_symlink() or not path.is_file():
-                continue
-            relative = path.relative_to(base).as_posix()
-            if is_ignored(relative, patterns):
-                continue
-            if path.suffix.lower() not in TEXT_SUFFIXES and path.suffix:
-                continue
-            if path.stat().st_size > MAX_FILE_BYTES:
-                continue
-            found.append(relative)
-        except (OSError, ValueError):
-            continue
-    return found
+    scanned = 0
+    # Prune generated/ignored directories before traversal; rglob+sort visited entire node_modules trees.
+    for current, directories, files in os.walk(base, followlinks=False):
+        parent = Path(current)
+        directories[:] = sorted(name for name in directories if name not in IGNORED_DIRS
+                                and not (parent/name).is_symlink()
+                                and not is_ignored((parent/name).relative_to(base).as_posix(), patterns))
+        for name in sorted(files):
+            scanned += 1
+            if len(found) >= MAX_WALK_FILES or scanned > 100_000:
+                return sorted(found)
+            path = parent/name
+            try:
+                relative = path.relative_to(base).as_posix()
+                if path.is_symlink() or not path.is_file() or is_ignored(relative, patterns):continue
+                if path.suffix.lower() not in TEXT_SUFFIXES and path.suffix:continue
+                if path.stat().st_size > MAX_FILE_BYTES:continue
+                found.append(relative)
+            except (OSError,ValueError):continue
+    return sorted(found)
 
 
 MAX_SEARCH_MATCHES = 50
@@ -144,7 +148,8 @@ def read_text(root, relative: str, max_bytes: int = MAX_FILE_BYTES) -> str | Non
             return None
         if target.name.lower() in SECRET_NAMES or target.name.lower().startswith(".env"):
             return None
-        return target.read_bytes()[:max_bytes].decode("utf-8", errors="replace")
+        with target.open('rb') as source:
+            return source.read(max_bytes).decode("utf-8", errors="replace")
     except (OSError, ValueError):
         return None
 

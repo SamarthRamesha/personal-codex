@@ -1,5 +1,15 @@
 # Changelog
 
+## Mission 1 native client and private API — 2026-11-07
+
+- Added native Tauri 2 / React / TypeScript client (client/API version 0.2.0), original icon, bounded authenticated Rust transport, persisted streaming chat, local-model discovery/selection, project files, task/proposal/diff/approval controls, approved commands and diagnostics.
+- Added owner token and expiring cookie sessions, private authenticated TLS startup policy, browser request defenses, body bounds and redacted method/status logs.
+- Removed chat's self-approved cloud transmission; cloud chat is disabled. External gateway now requires explicit environment opt-in and network approval. Native-tool support is no longer claimed without implementation.
+- Fixed newest-history truncation, atomic text/cursor persistence, duplicate chat turns, stale/unmatched diff presentation, competing approval decisions, lost execution-claim rollback and late planning responses after cancellation. Provider round streaming now defaults on.
+- Added pruned bounded context traversal, contained read-only project APIs, configurable own-data storage diagnostics, verified SQLite snapshots and restore into new files only. No automatic deletion or model downloads.
+- Verified a genuine installed Qwen 14B coding workflow and the actual native Mac UI. Tests: 177 Python discovered (4 skips with HTTP; 34 default), 2 Vitest tests, 1 Rust test, syntax/type/build checks.
+- Confirmed JARVIS identity through existing Tailscale status; read-only SSH authentication failed. No server changes or family-backup access. Mission 1 remains PARTIAL pending live server acceptance.
+
 ## 0.5.0 — 2026-11-02
 
 - Cancellation now reaches the running subprocess: the executor polls every 200 ms, sends SIGTERM to the process group, then SIGKILL after a 1.5 s grace period, preserves partial output, and reports exit code 130. A cancelled test command is recorded as `cancelled` rather than a failed test, and later operations do not start.

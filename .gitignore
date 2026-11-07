@@ -1,5 +1,13 @@
-data/*.db
+/data/
 __pycache__/
 *.pyc
 .DS_Store
 .venv/
+
+# Desktop build and local toolchains
+node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+work/
+*.tsbuildinfo
+desktop/src-tauri/gen/

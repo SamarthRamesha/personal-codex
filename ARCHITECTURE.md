@@ -1,5 +1,23 @@
 # Architecture
 
+## Current architecture — 2026-11-07
+
+`Native React/TypeScript UI → Tauri Rust IPC bridge → authenticated Python API → SQLite + approved Git worktrees → explicitly chosen local provider`.
+
+The previous dependency-free dashboard remains available. `desktop/src/api.ts` handles API calls and bounded resumable SSE framing; `desktop/src-tauri/src/main.rs` owns credentials in memory, validates backend URLs, checks HTTPS identity using native trust roots, refuses redirects/proxies and bounds request/response/stream sizes. No shell/filesystem/HTTP plugins or updater are granted to the webview. Network tokens never enter browser storage. Only the backend performs file/tool operations.
+
+`app/security.py` implements one owner principal, bearer auth and hashed in-memory expiring cookie sessions, login throttling, token-file constraints, Host/Origin checks and private listener policy. `app/server.py` reads `PERSONAL_CODEX_DATA`, requires authentication/TLS for non-loopback Tailscale binding, and exposes versioned connection metadata, diagnostics, backups and contained project file APIs. General owner authentication is separate from per-operation digest approvals. This is not multi-user/project-scoped access control.
+
+`app/conversations.py` persists text and its last chunk cursor atomically; newest bounded history is used for prompts; one active turn per conversation and two total chat generations are allowed. Chat cannot edit files or grant itself cloud consent. Ordinary disconnection does not undo an operation already accepted by the server. Mutating requests are never automatically replayed.
+
+`app/maintenance.py` measures only owned data, checks free reserve and quota before snapshots, uses SQLite backup/integrity verification and refuses overwrite on restore. Snapshots retain at most seven files without deleting old ones. Defaults: 75 GB owned-data budget; Linux 200 GB free reserve, Mac 5 GB free reserve. External model storage is not included and must be accounted separately before server deployment. No vector database, additional inference engine or service supervisor was selected before actual hardware discovery.
+
+The task engine, exact tools, context/memory and merge/recovery design below remain authoritative where not superseded. Round streaming now defaults on. Native provider-tool calling is absent; model capabilities are not guessed. See `docs/THREAT_MODEL.md` for the missing OS sandbox and egress isolation.
+
+## Earlier architecture notes
+
+The following material documents prior milestones. References to future desktop/authentication/streaming must be read with the current architecture above.
+
 ## v0 implemented boundary
 
 `Browser UI → loopback Python control plane → SQLite`

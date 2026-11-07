@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import threading
+from unittest.mock import patch
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -74,14 +75,23 @@ class GatewayProviderConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_provider_config("respan-gateway", endpoint, "fixture-model", secret_ref, cloud_allowed)
 
-    def test_gateway_provider_keeps_the_loopback_approval_binding(self):
+    def test_gateway_requires_network_approval_even_for_loopback_hop(self):
         provider = {"id": "gateway-1", "kind": "respan-gateway", "endpoint": "", "model": "fixture-model", "cloud_allowed": 0}
-        self.assertEqual(provider_approval_kind(provider), "provider-invoke")
+        self.assertEqual(provider_approval_kind(provider), "network")
         detail = json.loads(provider_invocation_detail("task-1", provider, "hello"))
         self.assertEqual((detail["refs"]["endpoint"], detail["refs"]["cloud_allowed"]), ("", False))
         self.assertNotEqual(detail["refs"], json.loads(provider_invocation_detail("task-1", provider, "changed"))["refs"])
         self.assertTrue(provider_capabilities(provider)["local_gateway"])
+        self.assertFalse(provider_capabilities(provider)["supports_tool_calls"])
+        self.assertTrue(provider_capabilities(provider)["external_routing_requires_opt_in"])
         self.assertNotIn("no endpoint configured", server.provider_health({**provider, "enabled": 1})["issues"])
+
+    def test_gateway_cannot_run_without_explicit_enablement(self):
+        provider={"kind":"respan-gateway"}
+        with patch.dict(os.environ, {"PERSONAL_CODEX_ENABLE_GATEWAY":"0"}):
+            for resolve in (server.active_provider_transport, server.round_transport):
+                with self.assertRaisesRegex(server.ProviderTransportError, "disabled"):
+                    resolve(provider)
 
     def test_missing_gateway_package_names_the_install_command(self):
         original = sys.modules.get("respan_gateway")
@@ -103,6 +113,9 @@ class GatewayRoutingTests(unittest.TestCase):
     """The provider workflow reaches a loopback fixture only through the gateway."""
 
     def setUp(self):
+        self.gateway_policy = patch.dict(os.environ, {"PERSONAL_CODEX_ENABLE_GATEWAY":"1"})
+        self.gateway_policy.start()
+        self.addCleanup(self.gateway_policy.stop)
         self.fixture = ThreadingHTTPServer(("127.0.0.1", 0), GatewayFixture)
         threading.Thread(target=self.fixture.serve_forever, daemon=True).start()
         self.old_stream = server.STREAM_PROVIDER

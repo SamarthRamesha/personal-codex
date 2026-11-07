@@ -176,6 +176,7 @@ def run(args) -> tuple[int, dict]:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    os.environ["PERSONAL_CODEX_ENABLE_GATEWAY"] = "1"
     code, report = run(args)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))

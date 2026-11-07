@@ -1,5 +1,32 @@
 # Tasks
 
+## Mission 1 priorities — 2026-11-07
+
+- [x] Reconcile actual checkout and remote stabilization branch; preserve untracked diagnostic and historical main.
+- [x] Establish 156-test baseline after incorporating remote test fix; extend to 177 discovered tests.
+- [x] Discover Mac Tailscale and installed Ollama models without downloads.
+- [x] Build native Tauri/React/TypeScript client with guarded backend transport, streaming chat and a coherent coding review slice.
+- [x] Add owner authentication, sessions, request hardening and private TLS listener policy.
+- [x] Close chat auto-cloud-consent and default-enabled external-gateway gaps.
+- [x] Add storage diagnostics, verified bounded snapshots and no-overwrite restore tests.
+- [x] Prove a genuine installed local-model coding workflow and restart persistence.
+- [x] Test actual native UI, owner-token failure/success and TLS identity refusal.
+- [ ] Establish SSH authentication for `<ssh-user>@<server-tailscale-ip>` without putting credentials in chat or Git.
+- [ ] Run read-only host inventory; measure actual CPU/RAM/GPU/filesystem/services/model storage.
+- [ ] Prepare a reviewed least-privilege server deployment; obtain approval before installations/configuration/credential use or server writes.
+- [ ] Verify 200 GB free reserve and 75 GB total owned-storage budget including model storage; no backup traversal or cleanup.
+- [ ] Deploy authenticated TLS on the actual Tailscale interface; test at home and remotely.
+- [ ] Complete genuine native-to-JARVIS coding acceptance and hardware performance measurements.
+- [ ] Add OS execution/egress isolation, bounded global agent scheduling, backup supervision and automated UI coverage.
+- [ ] Extend native editor/PTY, memory/Git controls and conversation management; add signing/notarization and reviewed update strategy.
+- [ ] Continue Missions 2 and 3 after the actual remote foundation is accepted.
+
+Memory promotion must always retain explicit approval; ordinary retrieval/configuration is not model training. Do not implement the old “automatic promotion” idea as automatic storage.
+
+## Historical checklist follows
+
+Preserved for continuity; the current priorities and implementation evidence above supersede stale unchecked entries.
+
 ## Highest priority
 
 - [x] Establish permanent cross-account continuation protocol and regenerate the ready-to-use prompt after verified milestones.

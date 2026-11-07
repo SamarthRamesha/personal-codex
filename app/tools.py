@@ -64,7 +64,10 @@ def resolve_in_workspace(root: Path, relative) -> Path:
 
 
 def file_sha256(path: Path) -> str:
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    digest=hashlib.sha256()
+    with Path(path).open('rb') as source:
+        for block in iter(lambda:source.read(64_000),b''):digest.update(block)
+    return digest.hexdigest()
 
 
 def proposal_digest(task_id: str, workspace_branch: str, operations: list) -> str:
@@ -185,7 +188,8 @@ def read_file(root: Path, path: str, max_bytes: int) -> dict:
     if not target.is_file():
         raise ToolCallError(f"read_file target does not exist: {path}")
     size = target.stat().st_size
-    data = target.read_bytes()[:max_bytes]
+    with target.open('rb') as source:
+        data = source.read(max_bytes)
     return {"path": path, "bytes": size, "truncated": size > len(data), "sha256": file_sha256(target),
             "text": data.decode("utf-8", errors="replace")}
 
@@ -244,6 +248,8 @@ def review_operations(root: Path, operations: list[dict]) -> dict:
             else:
                 before, after = operation["old_text"], operation["new_text"]
                 entry["patch_preview_only"] = True
+                entry["stale"] = True
+                entry["error"] = f"Reviewed patch must match exactly once; found {occurrences} matches"
             delta = list(difflib.unified_diff(before.splitlines(), after.splitlines(),
                                               fromfile=f"a/{operation['path']}", tofile=f"b/{operation['path']}",
                                               lineterm="", n=3))

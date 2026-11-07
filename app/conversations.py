@@ -41,7 +41,7 @@ ACTIVE_STATUSES = ("queued", "streaming")
 TRANSPORT = None
 # message_id -> threading.Event used by stop requests and by the streaming adapters.
 GENERATIONS: dict[str, threading.Event] = {}
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
 
 
 def stamp() -> int:
@@ -124,9 +124,10 @@ def conversation_detail(store, conversation_id: str) -> dict | None:
 
 
 def message_history(store, conversation_id: str, limit: int = MAX_HISTORY_MESSAGES) -> list[dict]:
-    rows = store.rows("SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at ASC, rowid ASC LIMIT ?",
+    rows = store.rows("SELECT m.*, COALESCE((SELECT MAX(seq) FROM message_chunks WHERE message_id=m.id),0) AS last_seq "
+                      "FROM messages m WHERE conversation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?",
                       (conversation_id, max(1, min(500, limit))))
-    return rows
+    return list(reversed(rows))
 
 
 def update_conversation(store, conversation_id: str, fields: dict) -> dict | None:
@@ -202,6 +203,14 @@ def resolve_provider(store, conversation: dict, provider_id: str | None) -> dict
         raise LookupError("provider not found")
     if not provider["enabled"]:
         raise ValueError("provider is disabled")
+    requested = conversation.get("model") or provider["model"]
+    if requested != provider["model"]:
+        if provider["kind"] != "ollama" or provider.get("cloud_allowed"):
+            raise ValueError("Only installed local Ollama models can be selected independently")
+        installed = providers.discover_models(provider["endpoint"], timeout=5.0)
+        if requested not in installed:
+            raise ValueError("Selected model is not installed on this local provider")
+        provider = {**provider, "model": requested}
     return provider
 
 
@@ -255,12 +264,13 @@ def append_chunk(store, conversation_id: str, message_id: str, text: str) -> int
         return 0
     if len(text) > MAX_CHUNK_CHARS:
         text = text[:MAX_CHUNK_CHARS]
-    with _LOCK:
-        store.write("INSERT INTO message_chunks (message_id,conversation_id,text,created_at) VALUES (?,?,?,?)",
-                    (message_id, conversation_id, text, stamp()))
-        row = store.one("SELECT last_insert_rowid() AS seq")
-        store.write("UPDATE messages SET content=content||?, updated_at=? WHERE id=?", (text, stamp(), message_id))
-    return int(row["seq"]) if row else 0
+    # One transaction keeps content and its resume cursor consistent for reconnecting clients.
+    with store.lock:
+        cursor = store.conn.execute("INSERT INTO message_chunks (message_id,conversation_id,text,created_at) VALUES (?,?,?,?)",
+                                    (message_id, conversation_id, text, stamp()))
+        store.conn.execute("UPDATE messages SET content=content||?, updated_at=? WHERE id=?", (text, stamp(), message_id))
+        store.conn.commit()
+        return cursor.lastrowid
 
 
 def request_stop(message_id: str) -> bool:
@@ -273,6 +283,16 @@ def request_stop(message_id: str) -> bool:
 
 def start_turn(store, conversation: dict, content: str, *, provider: dict | None = None,
                regenerate: bool = False) -> dict:
+    with _LOCK:
+        if store.one("SELECT id FROM messages WHERE conversation_id=? AND status IN ('queued','streaming') LIMIT 1", (conversation["id"],)):
+            raise ValueError("This conversation already has an active answer")
+        if len(GENERATIONS) >= 2:
+            raise ValueError("Local inference concurrency limit reached (2); wait or stop an active answer")
+        return _start_turn(store, conversation, content, provider=provider, regenerate=regenerate)
+
+
+def _start_turn(store, conversation: dict, content: str, *, provider: dict | None = None,
+                regenerate: bool = False) -> dict:
     """Create the stored turns and start one provider call in a daemon thread.
 
     The HTTP handler returns immediately with the assistant message id; the client then follows
@@ -284,6 +304,8 @@ def start_turn(store, conversation: dict, content: str, *, provider: dict | None
     if len(text) > MAX_MESSAGE_CHARS:
         raise ValueError(f"message must be at most {MAX_MESSAGE_CHARS} characters")
     provider = provider or resolve_provider(store, conversation, None)
+    if provider.get("cloud_allowed"):
+        raise ValueError("Cloud chat is disabled: use the task flow with a separate reviewed network approval")
     if regenerate:
         last_user = store.one("SELECT content FROM messages WHERE conversation_id=? AND role='user' ORDER BY created_at DESC, rowid DESC LIMIT 1",
                               (conversation["id"],))
@@ -299,11 +321,6 @@ def start_turn(store, conversation: dict, content: str, *, provider: dict | None
     prompt = build_prompt(history)
     assistant = new_message(store, conversation["id"], "assistant", "", status="queued",
                             provider_id=provider["id"], model=provider["model"])
-    if provider.get("cloud_allowed"):
-        # A chat turn is an explicit send, but a cloud transmission still needs its own recorded consent.
-        store.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",
-                    (uid(), conversation.get("project_id") or "", "network",
-                     f"chat:{conversation['id']}:{assistant['id']}", "approved", stamp()))
     event = threading.Event()
     with _LOCK:
         GENERATIONS[assistant["id"]] = event
@@ -324,6 +341,8 @@ def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt
     def on_text(chunk: str) -> None:
         if not chunk or cancel.is_set():
             return
+        if sum(len(part) for part in streamed) + len(chunk) > MAX_MESSAGE_CHARS:
+            raise providers.ProviderTransportError("Assistant output exceeds conversation limit")
         append_chunk(store, conversation["id"], message_id, chunk)
         streamed.append(chunk)
 
@@ -332,6 +351,8 @@ def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt
         result = adapter({"endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt,
                           "cloud_allowed": bool(provider["cloud_allowed"]), "secret_ref": provider.get("secret_ref") or "",
                           "stop_check": cancel.is_set, "on_text": on_text, "on_chunk": lambda count: None})
+        if cancel.is_set():
+            raise providers.ProviderTransportError("Stopped by operator")
         text = str((result or {}).get("text") or "").strip()
         if not text:
             raise providers.ProviderTransportError("Provider returned no assistant text")
