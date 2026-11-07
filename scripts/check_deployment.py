@@ -54,6 +54,9 @@ def assess(client,owner,worker,model):
     checks['worker_has_no_owner_authority']=client.get('/api/projects',worker)[0]==403
     checks['owner_has_no_worker_authority']=client.get('/api/worker/poll',owner)[0]==401
     status,diagnostics=client.get('/api/diagnostics',owner)
+    policy=diagnostics.get('network_policy',{})
+    checks['worker_only_inference']=policy.get('inference_policy')=='worker-only'
+    checks['backend_outbound_connections_denied']=policy.get('outbound_connections_denied') is True
     checks['storage_admission_enabled']=status==200 and diagnostics.get('storage_enforcement',{}).get('write_admission') is True
     checks['storage_inventory_complete']=diagnostics.get('storage',{}).get('measurement_complete') is True
     checks['no_declared_telemetry_or_cloud_fallback']=diagnostics.get('telemetry') is False and diagnostics.get('cloud_fallback') is False

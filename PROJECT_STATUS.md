@@ -1,5 +1,12 @@
 # Project status
 
+## Mission 1C.1 current checkpoint
+
+Authorised SSH preflight refreshed privately; no server writes/install/deployment. Existing account still lacks daemon access; awaiting the existing authorised Docker operator's receipt, current full policy/sign-in and revised transient probe decision. No operator login/session has been supplied, and no privilege workaround is permitted.
+
+Implemented worker-only inference gates and startup-required additive Linux no-connect filter, including TCP Fast Open/alternate routes. Initial data admission24GB within25GB total target;200GB reserve/75GB planned maximum, no hard quota. Final286 discovered/281passed/5skipped60.050s; Linux filter runtime skip remains explicit. Target image/container/HTTPS/worker/native/recovery acceptance unverified. See SECURITY.md and current NEXT_SESSION_PROMPT.md. Coding disabled; Mission1 partial; no push.
+
+
 ## Read-only inspection and final approval preparation
 
 SSH continuation resolved without key/config/agent changes. Approved read-only target inspection completed; exact hardware/storage/runtime/permissions/DNS/TLS evidence remains private. Docker daemon/Serve inspection is blocked by the current account's socket permissions, not by SSH or missing client tools. No escalation or server modification performed.

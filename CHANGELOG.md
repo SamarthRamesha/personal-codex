@@ -1,5 +1,13 @@
 # Changelog
 
+## Mission 1C.1 restricted deployment preparation
+
+- Lowered initial API data admission to24GB within a25GB initial total review target; no hard quota claimed.
+- Enforced worker-only provider selection/transport/discovery and startup-required additive Linux no-connect policy, including Fast Open/alternate syscall routes.
+- Added diagnostics and HTTPS acceptance checks for active policy, nine portable regressions and one opt-in real Linux test. Final286 discovered/281passed/5skipped60.050s; target probe/image/service remain pending approvals/operator access.
+- Refreshed authorised read-only infrastructure/device/model evidence privately. No target write/install/deployment or publication.
+
+
 ## Protected-parent and reproducible build preparation
 
 - Resumed authorised SSH read-only inspection after user unlocked the existing agent; no server mutation or privilege change.

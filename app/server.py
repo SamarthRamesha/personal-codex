@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime  # script execution puts app/ on sys.path
+    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime
+    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -233,6 +233,7 @@ def safe_workspace_path(workspace: dict) -> Path:
 
 def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: str, cloud_allowed: bool) -> dict:
     """Validate metadata only; this function never reads an environment secret or contacts a provider."""
+    network_policy.require_provider({'kind':kind,'endpoint':endpoint,'secret_ref':secret_ref,'cloud_allowed':cloud_allowed})
     if kind not in PROVIDER_KINDS: raise ValueError("Unsupported provider kind")
     if not model: raise ValueError("model is required")
     if kind == inference.KIND:
@@ -283,6 +284,7 @@ PROVIDER_TRANSPORT = None
 
 def active_provider_transport(provider: dict):
     """Resolve the transport per invocation so credentials are read only at call time."""
+    network_policy.require_provider(provider)
     if provider.get("kind") == gateway.GATEWAY_KIND and os.getenv("PERSONAL_CODEX_ENABLE_GATEWAY") != "1":
         raise ProviderTransportError("Optional gateway is disabled; enabling it requires explicit external-routing consent")
     if provider.get("kind") == inference.KIND:
@@ -295,6 +297,7 @@ STREAM_PROVIDER = os.getenv("PERSONAL_CODEX_STREAM_PROVIDER", "1") == "1"
 
 def round_transport(provider: dict, stop_check=None, on_chunk=None):
     """Pick the adapter for one approved round call. Streaming is opt-in and never changes the prompt."""
+    network_policy.require_provider(provider)
     if provider.get("kind") == gateway.GATEWAY_KIND and os.getenv("PERSONAL_CODEX_ENABLE_GATEWAY") != "1":
         raise ProviderTransportError("Optional gateway is disabled; enabling it requires explicit external-routing consent")
     if provider.get("kind") == inference.KIND:
@@ -955,7 +958,7 @@ class App(SimpleHTTPRequestHandler):
                               "execution_mode":os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")},200 if ready else 503)
         if route == "/api/inference/status": return self.json(inference.Broker(STORE).status())
         if route == "/api/diagnostics":
-            try: return self.json(maintenance.diagnostics(DATA))
+            try: return self.json({**maintenance.diagnostics(DATA),'network_policy':network_policy.status()})
             except (OSError,ValueError): return self.json({"error":"Storage diagnostics unavailable; verify resource configuration"},503)
         if route == "/api/connection":
             return self.json({"ok":True,"authenticated":AUTH.enabled,"api_version":1,"session_ttl_seconds":AUTH.ttl,
@@ -990,6 +993,7 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/providers/") and route.endswith("/models"):
             pid=route.split("/")[3]; provider=STORE.one("SELECT * FROM providers WHERE id=?",(pid,))
             if not provider: return self.json({"error":"provider not found"},404)
+            network_policy.require_provider(provider)
             if provider["kind"] == inference.KIND:
                 catalog=inference.Broker(STORE).catalog()
                 return self.json({"provider_id":pid,"models":catalog['models'],"live":catalog['online'],"location":"mac-local"})
@@ -1781,6 +1785,7 @@ def main():
     tls=None
     if cert:
         tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.minimum_version=ssl.TLSVersion.TLSv1_2;tls.load_cert_chain(cert,key)
+    network_policy.configure(host,mode,production=bool(origin))
     with runtime.InstanceLock(DATA):
         maintenance.admit_writes(DATA)
         if isinstance(STORE,LazyStore):STORE=Store()

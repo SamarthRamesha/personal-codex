@@ -23,9 +23,9 @@ import time
 import uuid
 
 try:
-    import providers  # script execution puts app/ on sys.path
+    import providers, network_policy  # script execution puts app/ on sys.path
 except ImportError:  # imported as app.conversations
-    from app import providers
+    from app import providers, network_policy
 
 MAX_TITLE = 120
 MAX_MESSAGE_CHARS = 20_000
@@ -55,6 +55,7 @@ def uid() -> str:
 
 def transport_for(provider: dict):
     """Return the streaming adapter for one provider; chat never uses a non-streaming call."""
+    network_policy.require_provider(provider)
     if TRANSPORT is not None:
         return TRANSPORT
     if provider.get("kind") == "mac-worker":
@@ -205,6 +206,7 @@ def resolve_provider(store, conversation: dict, provider_id: str | None) -> dict
     provider = store.one("SELECT id,kind,endpoint,model,secret_ref,cloud_allowed,enabled FROM providers WHERE id=?", (chosen,))
     if not provider:
         raise LookupError("provider not found")
+    network_policy.require_provider(provider)
     if not provider["enabled"]:
         raise ValueError("provider is disabled")
     requested = conversation.get("model") or provider["model"]
@@ -329,6 +331,7 @@ def _start_turn(store, conversation: dict, content: str, *, provider: dict | Non
     if len(text) > MAX_MESSAGE_CHARS:
         raise ValueError(f"message must be at most {MAX_MESSAGE_CHARS} characters")
     provider = provider or resolve_provider(store, conversation, None)
+    network_policy.require_provider(provider)
     if provider.get("cloud_allowed"):
         raise ValueError("Cloud chat is disabled: use the task flow with a separate reviewed network approval")
     if regenerate:

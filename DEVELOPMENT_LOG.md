@@ -1,5 +1,12 @@
 # Development log
 
+## Mission 1C.1 production policy engineering
+
+Refreshed authorised SSH/device/model metadata privately; daemon socket still denied, existing operator/current policy pending. Added worker-only registration/stored discovery/chat/round/invocation gates, additive Linux x86_64 synchronised no-connect filter and status/acceptance checks. Initial data admission24GB within25GB total target; no hard quota. Filter also blocks Fast Open/sendmsg/sendmmsg, unsafe socket creation, io_uring and cross-process FD/memory routes; startup tests fail closed. Kernel runtime proof pending separately approved transient probe, no host firewall/daemon mutation.
+
+Final286 discovered/281passed/5skipped60.050s, zero failures/errors. Earlier285/280pass/5skip60.775s predates Fast Open correction. Initial probe fixture child-string syntax error fixed locally; synthetic client/HTTP fixture passed before approval request. Revised unexecuted probe supersedes its earlier hash; no server install/write/credential/service/network/deployment or publication. See current handoff for exact pending decisions.
+
+
 ## Read-only infrastructure review completed — 2026-11-07
 
 The user unlocked the existing SSH identity. Normal authorised metadata inspection succeeded through that agent, with strict existing host verification and no forwarding/private-key read or SSH/agent change. SSH is resolved; old empty-agent/diagnostic/review-block descriptions below are historical. Do not repeat the consumed public-identity diagnostic or ask for another unlock while access remains usable.

@@ -1,5 +1,14 @@
 # Security model
 
+## Mission 1C.1 production outbound boundary
+
+Private Serve startup now requires `PERSONAL_CODEX_INFERENCE_POLICY=worker-only` and `PERSONAL_CODEX_DENY_CONNECT=1`, supported Linux x86_64, disabled execution and literal loopback binding. All direct/legacy provider metadata/discovery/chat/round paths are blocked before transport or chat writes. Development local-provider support remains outside this production profile.
+
+The backend process installs an additive synchronised seccomp filter before starting its server/threads: no new connect, datagram/raw/Unix sockets, socketpair, sendmsg/sendmmsg, destination-bearing/Fast-Open sendto, io_uring or selected cross-process descriptor/memory routes. New TCP server sockets and accepted-response I/O remain possible. Inherited sockets are refused; startup probes fail closed. Fixed independent Docker health-check processes are outside this process filter and must remain trusted/read-only. No host firewall/daemon modification is needed. Actual target enforcement is pending approval/testing; portable unit vectors alone are not runtime proof.
+
+Filters are inherited by descendants and cannot relax an existing filter, but [kernel seccomp documentation](https://www.kernel.org/doc/html/latest/userspace-api/seccomp_filter.html) explicitly distinguishes syscall reduction from a complete sandbox. [Kernel TCP Fast Open documentation](https://www.kernel.org/doc/html/latest/networking/ip-sysctl.html#tcp-variables) explains why sendto/sendmsg must also be restricted. ABI numbers were checked against the [Linux x86 syscall table](https://github.com/torvalds/linux/blob/master/arch/x86/entry/syscalls/syscall_64.tbl). This is an implementation based on those kernel contracts, not certification. It does not restrict malicious bind addresses, remove shared-kernel risk, prevent exfiltration in an authorised response, or enable coding. Actual loopback bind and container controls still require acceptance.
+
+
 ## Deployment ancestor boundary
 
 A private leaf can still be renamed/replaced by an untrusted parent writer. Deployment preflight now rejects unsafe writable non-sticky ancestors and untrusted ownership before credentials are read. The old location is no longer the default candidate; protected-parent selection requires separate approval and never silently changes a shared directory. Source context generation reads committed trusted release objects only; no working tree/untracked/diagnostic content. Runtime capability fields remain unknown when daemon access fails. See `docs/DEPLOYMENT_REVIEW.md`.

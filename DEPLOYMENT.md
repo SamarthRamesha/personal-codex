@@ -1,5 +1,12 @@
 # Deployment
 
+## Mission 1C.1 installation contract
+
+Use the revised Compose profile: `PERSONAL_CODEX_INFERENCE_POLICY=worker-only`, `PERSONAL_CODEX_DENY_CONNECT=1`, data admission24GB within25GB total initial accounting,200GB free reserve and75GB planned maximum. Main private Serve startup now refuses a missing/unsupported no-connect policy; old launch examples require these new flags. Review SECURITY.md for the additive process filter, fixed independent health-check exception and real Linux test gate. Do not build/deploy the historical95e1e0f context as this new restricted release.
+
+Read-only SSH preflight refreshed; no target writes. Existing operator's daemon/Serve/mapping receipt, full policy and revised transient probe approval are pending. Freeze exact mapped identity, protected-root layout, new committed context/image and measured overhead before per-phase directory/credential/build/service/Serve/policy approvals. No sudo/group/API workaround, persistent Mac install, coding enablement or publication. Final local286 tests:281passed/5skipped60.050s, not target enforcement. Current NEXT_SESSION_PROMPT.md/private execution ledger supersede old assumptions below.
+
+
 ## Current read-only review decision
 
 Read-only inspection through the existing unlocked SSH agent now succeeds. Exact target facts are private and outside Git. The original candidate parent fails the strengthened ancestor policy; **`/DATA/PersonalCodex` is the new proposed root, requiring explicit approval**. No directory, permission, mount, service or network change occurred. Earlier path/access descriptions below are historical where superseded.

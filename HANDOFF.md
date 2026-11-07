@@ -1,5 +1,12 @@
 # Handoff
 
+## Mission 1C.1 continuation
+
+SSH preflight refreshed after user unlock; Docker socket still denies the account. Await the existing operator's checklist output and current full policy/admin sign-in; no operator access details supplied. Revised transient Linux probe SHA256 `6f42acea8f241549d8c0b31119614b33314f172c83b8c61d4df624692c2c5fb7` awaits approval; earlier unexecuted draft is superseded.
+
+Worker-only/no-connect production gates and24GB data admission implemented; final local286 discovered/281passed/5skipped60.050s. No image, target probe, directory, credentials, service or network change performed. Read current NEXT_SESSION_PROMPT.md and SECURITY.md; freeze concrete installation fields after receipts, then request separate phase approvals. Preserve diagnostic/history; no push. Mission1 partial, coding disabled.
+
+
 ## Current continuation after actual read-only inspection
 
 The existing unlocked agent supports normal authorised SSH inspection. No SSH blockage/retry approval remains pending. Server read-only evidence is private; current blocker is Docker daemon/Serve access under the unprivileged account. Do not use sudo, group/ACL changes or an indirect privileged API/shell. Obtain an existing authorised operator's scoped read-only receipt.

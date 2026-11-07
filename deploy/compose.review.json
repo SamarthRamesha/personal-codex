@@ -31,7 +31,9 @@
         "PERSONAL_CODEX_PROJECT_ROOTS": "/var/lib/personal-codex/projects",
         "PERSONAL_CODEX_EXECUTION_MODE": "disabled",
         "PERSONAL_CODEX_RESERVE_GB": "200",
-        "PERSONAL_CODEX_STORAGE_GB": "74",
+        "PERSONAL_CODEX_STORAGE_GB": "24",
+        "PERSONAL_CODEX_INFERENCE_POLICY": "worker-only",
+        "PERSONAL_CODEX_DENY_CONNECT": "1",
         "PERSONAL_CODEX_ENABLE_GATEWAY": "0",
         "PERSONAL_CODEX_STORAGE_ENFORCE": "1",
         "PERSONAL_CODEX_DB_MAX_MIB": "1024"
