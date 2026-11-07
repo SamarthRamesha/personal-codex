@@ -1,5 +1,11 @@
 # Personal Codex: current implementation handoff
 
+## Latest SSH continuation — approved diagnostic completed
+
+The user explicitly approved exactly one public-key-only handshake after the earlier automatic-review rejection. It completed: network connection established, existing known host key matched, and server recognised the supplied public identity. Agent/password/interactive signing were deliberately disabled; authentication did not complete (expected exit255), and no remote command ran. No private key read, configuration/agent change or installation. Private receipt outside Git updated.
+
+That one-shot approval is consumed. Do not repeat the diagnostic. The earlier review block for that exact action is superseded by this explicit approval/result; ordinary remote infrastructure facts remain unverified. Next requires the user to unlock the existing key in their own existing local agent, without sharing the passphrase/key or enabling forwarding/persistent key storage. After an actual access change, verify agent identity and resume already-authorised read-only inspection. No deployment/service/Serve/ACL permission is implied. Earlier checkpoint descriptions of the diagnostic as pending are historical.
+
 ## Mission 1B authoritative implementation checkpoint — 2026-11-07
 
 The Mission 1B user directive supersedes the earlier AFK milestones below. Continue existing branch and preserve all history. No deployment, GitHub publication, server write, persistent Mac service, externally reachable listener or model download is approved. Only disposable authorised loopback HTTP/TLS tests were used. Do not read/stage/delete/publish the pre-existing untracked diagnostic. Exact targets/access/approval queue remain outside Git in current outputs. No new user changes were found at entry; starting source was 6c0c101. Mission1B implementation saved locally as `440c78afd252551fbb5a8347ccd36f5ce7461449`; a documentation receipt follows. Run git log for current tip.

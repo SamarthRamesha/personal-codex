@@ -1,5 +1,9 @@
 # Development log
 
+## Approved public-identity diagnostic completed
+
+Following explicit user approval, exactly one public-key-only SSH handshake established connectivity, matched existing host trust and received server public-key acceptance. Signing/agent/password authentication remained disabled; expected authentication failure, no remote command/private-key read/configuration change. Approval consumed; next is user-controlled existing-agent unlock, then already-authorised read-only inspection after access changes. No code changes or new regression claims; historical Mission1B test results retained.
+
 ## Mission 1B security, recovery and isolation prototype — 2026-11-07
 
 Added durable worker claims/rotation, strict schemas/clock/chunk bounds, descriptor snapshots, encrypted offline recovery with stale authority revocation/locked restore, production admission/SQLite cap, operator-only no-mount/no-network executor prototype/supervisor, official public image digest lock and read-only runtime/HTTPS checks. Actual Qwen worker19/19 in46.418s; encrypted recovery drill6/6 (tiny fixture9ms checkpoint/10ms restore). Final full suite268 discovered: HTTP264pass4skip59.754s, default213pass55skip22.517s; frontend build/7Vitest/3Rust passed. No desktop source change or new Linux/container/native remote proof.
