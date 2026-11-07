@@ -14,7 +14,7 @@ Mission 1 is **PARTIAL**, not complete. The native client and real Mac local-mod
 - Actual checkout: `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex`.
 - Active branch: `personal-codex/stabilization`. Do not blindly switch to historical main.
 - Session began at `414e0cb`; remote stabilization had advanced to `12a24d59041af2c2a8b1023c40b55a63a660e8e6` (`test: isolate unreachable provider discovery from host state`). Fetched and fast-forwarded; main remained `3ab25b0`.
-- Latest commit at initial handoff generation: `12a24d5`, with this session's reviewed milestone pending commit. A following checkpoint will update this field after commit. Always run `git log -1` for the actual tip.
+- Latest implementation commit: `c5e34159faf5c88bcfc1163e37c0ddffffebacce` — `feat(desktop): add authenticated native coding workspace and recovery controls`. This handoff update is a following documentation checkpoint; run `git log -1` for its actual tip. The code milestone was committed with only the pre-existing diagnostic left untracked. Publication is verified separately after the checkpoint push.
 - The pre-existing untracked `personal-codex-diagnostic.txt` belongs to the user. Do not read, stage, delete or publish it.
 - Do not reset/clean/rebase/force-push, overwrite unexpected changes, merge important branches without authorization or publish private application data. Push completed safe milestones to the existing stabilization branch when authentication/state permit. Remote private host metadata is intentionally absent from Git.
 

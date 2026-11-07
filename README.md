@@ -110,7 +110,7 @@ The key is read only when an approved invocation runs, is sent only in the `Auth
 **2026-11-07 policy:** this gateway may route requests externally despite its local hop. It requires explicit `PERSONAL_CODEX_ENABLE_GATEWAY=1` plus a separate bound `network` approval for task invocations. It is absent from native local-provider selection. The historical integration instructions below do not constitute permission to enable it or supply credentials. No hosted integration was used in this milestone.
 
 The pinned `respan-gateway==0.3.0` integration routes one provider call through the open-source
-[Respan Gateway](https://github.com/respanai/respan-gateway?utm_source=freebuff&utm_medium=paid&utm_campaign=respan-gateway&bfcid=bfc_1.eyJpZCI6Ijc1NTA5Yjg1LTIwNDAtNGIwMC04MTFjLTkzNWFmZmUzNGVkYyIsImMiOiIyMDM2ODZkZS1mMzg0LTQ4NTQtYmViNC1hYzBiYWRmNmM1NTUiLCJrIjoiM2IxMGE4YmUtNzgyOS00MmJhLWFmNmEtYmI0YWUxZTRhY2Y4IiwiaWF0IjoxNzkzODgyMzMyfQ.XD_0nrLykffN6GdfZHgLtzA8DH3VooitSVkwVie7jQo), served in this process on a
+[Respan Gateway](https://github.com/respanai/respan-gateway), served in this process on a
 loopback port it chooses itself (`gw.serve(port=0)`). The gateway holds the developer's own provider
 keys — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `env:NAME` references in a local
 `gateway.toml` — and adds its routing, retry and fallback rules. Personal Codex keeps its single
@@ -145,7 +145,7 @@ binding and response validation; no live provider request was made in that run.
 
 ### Cloud endpoints
 
-A non-loopback endpoint is accepted only when registered with `cloud_allowed: true` **and** a `secret_ref`. Each invocation additionally needs a separately approved `network` request: giving metadata consent is not transmission consent. Cloud adapters refuse to run without a secret reference.
+Non-loopback registration requires explicit `cloud_allowed: true`; cloud invocation additionally requires a valid environment-variable `secret_ref`. Each invocation additionally needs a separately approved `network` request: giving metadata consent is not transmission consent. Cloud adapters refuse to run without a secret reference.
 
 ## Agent workflow
 
@@ -270,8 +270,8 @@ node --check web/app.js
 
 ## Roadmap
 
-1. A verified live Ollama round on the owner's machine (the immediate priority).
+1. Establish authorized JARVIS SSH access, inspect actual hardware/storage, and complete approved native-to-server deployment and live coding acceptance.
 2. Provider-native tool calls.
 3. A lightweight semantic retrieval benchmark before any embedding dependency is considered.
 4. Extend native parity: editor, PTY, memory and Git review controls; native shell is implemented.
-5. Mutually authenticated ZimaOS worker on a private network.
+5. Production server isolation, supervision, storage enforcement, signed packaging and remote recovery coverage.

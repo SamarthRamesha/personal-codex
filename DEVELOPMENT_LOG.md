@@ -2,6 +2,8 @@
 
 ## 2026-11-07 — actual Mac implementation session
 
+Implementation committed as `c5e34159faf5c88bcfc1163e37c0ddffffebacce` on `personal-codex/stabilization`; a documentation checkpoint follows. Remote branch was rechecked before publication and remained at `12a24d5`. Main was not merged or modified. Private server target metadata was excluded from Git and retained in a local-only deliverable.
+
 Located the existing Mac checkout at the historical path. Initial branch was `personal-codex/stabilization` at `414e0cb`, with only the user's untracked `personal-codex-diagnostic.txt`. Verified remote heads without stored Git credentials: main still `3ab25b0`, stabilization had advanced to `12a24d5`. Fetched and fast-forwarded stabilization; no reset, clean, branch merge or user-file overwrite. The initial HTTP-enabled 156-test run failed one test that assumed Ollama was offline; the already-published remote fix isolated its unreachable endpoint. Reconciled baseline: 156 discovered, OK with four skips.
 
 Sandboxed loopback operations initially failed with PermissionError; authorized out-of-sandbox loopback tests passed. Mac: Darwin arm64, macOS 26.6, Python 3.13.9, Node 24.22.1, Apple Command Line Tools installed; Rust/Cargo initially absent. User explicitly approved project dependency downloads and an isolated Rust toolchain. Installed stable Rust 1.99.1 under this chat's `work/toolchain`, without changing shell profiles or global toolchains. Pinned npm/Cargo locks; two compilation jobs; no inference engine or model downloads. Mac free storage was roughly 73 GiB initially and around 71 GB during later diagnostics; the Mac uses a 5 GB reserve while Linux defaults to the required 200 GB, both configurable.
