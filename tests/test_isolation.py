@@ -76,6 +76,11 @@ class IsolationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):isolation.request(Path(path),self.argv)
             read.assert_not_called()
 
+    def test_apparmor_complain_mode_is_not_accepted_as_enforcement(self):
+        for label,expected in [('docker-default (enforce)',True),('docker-default (complain)',False),('unconfined',False)]:
+            with patch('platform.system',return_value='Linux'),patch.object(isolation.os,'listdir',return_value=['lo']),patch.object(Path,'read_text',lambda path:label if str(path)=='/proc/self/attr/current' else ''):
+                self.assertEqual(isolation.runtime_checks()['apparmor'],expected)
+
 
 spec2=importlib.util.spec_from_file_location('run_isolated_job',ROOT/'scripts/run_isolated_job.py');supervisor=importlib.util.module_from_spec(spec2);spec2.loader.exec_module(supervisor)
 

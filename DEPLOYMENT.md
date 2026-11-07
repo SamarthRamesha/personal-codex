@@ -1,5 +1,14 @@
 # Deployment
 
+## Current read-only review decision
+
+Read-only inspection through the existing unlocked SSH agent now succeeds. Exact target facts are private and outside Git. The original candidate parent fails the strengthened ancestor policy; **`/DATA/PersonalCodex` is the new proposed root, requiring explicit approval**. No directory, permission, mount, service or network change occurred. Earlier path/access descriptions below are historical where superseded.
+
+Read `docs/DEPLOYMENT_REVIEW.md`. Preflight now rejects replaceable/untrusted ancestors before credential reads, and the inventory never treats failed daemon queries as actual capability values. Existing Docker daemon access remains denied to the SSH account; no privilege workaround. Prepare the remaining receipt with an already-authorised operator before filling runtime/Serve fields or executing any installation command.
+
+A deterministic minimal committed API context can now be generated with `scripts/prepare_build_context.py`; no untracked files, diagnostic/runtime data or Docker operation involved. Context reproducibility is tested; actual image build/enforcement remains unverified. The initial profile continues to disable coding.
+
+
 ## Mission 1B update — 2026-11-07
 
 New local security engineering is implemented and tested; no JARVIS deployment or fresh remote command occurred. SSH agent has no loaded identity. An additional public-key-only diagnostic was rejected by automatic approval review because no access change was documented; do not retry pending approval/access change.
@@ -27,7 +36,7 @@ The initial reviewed profile is **chat/planning/review only**. Repository comman
 - `deploy/Dockerfile`: stdlib backend/web only; requires an explicitly reviewed official Python image digest. No package installation or Git. Build context allowlist in `.dockerignore` excludes diagnostics, working data, keys and Git metadata.
 - `deploy/compose.review.json`: nonroot UID/GID, read-only root filesystem, all capabilities dropped, no-new-privileges, 1 CPU, 512 MiB memory with no additional swap allocation, 128 PIDs, 16 MiB tmpfs, bounded Docker logs (2 MiB × 3), liveness probe, restart policy and 15-second grace period. No Docker socket, privileged mode or published ports. Existing Tailscale container is untouched.
 - `deploy/review.env.example`: five nonsecret literal settings. Copy outside Git, replace all review placeholders. `PC_IMAGE` must be a reviewed local image ID; pull policy is never.
-- `scripts/deployment_preflight.py`: read-only inspection of the five settings and exact dedicated paths; no mkdir, shell expansion, Docker calls or shared-storage scan. Requires pre-existing private directories, reviewed numeric ownership, distinct 0600 tokens and at least 205 GB free. A passing preflight still reports overall readiness false until external checks pass.
+- `scripts/deployment_preflight.py`: read-only inspection of the five settings and exact dedicated paths; no mkdir, shell expansion, Docker mutation or shared-storage scan (optional scoped daemon/image queries only). Requires pre-existing private directories, reviewed numeric ownership, distinct 0600 tokens and at least 205 GB free. A passing preflight still reports overall readiness false until external checks pass.
 - `deploy/local.personalcodex.mac-worker.plist.example`: prepared outbound-only LaunchAgent, not installed. Replace executable/repository/private paths and exact backend origin. Worker log is private and rotates at 256 KiB × 3; no prompt, URL, token or exception details in log messages.
 
 Docker is unavailable in this Mac environment. JSON/property/preflight tests pass; no Docker build, Compose parse against the actual server version, container startup or server resource enforcement has been tested. Do not describe static template checks as container integration tests.

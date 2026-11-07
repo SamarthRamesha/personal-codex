@@ -1,5 +1,18 @@
 # Personal Codex: current implementation handoff
 
+## Read-only infrastructure review completed — 2026-11-07
+
+The user unlocked the existing SSH identity. Normal authorised metadata inspection succeeded through that agent, with strict existing host verification and no forwarding/private-key read or SSH/agent change. SSH is resolved; old empty-agent/diagnostic/review-block descriptions below are historical. Do not repeat the consumed public-identity diagnostic or ask for another unlock while access remains usable.
+
+Exact target/account/kernel/storage/DNS/TLS receipts remain outside Git. Docker daemon/Serve inspection is blocked by current socket permissions; do not use sudo, group/ACL changes or an alternative privileged API. Obtain an already-authorised operator's scoped read-only receipt. Kernel prerequisites were observed, not container enforcement. Private DNS resolves; private TLS connection was refused, so no certificate/Serve readiness is claimed. Full current tailnet policy and family/admin relationships remain missing.
+
+The old application parent is replaceable by other users. New proposed root `/DATA/PersonalCodex` requires approval; nothing was created or changed. Preflight now checks every ancestor's ownership/writability/sticky policy before credentials. Numeric identity remains a candidate until actual userns mapping is known. AppArmor prototype now accepts only enforcing mode. Deterministic minimal build context comes only from reviewed committed Git objects, with no untracked files or runtime/diagnostic content. Context reproducibility is not image reproducibility.
+
+Final relevant regression: **276 discovered, 272 passed, 0 failures/errors, 4 skipped, 59.544s**, HTTP profile. Three optional disabled gateway tests and one Linux/proc observation skip on macOS. Eight new regressions cover ancestor boundaries, deterministic committed-only context and AppArmor enforcing labels. No real Linux/Docker enforcement passed. Historical Qwen worker19/19, recovery6/6, frontend7/Rust3 remain historical and were not repeated for these changes. No new native binary or remote end-to-end proof.
+
+Private `JARVIS_FINAL_APPROVAL.md`, `JARVIS_VERIFIED_READONLY_FACTS.json`, operator checklist and final artifact manifest supersede previous private queue/access/path assumptions. Final reviewed source commit/context/archive hashes are in that manifest; use git log for current tip. No server installation, directory, permission, Docker/network/Tailscale change, backup traversal, persistent Mac worker or publication occurred. Coding stays disabled. Mission1 remains partial; final installation readiness depends on the operator/policy receipts, explicit phased approvals, real image/runtime/HTTPS/remote acceptance and the documented recovery/storage limits.
+
+
 ## Latest SSH continuation — approved diagnostic completed
 
 The user explicitly approved exactly one public-key-only handshake after the earlier automatic-review rejection. It completed: network connection established, existing known host key matched, and server recognised the supplied public identity. Agent/password/interactive signing were deliberately disabled; authentication did not complete (expected exit255), and no remote command ran. No private key read, configuration/agent change or installation. Private receipt outside Git updated.

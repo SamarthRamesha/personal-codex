@@ -1,5 +1,12 @@
 # Project status
 
+## Read-only inspection and final approval preparation
+
+SSH continuation resolved without key/config/agent changes. Approved read-only target inspection completed; exact hardware/storage/runtime/permissions/DNS/TLS evidence remains private. Docker daemon/Serve inspection is blocked by the current account's socket permissions, not by SSH or missing client tools. No escalation or server modification performed.
+
+Implemented locally: protected-ancestor preflight, safer proposed root, correct unknown capability reporting, deterministic minimal committed build context and eight new regressions. Current full HTTP suite:276 discovered, 272 passed, 0 failures/errors, 4 skipped, 59.544s. The isolation prototype now rejects AppArmor complain mode; application/native behavior otherwise unchanged. No model/native acceptance rerun or deployment claimed. See current private approval package and `docs/DEPLOYMENT_REVIEW.md`.
+
+
 ## Mission 1B current result — 2026-11-07
 
 Implemented: worker durable replay journal/hot credential rotation/strict protocol and clock/chunk limits; descriptor snapshots; encrypted offline multi-component recovery and stale-authority revocation; production write admission/main DB cap; operator-only isolated executor prototype; pinned public image metadata and read-only runtime/HTTPS acceptance tooling. Actual Qwen worker proof passed **19/19 in 46.418 s**; recovery drill **6/6**, tiny fixture 9 ms checkpoint/10 ms restore. Final regression:268 Python discovered; HTTP264passed/4skipped, default213passed/55skipped; zero final failures,7Vitest/3Rust and frontend build passed. Exact timings in NEXT_SESSION_PROMPT.md.

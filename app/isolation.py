@@ -101,7 +101,7 @@ def runtime_checks():
     mounts=[line.split() for line in read('/proc/mounts').splitlines()]
     checks={'linux':True,'nonroot':os.getuid()!=0,'seccomp_filter':status.get('Seccomp')=='2','no_new_privileges':status.get('NoNewPrivs')=='1',
             'zero_capabilities':all(status.get(name)=='0000000000000000' for name in ('CapEff','CapPrm','CapBnd')),
-            'apparmor':read('/proc/self/attr/current').startswith('docker-default'),
+            'apparmor':read('/proc/self/attr/current').strip()=='docker-default (enforce)',
             'private_network':set(os.listdir('/sys/class/net'))=={'lo'},
             'readonly_root':bool(os.statvfs('/').f_flag&os.ST_RDONLY),
             'memory_limit':read('/sys/fs/cgroup/memory.max').strip()=='805306368',

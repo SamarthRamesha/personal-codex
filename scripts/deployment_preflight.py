@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only review gate. No mkdir, chmod, Docker access, downloads or service changes."""
+"""Read-only review gate. No mkdir, chmod, Docker mutation, downloads or service changes."""
 from __future__ import annotations
 import argparse
 import json
@@ -31,7 +31,7 @@ def read_settings(path):
     return values
 
 
-def validate_settings(values,parent=Path('/DATA/AppData')):
+def validate_settings(values,parent=Path('/DATA')):
     root=Path(values['PC_ROOT'])
     if root!=parent/'PersonalCodex' or not root.is_absolute():raise ValueError('Only the dedicated reviewed PersonalCodex path is supported')
     for key in ('PC_UID','PC_GID'):
@@ -47,8 +47,21 @@ def no_symlink(path):
         if item.is_symlink():raise ValueError('Deployment path contains a symlink')
 
 
+def inspect_anchor(root,uid):
+    """An untrusted parent writer can rename even a private 0700 application root."""
+    no_symlink(root)
+    for parent in root.parents:
+        info=parent.stat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid not in {0,uid}:
+            raise ValueError('Deployment ancestor owner is outside the reviewed trust boundary')
+        if stat.S_IMODE(info.st_mode)&0o022 and not info.st_mode&stat.S_ISVTX:
+            raise ValueError('Deployment ancestor is replaceable by other users; select a protected parent')
+    return {'anchor':'pass','shared_parent_mutated':False}
+
+
 def inspect_layout(root,uid,gid):
     # Inspect only these explicitly named paths. No shared-directory listing or data scan.
+    inspect_anchor(root,uid)
     for path in (root,root/'data',root/'data'/'projects',root/'secrets'):
         no_symlink(path)
         info=path.stat()
@@ -71,7 +84,7 @@ def inspect_layout(root,uid,gid):
             tokens.append(value)
     if tokens[0]==tokens[1]:raise ValueError('Owner and worker credentials must be distinct')
     if shutil.disk_usage(root).free<205*GB:raise ValueError('At least 205 GB free required for the 200 GB reserve and initial headroom')
-    return {'layout':'pass','free_space':'pass','credential_metadata':'pass','mutations':False}
+    return {'anchor':'pass','layout':'pass','free_space':'pass','credential_metadata':'pass','mutations':False}
 
 
 def inspect_runtime(values,docker='/usr/bin/docker'):
@@ -111,7 +124,7 @@ def main(argv=None):
         result=inspect_layout(root,uid,gid)
         if args.docker_readonly:result['runtime_metadata']=inspect_runtime(values)
     except (ValueError,OSError):
-        print(json.dumps({'ready':False,'error':'Review values, existing private layout, ownership, token metadata and free storage; no changes made'}));return 2
+        print(json.dumps({'ready':False,'error':'Review protected parent, values, existing private layout, ownership, token metadata and free storage; no changes made'}));return 2
     print(json.dumps({'ready':False,'preflight':result,'remaining':['Docker/Compose and image inspection','listener/Serve/ACL review','storage quota','approved installation and end-to-end verification']}));return 0
 
 if __name__=='__main__':raise SystemExit(main())

@@ -1,5 +1,15 @@
 # Changelog
 
+## Protected-parent and reproducible build preparation
+
+- Resumed authorised SSH read-only inspection after user unlocked the existing agent; no server mutation or privilege change.
+- Added deployment ancestor ownership/sticky/writability checks before credential access; revised the proposed protected-parent path without creating it.
+- Prevented denied Docker queries from masquerading as capability values; separated Compose client availability from daemon access.
+- Added deterministic minimal tar.gz API context from committed trusted Git objects with per-file hashes/provenance, excluding untracked/private runtime content.
+- Require the exact enforcing AppArmor profile in the isolation prototype; complain/unconfined labels fail closed.
+- Eight new targeted regressions and full HTTP suite276 discovered / 272 passed / 4 skipped, zero failures. Actual image build, Docker/Serve/ACL deployment and sandbox enforcement remain unverified.
+
+
 ## Mission 1B security engineering
 
 - Added persistent no-replay Mac journal, strict reply/UUID/JSON/ack checks, atomic owner-controlled credential revocation and per-request worker file reload.

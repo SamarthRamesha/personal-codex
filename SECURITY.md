@@ -1,5 +1,10 @@
 # Security model
 
+## Deployment ancestor boundary
+
+A private leaf can still be renamed/replaced by an untrusted parent writer. Deployment preflight now rejects unsafe writable non-sticky ancestors and untrusted ownership before credentials are read. The old location is no longer the default candidate; protected-parent selection requires separate approval and never silently changes a shared directory. Source context generation reads committed trusted release objects only; no working tree/untracked/diagnostic content. Runtime capability fields remain unknown when daemon access fails. See `docs/DEPLOYMENT_REVIEW.md`.
+
+
 ## Mission 1B authority and recovery controls
 
 Durable Mac claims now prevent model-job replay across worker restart; malformed replies/UUIDs/chunks/duplicate JSON fail closed. Worker credential reload revokes in-flight leases under a shared lock, and old requests cannot pass authentication before a slow body then mutate after rotation. A valid stolen worker credential can still impersonate its principal; rotation and source ACLs are required, not hardware attestation.

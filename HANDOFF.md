@@ -1,5 +1,12 @@
 # Handoff
 
+## Current continuation after actual read-only inspection
+
+The existing unlocked agent supports normal authorised SSH inspection. No SSH blockage/retry approval remains pending. Server read-only evidence is private; current blocker is Docker daemon/Serve access under the unprivileged account. Do not use sudo, group/ACL changes or an indirect privileged API/shell. Obtain an existing authorised operator's scoped read-only receipt.
+
+Default proposed root changed to a protected parent, not created. New preflight and deterministic committed build-context helper tested:276 Python discovered / 272 passed / 4 skipped. Deployment, runtime containment, full policy and publication remain unapproved. Current handoff/private approval package supersede older access/path descriptions below.
+
+
 ## Mission 1B continuation
 
 Read the current NEXT_SESSION_PROMPT.md and private Mission 1B review package first. Local security/recovery/isolation-prototype/preflight code is implemented and tested. No Linux/runtime/JARVIS acceptance or deployment is certified. Empty agent diagnosed; an additional SSH diagnostic was blocked by automatic review because access had not changed. Do not bypass/retry without approval/access change. Production coding remains disabled; no backend Docker authority. Full encrypted envelope limited to 64 MiB, with larger-data recovery still a separate gate. Preserve every local commit and the untouched untracked diagnostic; never push automatically.
