@@ -1,5 +1,12 @@
 # Deployment
 
+## Administration route under investigation
+
+User retained read-only server scope and declined both probes. No separate Docker operator is identified. The supported candidate is owner-operated **ZimaOS dashboard → Apps plus → Install a customized app → Import → Docker Compose**, as documented by IceWhale; no ordinary SSH Docker grant. This is broad owner/admin authority, not proven single-app delegation. Dashboard presence does not prove the session's mutation role. Do not use an undocumented API, web terminal escalation, sudo/group change or management-container workaround.
+
+Before any import/install approval, verify the installed-version importer preserves every required restriction, establish actual image build/load and mapped numeric ownership, and freeze the exact definition/paths. Newer native YAML documentation is not proof for the installed version. No form imported/submitted, image built, directories/secrets/service/Serve/policy changed. Current private ZIMAOS_ADMIN_METHOD_REVIEW.md presents exact method, permissions, sources and gaps for review. Runtime acceptance remains unverified; startup restrictions must not be weakened.
+
+
 ## Mission 1C.1 installation contract
 
 Use the revised Compose profile: `PERSONAL_CODEX_INFERENCE_POLICY=worker-only`, `PERSONAL_CODEX_DENY_CONNECT=1`, data admission24GB within25GB total initial accounting,200GB free reserve and75GB planned maximum. Main private Serve startup now refuses a missing/unsupported no-connect policy; old launch examples require these new flags. Review SECURITY.md for the additive process filter, fixed independent health-check exception and real Linux test gate. Do not build/deploy the historical95e1e0f context as this new restricted release.

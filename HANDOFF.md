@@ -1,5 +1,12 @@
 # Handoff
 
+## Latest decision and continuation
+
+Server access stays read-only; both probes explicitly declined/unexecuted. No separate Docker operator exists that the user can identify. Investigate/present owner-operated ZimaOS Custom App administration and required broad privileges before proceeding; do not assume app-scoped RBAC, bypass socket permissions or install anything. Private ZIMAOS_ADMIN_METHOD_REVIEW.md records supported UI steps, version/ownership/build gaps and sources.
+
+Tailscale read/diff only authorised; no apply. Await a stable frontmost Access controls page before reading the actual full policy; do not invent a diff from historical fragments. No new tests/code or target mutations; implementationfb1fef1 remains local. Current NEXT_SESSION_PROMPT.md supersedes pending-probe/operator assumptions below.
+
+
 ## Mission 1C.1 continuation
 
 SSH preflight refreshed after user unlock; Docker socket still denies the account. Await the existing operator's checklist output and current full policy/admin sign-in; no operator access details supplied. Revised transient Linux probe SHA256 `6f42acea8f241549d8c0b31119614b33314f172c83b8c61d4df624692c2c5fb7` awaits approval; earlier unexecuted draft is superseded.

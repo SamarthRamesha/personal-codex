@@ -1,5 +1,14 @@
 # Personal Codex: current implementation handoff
 
+## Current authority update: read-only only; no identified Docker operator
+
+Both transient Linux probe requests were declined. Do not execute either draft or ask for the same probe again. No Linux runtime/filter acceptance exists; keep coding disabled and do not weaken production startup checks. User confirms no separate Docker operator/login is identified; stop assuming an existing operator can supply output. No sudo, Docker-group change, indirect privileged API or installation.
+
+User authorises reading the signed-in Tailscale policy and preparing an exact least-privilege diff, with no edit/save/apply until exact approval. The active Arc page changed during inspection, and the complete policy has not yet been read. A pending question asks the user to bring Access controls frontmost briefly. Do not interfere with unrelated browser work or request credentials. Historical allow-all fragments are not a baseline for a complete replacement.
+
+Investigated supported ZimaOS administration: official Custom App dashboard import is a possible owner-operated route without granting the ordinary SSH account Docker access. Its authority is broad owner/admin, not verified single-app RBAC; session role, installed-version importer preservation, image build/load and exact numeric ownership remain unverified. A logged-in dashboard/plus control and service widgets were observed only; no app imported/installed/managed. Current docs are newer, native YAML editing appears in1.7 release notes, and API guide/explorer links returned404. Present the exact method/permissions before proceeding. Private ZIMAOS_ADMIN_METHOD_REVIEW.md contains sources, known gaps and narrow future scope. No new code/test execution claim; implementation remainsfb1fef1 and historical281pass/5skip. Local documentation receipt follows; no push.
+
+
 ## Mission 1C.1 execution checkpoint
 
 Read-only SSH preflight succeeded again after the user unlocked the existing agent. Exact target/account/device/model receipts stay outside Git. No persistent directory, secret, image, service, Docker/network/Tailscale or permission change has been approved/performed. Current account still lacks Docker socket access. User asks an existing authorised Docker operator to supply the scoped checklist output; no operator login/session or receipt has yet been supplied. Do not use sudo, broaden groups or use an indirect privileged workaround.

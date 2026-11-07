@@ -1,5 +1,12 @@
 # Project status
 
+## Current user decision: read-only investigation
+
+Both transient probes declined and unexecuted. No separate Docker operator/login is identified; do not assume one, use sudo or change Docker groups. Investigated owner-operated ZimaOS Custom App management; this avoids an SSH Docker grant but needs broad dashboard administration. App-only delegation, actual session role,installed-version importer control preservation, build/load and numeric ownership are unverified. See current private method review.
+
+Tailscale policy read/draft is authorised, apply is not. Signed-in page has not yet been exposed stably to inspection; full current policy/diff not obtained. User was asked to bring Access controls frontmost. No server or policy change; code/verification unchanged atfb1fef1 and historical281pass/5skip. Mission1 partial, coding disabled.
+
+
 ## Mission 1C.1 current checkpoint
 
 Authorised SSH preflight refreshed privately; no server writes/install/deployment. Existing account still lacks daemon access; awaiting the existing authorised Docker operator's receipt, current full policy/sign-in and revised transient probe decision. No operator login/session has been supplied, and no privilege workaround is permitted.
