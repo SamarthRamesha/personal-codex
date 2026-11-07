@@ -1,5 +1,12 @@
 # Deployment
 
+## Policy candidate is review-only
+
+The complete supplied policy now has a private proposed replacement, exact diffs and rollback copy. Preserve the existing SSH rule and validate both IP families. Local model checks do not establish vendor compilation, live enforcement or full family-service preservation.
+
+Before any policy application, inventory family HTTPS handlers, all routed/service destinations, devices/tags/shares and emergency paths. Current candidate omits subnet destinations outside device prefixes and cannot distinguish applications sharing one HTTPS endpoint; either issue requires a revised exact policy before approval. No editor/save/API apply, server mutation, declined probe or credential creation occurred. Read the private seven-part policy review and current handoff.
+
+
 ## Administration route under investigation
 
 User retained read-only server scope and declined both probes. No separate Docker operator is identified. The supported candidate is owner-operated **ZimaOS dashboard → Apps plus → Install a customized app → Import → Docker Compose**, as documented by IceWhale; no ordinary SSH Docker grant. This is broad owner/admin authority, not proven single-app delegation. Dashboard presence does not prove the session's mutation role. Do not use an undocumented API, web terminal escalation, sudo/group change or management-container workaround.

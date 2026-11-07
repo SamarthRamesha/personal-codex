@@ -1,5 +1,12 @@
 # Project status
 
+## Policy review prepared; application blocked by preservation checks
+
+Complete user policy received and parsed privately. Proposed full replacement, exact raw/active diffs, rollback and seven-part impact/validation review are outside Git. No live change. SSH rule is retained; a limited local model passed82endpoint assertions and six negative controls. Vendor tests and live enforcement remain unverified.
+
+User confirms family HTTPS usage and other routes/shares/devices are unknown. Candidate has a demonstrated preservation gap for subnet destinations outside device prefixes; shared HTTPS could also break family access. It is not safe to apply until inventory, vendor validation and exact approval are complete. Declined probes remain unexecuted; no operator/installation/publication authority is assumed.
+
+
 ## Current user decision: read-only investigation
 
 Both transient probes declined and unexecuted. No separate Docker operator/login is identified; do not assume one, use sudo or change Docker groups. Investigated owner-operated ZimaOS Custom App management; this avoids an SSH Docker grant but needs broad dashboard administration. App-only delegation, actual session role,installed-version importer control preservation, build/load and numeric ownership are unverified. See current private method review.

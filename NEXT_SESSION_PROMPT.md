@@ -1,5 +1,14 @@
 # Personal Codex: current implementation handoff
 
+## Current private policy proposal checkpoint
+
+The complete user-supplied HuJSON policy has now been received and parsed; do not ask for it again or retry browser inspection. Private tailnet-review/POLICY_REVIEW.md, proposed-policy.json, raw/semantic diffs, rollback copy, read-only evidence and artifact hashes are outside Git. No policy/server change or declined probe ran. Private IPs, node metadata and the actual policy remain outside this repository.
+
+A complete review-only candidate retains the SSH rule and narrows the intended application/inference endpoints for both address families. Limited offline checks passed82endpoint assertions and six negative controls, with full TCP/UDP port-set comparison across selected eligible-node vectors.18network and4SSH vendor test cases are prepared, not run by Tailscale. Do not confuse this model with compiled/effective or live access verification; backend tests were not repeated.
+
+User explicitly does not know family HTTPS use or external device/share/route/exit-node state. The candidate is NOT ready to apply: approved subnet destinations outside device ranges are not carried forward, a shared HTTPS endpoint could break family access, and dynamic service/sharing behavior needs admin/vendor validation. Exact impact and two synthetic route-loss examples are documented; resolve inventory and regenerate candidate/diff before approval if needed. Preserve every existing family/admin dependency. Explicit approval of the final exact diff remains mandatory. No new credentials/API tokens, live editor changes or publication. Implementation remainsfb1fef1; documentation receipts follow.
+
+
 ## Current authority update: read-only only; no identified Docker operator
 
 Both transient Linux probe requests were declined. Do not execute either draft or ask for the same probe again. No Linux runtime/filter acceptance exists; keep coding disabled and do not weaken production startup checks. User confirms no separate Docker operator/login is identified; stop assuming an existing operator can supply output. No sudo, Docker-group change, indirect privileged API or installation.

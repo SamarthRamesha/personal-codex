@@ -1,5 +1,12 @@
 # Handoff
 
+## Latest policy-review handoff
+
+Full policy received; no further browser/paste request is needed. Private tailnet-review folder contains complete candidate, before/after diffs, rollback and impact report.82local endpoint assertions and six negative controls passed in a limited model;18network/4SSH vendor cases not executed. No live change, backend rerun or probe.
+
+Candidate is not ready to apply. User marks family HTTPS/routes/shares/other devices unknown; missing approved subnet destinations and a shared HTTPS endpoint can break existing access. Complete owner inventory/vendor validation, regenerate any necessary exact diff and obtain explicit approval. Keep original SSH/emergency access and production coding disabled. Implementationfb1fef1 unchanged; private policy/identifiers remain outside Git.
+
+
 ## Latest decision and continuation
 
 Server access stays read-only; both probes explicitly declined/unexecuted. No separate Docker operator exists that the user can identify. Investigate/present owner-operated ZimaOS Custom App administration and required broad privileges before proceeding; do not assume app-scoped RBAC, bypass socket permissions or install anything. Private ZIMAOS_ADMIN_METHOD_REVIEW.md records supported UI steps, version/ownership/build gaps and sources.
