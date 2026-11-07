@@ -39,6 +39,7 @@ ACTIVE_STATUSES = ("queued", "streaming")
 
 # Injectable factory: tests set this to a deterministic transport so no socket is used.
 TRANSPORT = None
+WORKER_TRANSPORT = None
 # message_id -> threading.Event used by stop requests and by the streaming adapters.
 GENERATIONS: dict[str, threading.Event] = {}
 _LOCK = threading.RLock()
@@ -56,6 +57,9 @@ def transport_for(provider: dict):
     """Return the streaming adapter for one provider; chat never uses a non-streaming call."""
     if TRANSPORT is not None:
         return TRANSPORT
+    if provider.get("kind") == "mac-worker":
+        if WORKER_TRANSPORT is None:raise providers.ProviderTransportError("Mac inference bridge unavailable")
+        return WORKER_TRANSPORT
     if provider.get("kind") == "ollama":
         return providers.OllamaStreamTransport()
     if provider.get("kind") == "openai-compatible":
@@ -205,6 +209,13 @@ def resolve_provider(store, conversation: dict, provider_id: str | None) -> dict
         raise ValueError("provider is disabled")
     requested = conversation.get("model") or provider["model"]
     if requested != provider["model"]:
+        if provider["kind"] == "mac-worker":
+            try:
+                from . import inference
+            except ImportError:
+                import inference
+            if requested not in inference.Broker(store).catalog()['models']:raise ValueError("Selected Mac model is not installed/online")
+            return {**provider,"model":requested}
         if provider["kind"] != "ollama" or provider.get("cloud_allowed"):
             raise ValueError("Only installed local Ollama models can be selected independently")
         installed = providers.discover_models(provider["endpoint"], timeout=5.0)
@@ -271,6 +282,20 @@ def append_chunk(store, conversation_id: str, message_id: str, text: str) -> int
         store.conn.execute("UPDATE messages SET content=content||?, updated_at=? WHERE id=?", (text, stamp(), message_id))
         store.conn.commit()
         return cursor.lastrowid
+
+
+def stop_all():
+    with _LOCK:
+        for event in GENERATIONS.values():event.set()
+
+
+def drain(timeout=5):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        with _LOCK:
+            if not GENERATIONS:return True
+        time.sleep(.05)
+    return False
 
 
 def request_stop(message_id: str) -> bool:
@@ -348,7 +373,7 @@ def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt
 
     try:
         adapter = transport_for(provider)
-        result = adapter({"endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt,
+        result = adapter({"provider_id":provider["id"],"endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt,
                           "cloud_allowed": bool(provider["cloud_allowed"]), "secret_ref": provider.get("secret_ref") or "",
                           "stop_check": cancel.is_set, "on_text": on_text, "on_chunk": lambda count: None})
         if cancel.is_set():

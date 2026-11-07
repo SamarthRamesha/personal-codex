@@ -2,11 +2,25 @@
 
 Continue this existing project from the actual repository state. Do not recreate the project or replace functioning components. Read this prompt and the current status/acceptance/threat documents first; verify every claim against code and tests. Preserve user changes and project history. This handoff is current as of 2026-11-07 (Asia/Kolkata).
 
+## Authoritative AFK implementation checkpoint — 2026-11-07 13:14 IST
+
+**The latest AFK autonomy contract supersedes the earlier one-command/wait workflow.** Continue ordinary local code, tests, fixtures, native work, docs and local commits independently. Do not interrupt the absent user for routine decisions. Record approval-dependent work and keep implementing independent components. No JARVIS install, directory creation, persistent service/container/Serve/ACL/firewall/SSH change, Mac network exposure or model download is authorized. No private keys/passphrases/tokens in logs or Git; no diagnostic-file access. Local synthetic loopback tests and installed models are explicitly authorized.
+
+Intended architecture remains Mac inference/client → private Serve HTTPS → authenticated JARVIS localhost API. Implemented since 4a3ea1d: exact trusted-loopback Serve policy/secure cookies without bypassing auth; durable scoped outbound Mac inference worker (no inbound listener/arbitrary forwarding); lease/sequence/idempotency/timeout/cancellation/non-replay recovery; model allowlists/location/health; readiness; one-instance data lock and lazy DB startup; bounded service clients; SIGTERM shutdown of silent chats with persisted partial status; private new DB permissions; explicit project roots; disabled repository subprocess/Git operations for Serve deployment pending OS containment; native per-stream cancellation, bounded SSE frames, deployment capabilities and Mac worker selection.
+
+Last full HTTP suite: 205 discovered, 201 passed, 4 skipped, 51.508 s; prior 199 run exposed two silent-socket cancellation failures, fixed and targeted tests passed. Runtime 6 passed (one fixture expectation corrected for macOS /var→/private/var normalization). Frontend: TS/Vite build and 7 tests passed. Rust stream-policy tests expanded from 1 to 3; see latest execution log for result. Additional final regression, deployment prep, browser login, native packaging/QA and documentation remain in progress. Do not claim them complete from this checkpoint.
+
+Real installed Qwen 14B via the new authenticated worker HTTP queue: 17 checks passed, 82,764 ms total. Chat, provider/proposal approval, worktree patch, actual test execution, model completion, worker stop, ephemeral job-payload clearing and restart persistence all passed. Control plane and worker were disposable loopback fixtures on the Mac, not actual JARVIS. Failed first attempt retained: the reviewer refused a model-selected tests-directory command against the prior root-level fixture. The conventional tests/ fixture now accepts only known equivalent unittest commands and explicitly checks 'Ran 1 test'; tool/schema/file restrictions were not weakened.
+
+Unattended read-only SSH with the supplied dedicated identity was attempted with BatchMode, strict existing host trust and no host-key updates; rejected (publickey,password). This does not invalidate the user's earlier successful interactive test; unlocked credentials are unavailable in this unattended session. No server commands executed, privilege workaround, key reinstall or configuration change occurred. User's latest evidence now also reports successful Mac MagicDNS lookup; treat DNS warning as non-blocking absent a fresh functional failure. No DNS repair.
+
+**Current next work:** finish deployment/preflight/recovery/API docs and exact approval queue; browser cookie login and native contract/QA; remaining focused security tests, complete regression; preserve local commits and refresh this handoff. Do not stop merely because real deployment is approval/credential blocked. Do not deploy. Exact private target metadata remains outside Git in PRIVATE_DEPLOYMENT_NOTES.md.
+
 ## Objective and current result
 
-Build Personal Codex into a private, local-first autonomous coding environment: native Mac UI, primary ZimaOS backend/local inference over the user's existing Tailscale network, persistent chat/tasks/memory, approval-controlled coding/worktrees/tests/diffs and robust recovery. No ChatGPT/Codex/Freebuff/hosted model is a runtime dependency. No training on private data, silent cloud fallback, telemetry, public service or unrestricted model shell/filesystem access is permitted.
+Build Personal Codex into a private, local-first autonomous coding environment: native Mac UI and primary local inference on the Mac, with ZimaOS backend/persistence/orchestration accessed through existing private Tailscale Serve HTTPS, persistent chat/tasks/memory, approval-controlled coding/worktrees/tests/diffs and robust recovery. No ChatGPT/Codex/Freebuff/hosted model is a runtime dependency. No training on private data, silent cloud fallback, telemetry, public service or unrestricted model shell/filesystem access is permitted.
 
-Mission 1 is **PARTIAL**, not complete. The native client and real Mac local-model workflow work. ZimaOS deployment and genuine home/off-Wi-Fi remote acceptance remain blocked on SSH authentication and actual machine inspection. Continue with that foundation before breadth from Missions 2/3.
+Mission 1 is **PARTIAL**, not complete. The native client and real Mac local-model workflow work. The user's later deployment directive reports successful dedicated-key SSH and completed server hardware inventory; the earlier SSH-rejection blocker is superseded. Deployment remains unapproved, with DNS/service/ACL/storage freshness checks and application proxy/inference/isolation readiness outstanding. Mission 2 is out of scope.
 
 ## Repository and Git
 
@@ -70,13 +84,13 @@ Mac: Apple Silicon arm64 (user-provided M3/16 GB); macOS 26.6; Python 3.13.9; No
 
 Existing Ollama and Tailscale services were discovered and left untouched. Installed Mac models: llama3.2:3b (2.0 GB), qwen2.5-coder:14b (9.0 GB), gemma3:1b (815 MB). Their existence is not a recommendation to install them on ZimaOS. Tokens/s, peak RAM/pressure and model concurrency are unmeasured. No inference engine/model was installed.
 
-Tailscale Running; user-confirmed Linux home server online/active with a private route. User supplied exact SSH username/IP and `/DATA` home; exact targets are in local-only `PRIVATE_DEPLOYMENT_NOTES.md` outside Git, or rediscover through authorized Tailscale status. SSH with existing trust and BatchMode reached the host but was rejected (publickey,password). No server inventory, install, configuration change, backup access or deployment occurred. No tailnet/ACL/router changes were authorized.
+The user's later deployment directive reports working dedicated-key SSH, server inventory, direct Tailscale connectivity and enabled MagicDNS/HTTPS. This supersedes the previous session's failed default-identity SSH attempt. Targeted remote freshness checks are blocked in this unattended session by rejected dedicated-key authentication; do not prompt for credentials or stop independent implementation. Exact private targets and key path are kept outside Git. No server changes are authorized yet.
 
 Temporary UI fixture backends on 8787/8788/8789 were stopped. The delivered native app was left open, disconnected. No Personal Codex production service is installed or running. Existing Ollama/Tailscale services remain as found.
 
 ## Remaining risks and blockers
 
-SSH access is the immediate Mission 1 blocker. Actual ZimaOS CPU/ISA/RAM/GPU/OS/filesystem/services/model footprint remain unknown, so no server runtime/model has been selected. TLS hostname certificate provisioning and service install require review/approval; do not bypass certificate validation or substitute public exposure.
+The previous SSH blocker is superseded by the user's successful dedicated-key evidence. Current readiness blockers are safe Serve proxy compatibility, a private JARVIS-to-Mac inference connection, execution isolation, targeted fresh infrastructure checks and explicit deployment approval. Mac inference is now the intended primary compute; do not install a server model. HTTPS enablement is reported but actual Serve certificate/hostname operation is not yet tested. Do not bypass certificate validation or substitute public exposure.
 
 Other incomplete items: OS-level filesystem/network sandboxing (approved tests still execute host-accessible code), multi-user/project-scoped auth, bounded global task scheduler, comprehensive quotas including external model storage, server supervision/scheduled backups, editor/PTY, attachments/audio/image/reasoning capabilities, native memory/Git parity, provider-native tools, retrieval benchmarks, signed/notarized distribution and update strategy. Optional features must not displace core remote acceptance. No training on private data.
 
@@ -84,16 +98,15 @@ Resource policy: at least 200 GB free and an initial 75 GB total app/models/cach
 
 ## Exact next steps
 
-1. Verify Git/status/remotes and the latest checkpoint; do not discard the untracked diagnostic. Read acceptance/threat/deployment/native docs.
-2. Check whether the user has established SSH login. Do not ask for passwords/private keys in chat or modify login/security settings. Use the confirmed values in local private notes or authorized discovery.
-3. Run `scripts/inspect_host.sh` through authorized SSH, read-only. It avoids `/DATA` traversal and backups. If access still fails, preserve the exact blocker and continue independent work.
-4. Measure actual hardware/storage/services, count existing model footprint, confirm dedicated app storage/reserve. Do not install Docker/inference or pull models before this.
-5. Prepare concrete dedicated-account/storage/service/certificate/containment changes for review; request approval before server writes, installs, credentials, security settings or resource-limit exceptions. Preserve existing Tailscale ACLs/config and backups.
-6. Deploy authenticated verified TLS only after approval; verify native hostname identity, invalid auth, downtime, interruption/reconnection at home/off-Wi-Fi. Then complete real native→ZimaOS→local-model→approved patch/test→persisted result acceptance and record performance.
-7. Continue native parity and OS execution/egress isolation, then controlled multi-agent scheduling and reliability finish. Never present unverified controls as working.
-8. Update all checkpoint docs and regenerate this handoff after every meaningful verified milestone. Commit/push safe completed work; preserve unpushed commits if unavailable.
+1. Continue safe local engineering autonomously under the AFK contract. Inspect current work/logs before repeating tests. Finish the work listed in the current AFK checkpoint.
+2. Prepare concrete deployment/service/storage/Serve/ACL changes and preflight/recovery commands for review; do not execute infrastructure changes or create the dedicated server directory. Preserve existing container and family data.
+3. Complete local real-model/worker/native and security evidence, including fresh relevant tests, then update status/API/deployment/threat/acceptance documentation and this handoff. Commit coherent local milestones without including the diagnostic/private notes.
+4. Queue exact required approvals and unresolved remote credential/current-policy/runtime/storage checks. The user reports working interactive SSH and DNS; no reinstall, DNS changes or global-policy replacement. Never ask for keys/passphrases.
+5. Only after explicit approval and working authorized access, perform reviewed infrastructure changes and verify remote acceptance. Mission 1 is still PARTIAL; no Mission 2 breadth or completion claim based on local proof.
 
 ## Resume commands
+
+Historical local development reference only. Do not bulk-run these or start a service during infrastructure readiness; follow the current AFK authorization/approval contract above.
 
 ```sh
 cd /Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex

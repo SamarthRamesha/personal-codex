@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools, security, maintenance  # script execution puts app/ on sys.path
+    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools, security, maintenance
+    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -45,7 +45,7 @@ MAX_CONTEXT_BYTES = env_int("PERSONAL_CODEX_MAX_CONTEXT_BYTES", 60_000, 2_000, 4
 MAX_INVOCATIONS = env_int("PERSONAL_CODEX_MAX_INVOCATIONS", 12, 1, 100)
 USAGE_FIELDS = ("prompt_bytes", "response_bytes", "test_output_bytes", "context_bytes", "invocations")
 ROUND_ACTIVE = {"awaiting-approval", "executing"}
-PROVIDER_KINDS = {"ollama", "openai-compatible", gateway.GATEWAY_KIND}
+PROVIDER_KINDS = {"ollama", "openai-compatible", gateway.GATEWAY_KIND, inference.KIND}
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 ENV_REF_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -74,6 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_message ON message_chunks(message_id, seq)
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at);
 CREATE TABLE IF NOT EXISTS conversation_tasks (conversation_id TEXT NOT NULL, task_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (conversation_id, task_id));
 """
+SCHEMA += inference.SCHEMA
 MIGRATIONS = {
     "providers": {"last_latency_ms": "INTEGER", "last_checked_at": "INTEGER"},
     "memory": {"source_task_id": "TEXT", "source_round_id": "TEXT", "evidence": "TEXT", "digest": "TEXT"},
@@ -84,11 +85,14 @@ def uid() -> str: return str(uuid.uuid4())
 
 class Store:
     def __init__(self):
-        DATA.mkdir(parents=True, exist_ok=True)
+        DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if DB_PATH.is_symlink():raise ValueError("Database must not be a symlink")
+        new_database=not DB_PATH.exists()
         # One connection is shared by every HTTP thread and by streamed chat workers, so access is
         # serialized here: sqlite3 cannot start a transaction while another thread's commit is open.
         self.lock = threading.RLock()
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10.0)
+        if new_database:DB_PATH.chmod(0o600)
         self.conn.row_factory = sqlite3.Row
         # A streamed chat turn writes from a worker thread while HTTP threads read; wait instead of failing.
         self.conn.execute("PRAGMA busy_timeout=5000")
@@ -133,6 +137,7 @@ class Store:
                 self.conn.execute("UPDATE tasks SET status='needs-another-round', updated_at=? WHERE id=?", (stamp, row["task_id"]))
         if recovered_messages:
             print(f"[personal-codex] recovered {recovered_messages} interrupted conversation answer(s)", file=sys.stderr)
+        inference.recover(self.conn)
         self.conn.commit()
     def rows(self, sql, args=()):
         with self.lock:
@@ -172,11 +177,27 @@ class Store:
             self.conn.commit()
             return "ok"
 
-STORE = Store()
+class LazyStore:
+    """Delay all database startup/recovery until the process holds its instance lock."""
+    def __init__(self):self.instance=None;self.lock=threading.RLock()
+    def __getattr__(self,name):
+        with self.lock:
+            if self.instance is None:self.instance=Store()
+            return getattr(self.instance,name)
+
+STORE = LazyStore()
+STOPPING = threading.Event()
 AUTH = security.OwnerAuth.from_env()
+WORKER_AUTH = security.OwnerAuth.from_env("PERSONAL_CODEX_WORKER_TOKEN_FILE")
+conversations.WORKER_TRANSPORT = lambda request: inference.Broker(STORE).transport(request)
 
 def safe_project_path(value: str) -> Path:
+    if not isinstance(value,str) or not value.strip():raise ValueError("Project path is required")
     p = Path(value).expanduser().resolve()
+    roots=os.getenv("PERSONAL_CODEX_PROJECT_ROOTS", "")
+    if roots:
+        permitted=[Path(root).expanduser().resolve() for root in roots.split(os.pathsep) if root]
+        if not any(p==root or root in p.parents for root in permitted):raise ValueError("Project is outside configured repository roots")
     if not p.exists() or not p.is_dir(): raise ValueError("Project path must be an existing directory")
     return p
 
@@ -184,6 +205,10 @@ def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: s
     """Validate metadata only; this function never reads an environment secret or contacts a provider."""
     if kind not in PROVIDER_KINDS: raise ValueError("Unsupported provider kind")
     if not model: raise ValueError("model is required")
+    if kind == inference.KIND:
+        if endpoint or secret_ref or cloud_allowed: raise ValueError("Mac worker providers accept no endpoint, secret reference or cloud flag")
+        inference.model_names([model])
+        return {"kind":kind,"endpoint":"","model":model,"secret_ref":"","cloud_allowed":0}
     if kind == gateway.GATEWAY_KIND:
         # The in-process gateway chooses its loopback port per process, so a provider record stores no
         # endpoint and no secret: the gateway resolves its own provider keys.
@@ -230,6 +255,8 @@ def active_provider_transport(provider: dict):
     """Resolve the transport per invocation so credentials are read only at call time."""
     if provider.get("kind") == gateway.GATEWAY_KIND and os.getenv("PERSONAL_CODEX_ENABLE_GATEWAY") != "1":
         raise ProviderTransportError("Optional gateway is disabled; enabling it requires explicit external-routing consent")
+    if provider.get("kind") == inference.KIND:
+        return lambda request: inference.Broker(STORE).transport(request)
     if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
     if provider.get("kind") == gateway.GATEWAY_KIND: return gateway.transport()
     return providers.transport_for(provider, provider.get("secret_ref") or "")
@@ -240,6 +267,8 @@ def round_transport(provider: dict, stop_check=None, on_chunk=None):
     """Pick the adapter for one approved round call. Streaming is opt-in and never changes the prompt."""
     if provider.get("kind") == gateway.GATEWAY_KIND and os.getenv("PERSONAL_CODEX_ENABLE_GATEWAY") != "1":
         raise ProviderTransportError("Optional gateway is disabled; enabling it requires explicit external-routing consent")
+    if provider.get("kind") == inference.KIND:
+        return lambda request: inference.Broker(STORE).transport({**request,"stop_check":stop_check or (lambda:False)})
     if PROVIDER_TRANSPORT is not None: return PROVIDER_TRANSPORT
     if STREAM_PROVIDER:
         if provider.get("kind") == "ollama":
@@ -266,12 +295,18 @@ def provider_health(provider: dict) -> dict:
     last = STORE.one("SELECT * FROM invocations WHERE provider_id=? ORDER BY created_at DESC LIMIT 1", (provider["id"],))
     issues = []
     if not provider.get("model"): issues.append("no model configured")
-    if not provider.get("endpoint") and provider.get("kind") != gateway.GATEWAY_KIND: issues.append("no endpoint configured")
+    if not provider.get("endpoint") and provider.get("kind") not in {gateway.GATEWAY_KIND,inference.KIND}: issues.append("no endpoint configured")
+    if provider.get('kind')==inference.KIND:
+        catalog=inference.Broker(STORE).catalog()
+        if not WORKER_AUTH.enabled:issues.append('worker credential is not configured')
+        if not catalog['online']:issues.append('Mac inference worker is offline')
+        elif provider.get('model') not in catalog['models']:issues.append('model not reported installed by Mac worker')
     if not provider.get("enabled"): issues.append("provider is disabled")
     return {"id": provider["id"], "kind": provider["kind"], "model": provider.get("model"), "endpoint": provider.get("endpoint"),
             "cloud_allowed": bool(provider.get("cloud_allowed")), "last_latency_ms": provider.get("last_latency_ms"),
             "last_checked_at": provider.get("last_checked_at"), "last_invocation_at": last["created_at"] if last else None,
             "status": "ready" if not issues else "needs-attention", "issues": issues,
+            "inference_location":"mac-local" if provider.get('kind')==inference.KIND else "external" if provider.get('cloud_allowed') else "backend-loopback",
             "discovery": "run scripts/live_provider_check.py --discover-models for an explicit, local-only model list"}
 
 def provider_row(provider_id):
@@ -581,7 +616,7 @@ def task_report(task_id: str) -> dict:
                           "exit_code": test.get("test_exit_code"), "failed": test.get("failed_tests") or []})
     workspace = STORE.one("SELECT * FROM workspaces WHERE task_id=?", (task_id,))
     diff_summary = ""
-    if workspace:
+    if workspace and os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")!='disabled':
         diff_summary = redacted(git_output(workspace["path"], ["diff", "--stat", "HEAD"]).stdout)[:2000]
     latest = rounds[-1] if rounds else None
     return {"task_id": task_id, "status": task["status"] if task else "unknown", "rounds": len(rounds),
@@ -591,20 +626,14 @@ def task_report(task_id: str) -> dict:
 def invoke_provider(provider: dict, prompt: str, transport) -> dict:
     """Adapter seam for approved callers; transport is injected so tests perform no I/O."""
     validate_provider_prompt(prompt)
-    request = {"kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt, "cloud_allowed": bool(provider.get("cloud_allowed"))}
+    request = {"provider_id":provider["id"],"kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt, "cloud_allowed": bool(provider.get("cloud_allowed"))}
     response = transport(request)
     if not isinstance(response, dict) or not isinstance(response.get("text"), str): raise ValueError("Provider transport returned an invalid response")
     return {"text": response["text"][:MAX_OUTPUT_BYTES], "model": provider["model"], "provider_id": provider["id"]}
 
 def visible_files(root: Path, cap=160):
-    result=[]
-    ignored={".git", "node_modules", ".venv", "venv", "dist", "build", "target", "__pycache__"}
-    for path in root.rglob("*"):
-        if len(result) >= cap: break
-        rel = path.relative_to(root)
-        if any(part in ignored for part in rel.parts) or path.name in SECRET_NAMES: continue
-        if path.is_file() and path.stat().st_size < 400_000: result.append(str(rel))
-    return result
+    return context.walk(root)[:max(1,min(600,cap))]
+
 
 def repository_summary(root: Path) -> dict:
     files = visible_files(root)
@@ -639,8 +668,17 @@ def redacted(text: str) -> str:
 def workspace_path(task_id: str) -> Path:
     return (DATA / "workspaces" / task_id).resolve()
 
+class ExecutionDisabledError(ValueError):pass
+
+
+def require_execution():
+    if os.getenv("PERSONAL_CODEX_EXECUTION_MODE", "development") == "disabled":
+        raise ExecutionDisabledError("Repository process execution is disabled until approved OS containment is available")
+
+
 def create_task_workspace(task_id: str, project_path: str) -> dict:
     """Create an isolated branch. Caller must first satisfy a matching approval."""
+    require_execution()
     root = Path(project_path).resolve(); target = workspace_path(task_id)
     if not (root / ".git").exists(): raise ValueError("A Git repository is required for isolated execution")
     if target.exists(): raise ValueError("Task workspace already exists")
@@ -651,6 +689,7 @@ def create_task_workspace(task_id: str, project_path: str) -> dict:
     return {"path":str(target), "branch":branch}
 
 def workspace_clean(path: str) -> bool:
+    require_execution()
     result = subprocess.run(["git", "-C", path, "status", "--porcelain"], text=True, capture_output=True, timeout=20, check=False)
     if result.returncode != 0: raise ValueError(redacted(result.stderr or "Unable to inspect workspace status"))
     return not result.stdout.strip()
@@ -664,6 +703,7 @@ def release_task_workspace(project_path: str, path: str) -> None:
     if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "worktree release failed"))
 
 def git_output(root: str, args: list[str]) -> subprocess.CompletedProcess:
+    require_execution()
     return subprocess.run(["git", "-C", root, *args], text=True, capture_output=True, timeout=45, check=False)
 
 def current_branch(root: str) -> str:
@@ -744,6 +784,8 @@ def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None) 
     for the next operation. Output written before the stop is preserved, and the exit code is 130
     so callers cannot mistake a cancelled run for a passing one.
     """
+    require_execution()
+    if STOPPING.is_set():raise ValueError("Service is stopping")
     try: timeout=int(timeout)
     except (TypeError, ValueError): raise ValueError("Timeout must be an integer")
     if not 1 <= timeout <= MAX_TIMEOUT_SECONDS: raise ValueError(f"Timeout must be between 1 and {MAX_TIMEOUT_SECONDS} seconds")
@@ -765,7 +807,7 @@ def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None) 
                     break
                 except subprocess.TimeoutExpired:
                     pass
-                if stop_check and stop_check():
+                if STOPPING.is_set() or (stop_check and stop_check()):
                     cancelled=True
                     terminate_process_group(process)
                     exit_code=CANCEL_EXIT_CODE
@@ -787,15 +829,13 @@ class App(SimpleHTTPRequestHandler):
     def parse_request(self):
         if not super().parse_request(): return False
         self.connection.settimeout(15)
-        port = self.server.server_port
-        configured = os.getenv("PERSONAL_CODEX_SERVER_NAME", "").lower()
-        bound = self.server.server_address[0]
-        hosts = {f"{'['+bound+']' if ':' in bound else bound}:{port}"}
-        if security.is_loopback(bound): hosts.update({f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"})
-        if configured: hosts.add(f"{configured}:{port}")
         tls = isinstance(self.connection, __import__('ssl').SSLSocket)
-        if port == (443 if tls else 80): hosts.update({host.rsplit(':', 1)[0] for host in list(hosts)})
-        error = security.request_origin_error(self.headers, hosts, tls=tls)
+        try:
+            self.external_tls, error = security.request_boundary(
+                self.headers, self.server.server_address[0], self.server.server_port,
+                self.client_address[0], tls=tls, origin=os.getenv("PERSONAL_CODEX_PUBLIC_ORIGIN", ""))
+        except ValueError:
+            self.json({"error":"Invalid server proxy configuration"},503); return False
         if error:
             self.json({"error":error},403); return False
         if self.command in {"POST", "PATCH", "DELETE"}:
@@ -809,11 +849,23 @@ class App(SimpleHTTPRequestHandler):
                 self.json({"error":"Request body exceeds limit"},413); return False
             if length and self.headers.get_content_type() != "application/json":
                 self.json({"error":"Content-Type must be application/json"},415); return False
+        if STOPPING.is_set() and self.command in {"POST","PATCH","DELETE"}:
+            self.json({"error":"Service is stopping; request was not accepted"},503); return False
         public = self.command == "GET" and self.route() in {"/api/health", "/", "/app.js", "/style.css"}
         login = self.command == "POST" and self.route() == "/api/session"
+        if self.route().startswith("/api/worker/"):
+            bearer=self.headers.get("Authorization", "")
+            if not WORKER_AUTH.enabled or not bearer.startswith("Bearer ") or not WORKER_AUTH.valid_token(bearer[7:]):
+                self.json({"error":"Inference worker authentication required"},401); return False
+            if self.command != "POST": self.json({"error":"Worker method not allowed"},405); return False
+            return True
+        if WORKER_AUTH.enabled and self.headers.get("Authorization", "").startswith("Bearer ") and WORKER_AUTH.valid_token(self.headers.get("Authorization")[7:]):
+            self.json({"error":"Worker credential has no owner authority"},403); return False
         if not public and not login and not AUTH.authorized(self.headers):
             self.json({"error":"Owner authentication required"},401); return False
         return True
+    def send_error(self,code,message=None,explain=None):
+        self.json({"error":HTTPStatus(code).phrase if code in HTTPStatus._value2member_map_ else "Request failed"},code)
     def do_HEAD(self):
         self.json({"error":"Method not supported"},405)
     def do_OPTIONS(self):
@@ -839,14 +891,38 @@ class App(SimpleHTTPRequestHandler):
         return data
     def route(self): return urlparse(self.path).path
     def do_GET(self):
+        try:return self.get_route()
+        except ExecutionDisabledError as error:return self.json({"error":str(error)},403)
+        except (ValueError,sqlite3.ProgrammingError):return self.json({"error":"Invalid request or disabled operation"},400)
+        except (OSError,sqlite3.Error,subprocess.SubprocessError):return self.json({"error":"Local operation unavailable"},503)
+    def get_route(self):
         route=self.route()
         if route == "/api/health": return self.json({"ok":True,"version":"0.2.0","mode":"private-control-plane" if AUTH.enabled else "loopback-development"})
+        if route == "/api/ready":
+            checks={"database":False,"storage":False,"accepting_requests":not STOPPING.is_set()}
+            try:
+                checks['database']=STORE.one('SELECT 1 AS ok')['ok']==1
+                disk=maintenance.diagnostics(DATA)['storage']
+                checks['storage']=disk['measurement_complete'] and disk['free_bytes']>=disk['reserve_bytes'] and disk['managed_bytes']<disk['budget_bytes']
+                worker=inference.Broker(STORE).catalog()
+                needs_worker=bool(STORE.one("SELECT id FROM providers WHERE kind=? AND enabled=1 LIMIT 1",(inference.KIND,)))
+                checks['inference_worker']=not needs_worker or (WORKER_AUTH.enabled and worker['online'])
+            except (ValueError,OSError,sqlite3.Error):pass
+            ready=all(checks.values())
+            return self.json({"ready":ready,"checks":checks,"authenticated":AUTH.enabled,"api_version":1,
+                              "execution_mode":os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")},200 if ready else 503)
+        if route == "/api/inference/status": return self.json(inference.Broker(STORE).status())
         if route == "/api/diagnostics":
             try: return self.json(maintenance.diagnostics(DATA))
             except (OSError,ValueError): return self.json({"error":"Storage diagnostics unavailable; verify resource configuration"},503)
         if route == "/api/connection":
             return self.json({"ok":True,"authenticated":AUTH.enabled,"api_version":1,"session_ttl_seconds":AUTH.ttl,
                               "server_name":os.getenv("PERSONAL_CODEX_SERVER_NAME", "local"),
+                              "public_origin":os.getenv("PERSONAL_CODEX_PUBLIC_ORIGIN", ""),
+                              "secure_transport":self.external_tls,
+                              "execution_mode":os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development"),
+                              "capabilities":{"repository_execution":os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")!='disabled',
+                                              "mac_worker":WORKER_AUTH.enabled,"trusted_proxy":bool(os.getenv("PERSONAL_CODEX_PUBLIC_ORIGIN"))},
                               "inference":"explicit-provider-only","cloud_fallback":False})
         if route == "/api/projects": return self.json(STORE.rows("SELECT * FROM projects ORDER BY created_at DESC"))
         if route == "/api/tasks": return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
@@ -872,6 +948,9 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/providers/") and route.endswith("/models"):
             pid=route.split("/")[3]; provider=STORE.one("SELECT * FROM providers WHERE id=?",(pid,))
             if not provider: return self.json({"error":"provider not found"},404)
+            if provider["kind"] == inference.KIND:
+                catalog=inference.Broker(STORE).catalog()
+                return self.json({"provider_id":pid,"models":catalog['models'],"live":catalog['online'],"location":"mac-local"})
             if provider["kind"] != "ollama":
                 return self.json({"provider_id":pid,"models":[provider["model"]],"live":False,
                                   "note":"Only Ollama exposes a local model list; this provider's configured model is shown."})
@@ -1005,6 +1084,8 @@ class App(SimpleHTTPRequestHandler):
         Text arrives as persisted, incremental ``token`` events; ``done`` carries the final status so
         a stopped or failed answer is never mistaken for a completed one.
         """
+        if not STORE.one("SELECT id FROM messages WHERE id=? AND conversation_id=?",(message_id,conversation_id)):
+            return self.json({"error":"message not found"},404)
         try: events=conversations.stream_events(STORE,conversation_id,message_id,after)
         except LookupError: return self.json({"error":"message not found"},404)
         self.send_response(200)
@@ -1048,7 +1129,7 @@ class App(SimpleHTTPRequestHandler):
         deadline=time.time()+120; sent=0; last_ping=time.time()
         try:
             self.wfile.write(b"retry: 2000\n\n"); self.wfile.flush()
-            while time.time() < deadline and sent < 500:
+            while time.time() < deadline and sent < 500 and not STOPPING.is_set():
                 rows=STORE.rows("SELECT rowid AS seq, * FROM events WHERE task_id=? AND rowid>? ORDER BY rowid ASC LIMIT 50",(task_id,after))
                 if rows:
                     for row in rows:
@@ -1072,6 +1153,27 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            if (os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")=='disabled' and route.startswith('/api/tasks/')
+                    and route.endswith(('/workspace-request','/workspace','/workspace-release-request','/workspace-release',
+                                        '/execution-request','/execute','/merge-request','/merge','/branch-delete-request','/branch-delete'))):
+                raise ExecutionDisabledError('Repository operations are disabled for this deployment; no approval/execution was created')
+            if route.startswith("/api/worker/"):
+                broker=inference.Broker(STORE)
+                try:
+                    if route == "/api/worker/poll":
+                        if set(data)!={"models"}: raise ValueError("poll accepts only installed models")
+                        return self.json({"job":broker.poll(data["models"])})
+                    match=re.fullmatch(r"/api/worker/jobs/([a-f0-9-]{36})/(heartbeat|chunks)",route)
+                    if not match:return self.json({"error":"Unknown worker operation"},404)
+                    jid,operation=match.groups()
+                    if operation=="heartbeat":
+                        if set(data)!={"lease"}:raise ValueError("heartbeat accepts only its lease")
+                        return self.json(broker.heartbeat(jid,data["lease"]))
+                    if set(data)-{"lease","seq","text","done","error"} or not {"lease","seq"}.issubset(data):
+                        raise ValueError("Unknown/missing inference chunk fields")
+                    return self.json(broker.append(jid,**data))
+                except PermissionError:return self.json({"error":"Invalid inference lease"},403)
+                except ValueError as error:return self.json({"error":str(error)},409)
             if route == "/api/maintenance/backup":
                 try: return self.json(maintenance.snapshot(STORE,DATA,DB_PATH),201)
                 except (ValueError,OSError,sqlite3.Error) as error: return self.json({"error":str(error)},409)
@@ -1080,7 +1182,7 @@ class App(SimpleHTTPRequestHandler):
                 try: value=AUTH.login(str(data.get("token", "")), self.client_address[0])
                 except PermissionError as error: return self.json({"error":str(error)},401)
                 self.send_response(200)
-                secure="; Secure" if isinstance(self.connection, __import__('ssl').SSLSocket) else ""
+                secure="; Secure" if self.external_tls else ""
                 self.send_header("Set-Cookie",f"{security.COOKIE}={value}; HttpOnly; SameSite=Strict; Path=/; Max-Age={AUTH.ttl}{secure}")
                 self.send_header("Content-Type","application/json")
                 self.security_headers(api=True); self.end_headers(); self.wfile.write(b'{"authenticated":true}')
@@ -1330,7 +1432,7 @@ class App(SimpleHTTPRequestHandler):
                 budget=budget_error(tid)
                 if budget: return self.json({"error":budget,"budget":budget_state(tid),"limits":limits},409)
                 started=time.time()
-                transport=round_transport(provider, stop_check=lambda: cancellation_row(tid) is not None)
+                transport=round_transport(provider, stop_check=lambda: STOPPING.is_set() or cancellation_row(tid) is not None)
                 result=invoke_provider(provider,prompt,transport); result["text"]=redacted(result["text"])
                 record_latency(provider["id"],started)
                 add_usage(tid, response_bytes=len(result["text"].encode("utf-8")), invocations=1)
@@ -1340,7 +1442,7 @@ class App(SimpleHTTPRequestHandler):
                     task_event(tid,"security","warning",f"Round {number} repeated an identical provider response; it was refused.")
                     return self.json({"error":"provider repeated an identical response; request a genuinely different next step","round":number},409)
                 STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],prompt_sha,result["text"],now()))
-                if cancellation_row(tid):
+                if STOPPING.is_set() or cancellation_row(tid):
                     task_event(tid,"security","warning","Provider response arrived after cancellation; no proposal was published.")
                     return self.json({"error":"task was cancelled during planning; its response was retained but cannot execute"},409)
                 parsed=tools.parse_round_proposal(result["text"])
@@ -1517,7 +1619,7 @@ class App(SimpleHTTPRequestHandler):
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],detail))
                 if not permitted: return self.json({"error":"approved agent proposal for this exact workspace and digest required"},403)
                 if STORE.claim_execution(proposal["id"])!="ok": return self.json({"error":"Proposal is already being executed"},409)
-                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=lambda: bool(cancellation_row(tid))))
+                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=lambda: STOPPING.is_set() or bool(cancellation_row(tid))))
                 final="executed" if outcome["ok"] else "failed"
                 STORE.write("UPDATE proposals SET status=?, results=? WHERE id=?",(final,json.dumps(outcome["operations"]),proposal["id"]))
                 for entry in outcome["operations"]:
@@ -1564,13 +1666,16 @@ class App(SimpleHTTPRequestHandler):
                 if not workspace: return self.json({"error":"ready task workspace required"},403)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='execute' AND detail=? AND status='approved'",(task["project_id"],f"execute:{tid}:{command}"))
                 if not permitted: return self.json({"error":"approved exact command request required"},403)
-                result=execute_in_workspace(workspace["path"],command,data.get("timeout",120),stop_check=lambda: bool(cancellation_row(tid))); eid=uid()
+                result=execute_in_workspace(workspace["path"],command,data.get("timeout",120),stop_check=lambda: STOPPING.is_set() or bool(cancellation_row(tid))); eid=uid()
                 STORE.write("INSERT INTO executions VALUES (?,?,?,?,?,?)",(eid,tid,json.dumps(result["argv"]),result["exit_code"],result["output"],now()))
                 task_event(tid,"executor","info",f"Approved command completed with exit code {result['exit_code']}.")
                 return self.json({"id":eid,**result})
             return self.json({"error":"not found"},404)
+        except ExecutionDisabledError as error:return self.json({"error":str(error)},403)
         except (ValueError, sqlite3.IntegrityError) as e: return self.json({"error":str(e)},400)
         except json.JSONDecodeError: return self.json({"error":"invalid JSON"},400)
+        except sqlite3.ProgrammingError:return self.json({"error":"Invalid request field types"},400)
+        except (OSError,sqlite3.Error,subprocess.SubprocessError):return self.json({"error":"Local operation unavailable"},503)
     def do_DELETE(self):
         route=self.route()
         if route == "/api/session":
@@ -1603,23 +1708,46 @@ class App(SimpleHTTPRequestHandler):
         return self.json({"error":"not found"},404)
 
 def main():
-    import socket
+    global STORE
     import ssl
     host=os.getenv("PERSONAL_CODEX_HOST","127.0.0.1"); port=int(os.getenv("PERSONAL_CODEX_PORT","8787"))
     cert=os.getenv("PERSONAL_CODEX_TLS_CERT", ""); key=os.getenv("PERSONAL_CODEX_TLS_KEY", "")
     if bool(cert) != bool(key): raise ValueError("TLS requires both certificate and private key")
     security.private_bind(host, AUTH.enabled, bool(cert and key))
-    class PrivateServer(ThreadingHTTPServer):
-        daemon_threads = True
-        address_family = socket.AF_INET6 if ":" in host else socket.AF_INET
-    http=PrivateServer((host,port),App)
+    if WORKER_AUTH.enabled and (not AUTH.enabled or WORKER_AUTH.digest == AUTH.digest):
+        raise ValueError("Worker authentication requires a distinct configured owner credential")
+    origin=os.getenv("PERSONAL_CODEX_PUBLIC_ORIGIN", "")
+    security.validate_proxy_config(host, AUTH.enabled, bool(cert and key), origin)
+    mode=os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")
+    if mode not in {"development","disabled"}:raise ValueError("Invalid execution mode")
+    if origin and (mode!='disabled' or not os.getenv("PERSONAL_CODEX_PROJECT_ROOTS")):
+        raise ValueError("Private Serve deployment requires disabled command execution and explicit repository roots")
+    tls=None
     if cert:
-        tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); tls.minimum_version=ssl.TLSVersion.TLSv1_2
-        tls.load_cert_chain(cert,key); http.socket=tls.wrap_socket(http.socket,server_side=True)
-    print(f"Personal Codex control plane: {'https' if cert else 'http'}://{host}:{port}")
-    try: http.serve_forever()
-    except KeyboardInterrupt: pass
-    finally: http.server_close()
+        tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.minimum_version=ssl.TLSVersion.TLSv1_2;tls.load_cert_chain(cert,key)
+    with runtime.InstanceLock(DATA):
+        if isinstance(STORE,LazyStore):STORE=Store()
+        STOPPING.clear()
+        http=runtime.ControlServer((host,port),App,tls_context=tls)
+        def stop(*_):
+            if STOPPING.is_set():return
+            STOPPING.set();conversations.stop_all()
+            STORE.write("UPDATE inference_jobs SET status='interrupted',prompt='',error=? WHERE status IN ('queued','running')",
+                        ('Service stopped; request a fresh invocation',))
+            threading.Thread(target=http.shutdown,name='http-stop',daemon=True).start()
+        previous={}
+        if threading.current_thread() is threading.main_thread():
+            for sig in (signal.SIGINT,signal.SIGTERM):previous[sig]=signal.signal(sig,stop)
+        print(f"Personal Codex control plane: {'https' if cert else 'http'}://{host}:{http.server_port}",flush=True)
+        try:http.serve_forever(poll_interval=.2)
+        except KeyboardInterrupt:stop()
+        finally:
+            stop();http.server_close()
+            drained=http.drain()
+            chat_drained=conversations.drain(5)
+            if drained and chat_drained:STORE.conn.close()
+            else:print('Some requests interrupted; startup recovery will reconcile them',file=sys.stderr)
+            for sig,handler in previous.items():signal.signal(sig,handler)
 
 if __name__ == "__main__":
     main()

@@ -19,7 +19,10 @@ from __future__ import annotations
 import json
 import os
 import re
-from http.client import HTTPConnection, HTTPSConnection
+import socket
+import threading
+import time
+from http.client import HTTPConnection, HTTPSConnection, HTTPException
 from urllib.parse import urlsplit
 
 DEFAULT_TIMEOUT_SECONDS = 60.0
@@ -246,6 +249,31 @@ def discover_models(endpoint: str, *, timeout: float = 5.0, cloud_allowed: bool 
     return models[:200]
 
 
+class _StreamGuard:
+    """Wake a blocked HTTP read on cancellation or total timeout, without accepting partial text."""
+    def __init__(self, connection, stop_check, timeout):
+        self.connection=connection;self.stop_check=stop_check;self.socket=None
+        self.deadline=time.monotonic()+timeout;self.finished=threading.Event();self.reason=""
+        self.thread=threading.Thread(target=self._watch,name="provider-stop",daemon=True)
+        self.thread.start()
+
+    def _watch(self):
+        while not self.finished.wait(.1):
+            try:stopped=self.stop_check()
+            except Exception:stopped=True
+            if stopped or time.monotonic()>=self.deadline:
+                self.reason="Provider stream cancelled" if stopped else "Provider total timeout exceeded"
+                sock=self.connection.sock or self.socket
+                if sock is not None:
+                    try:sock.shutdown(socket.SHUT_RDWR)
+                    except OSError:pass
+                self.connection.close()
+                return
+
+    def close(self):
+        self.finished.set();self.thread.join(timeout=.3)
+
+
 class OllamaStreamTransport:
     """Streaming Ollama adapter that never exposes partial output as a proposal.
 
@@ -277,10 +305,14 @@ class OllamaStreamTransport:
         connection_class = HTTPSConnection if parts.scheme == "https" else HTTPConnection
         connection = connection_class(host, port, timeout=self.timeout)
         pieces, total, chunks, done = [], 0, 0, False
+        guard=_StreamGuard(connection,stop_check,self.timeout)
+        response=None
         try:
             connection.request("POST", path, body=body,
                                headers={"Content-Type": "application/json", "Accept": "application/x-ndjson",
                                         "Connection": "close"})
+            guard.socket=connection.sock
+            if guard.reason:raise ProviderTransportError(guard.reason)
             response = connection.getresponse()
             if 300 <= response.status < 400:
                 raise ProviderTransportError("Provider redirects are not permitted")
@@ -314,10 +346,14 @@ class OllamaStreamTransport:
                     pieces.append(text)
                     on_text(text)
                 on_chunk(total)
-        except (OSError, TimeoutError) as error:
-            raise ProviderTransportError(f"Provider streaming failed: {type(error).__name__}")
+                if done:break
+        except (OSError, TimeoutError, HTTPException) as error:
+            raise ProviderTransportError(guard.reason or f"Provider streaming failed: {type(error).__name__}")
         finally:
+            guard.close()
+            if response is not None:response.close()
             connection.close()
+        if guard.reason:raise ProviderTransportError(guard.reason)
         if not done:
             raise ProviderTransportError("Provider stream ended before the completion marker")
         text = "".join(pieces)
@@ -361,8 +397,12 @@ class OpenAIStreamTransport:
         connection_class = HTTPSConnection if parts.scheme == "https" else HTTPConnection
         connection = connection_class(host, port, timeout=self.timeout)
         pieces, total, chunks, done = [], 0, 0, False
+        guard=_StreamGuard(connection,stop_check,self.timeout)
+        response=None
         try:
             connection.request("POST", path, body=body, headers=headers)
+            guard.socket=connection.sock
+            if guard.reason:raise ProviderTransportError(guard.reason)
             response = connection.getresponse()
             if 300 <= response.status < 400:
                 raise ProviderTransportError("Provider redirects are not permitted")
@@ -402,10 +442,14 @@ class OpenAIStreamTransport:
                     pieces.append(text)
                     on_text(text)
                 on_chunk(total)
-        except (OSError, TimeoutError) as error:
-            raise ProviderTransportError(f"Provider streaming failed: {type(error).__name__}")
+                if done:break
+        except (OSError, TimeoutError, HTTPException) as error:
+            raise ProviderTransportError(guard.reason or f"Provider streaming failed: {type(error).__name__}")
         finally:
+            guard.close()
+            if response is not None:response.close()
             connection.close()
+        if guard.reason:raise ProviderTransportError(guard.reason)
         if not done:
             raise ProviderTransportError("Provider stream ended before the termination frame")
         text = "".join(pieces)

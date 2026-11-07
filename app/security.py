@@ -58,8 +58,8 @@ class OwnerAuth:
         return self.digest is not None
 
     @classmethod
-    def from_env(cls):
-        filename = os.getenv("PERSONAL_CODEX_TOKEN_FILE", "")
+    def from_env(cls, variable="PERSONAL_CODEX_TOKEN_FILE"):
+        filename = os.getenv(variable, "")
         if not filename:
             return cls()
         path = Path(filename).expanduser()
@@ -142,3 +142,58 @@ def request_origin_error(headers, addresses: set[str], *, tls: bool = False) -> 
     if headers.get("Sec-Fetch-Site") == "cross-site":
         return "Cross-site requests are not allowed"
     return None
+
+
+def public_origin(value: str) -> str:
+    """One explicit private HTTPS authority; no URL forwarding or wildcard trust."""
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        raise ValueError("Invalid public origin") from None
+    host = (parsed.hostname or "").lower()
+    if (parsed.scheme != "https" or not host.endswith(".ts.net") or len(host) <= 7
+            or parsed.username or parsed.password or parsed.path not in {"", "/"}
+            or parsed.query or parsed.fragment or any(c.isspace() for c in value)):
+        raise ValueError("Public origin must be an explicit HTTPS Tailscale hostname with no path or credentials")
+    return "https://" + host + (f":{port}" if port and port != 443 else "")
+
+
+def validate_proxy_config(host: str, authenticated: bool, tls: bool, origin: str = "") -> None:
+    if not origin:
+        return
+    public_origin(origin)
+    if not is_loopback(host) or not authenticated or tls:
+        raise ValueError("Serve mode requires a loopback HTTP listener and configured owner authentication")
+
+
+def request_boundary(headers, bound: str, port: int, peer: str, *, tls=False, origin="") -> tuple[bool, str | None]:
+    """Trust exact Serve metadata only from loopback and only after explicit configuration.
+
+    Forwarded identity never authenticates a request. The owner/worker token is still required.
+    Local diagnostics remain HTTP and cannot acquire HTTPS cookie semantics accidentally.
+    """
+    authority = f"{'['+bound+']' if ':' in bound else bound}:{port}"
+    addresses = {authority}
+    if is_loopback(bound):
+        addresses.update({f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"})
+    configured = os.getenv("PERSONAL_CODEX_SERVER_NAME", "").lower()
+    if configured:
+        addresses.add(f"{configured}:{port}")
+    if port == (443 if tls else 80):
+        addresses.update({host.rsplit(":", 1)[0] for host in list(addresses)})
+    forwarded = any(headers.get(name) is not None for name in
+                    ("Forwarded", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-For"))
+    if forwarded:
+        if not origin or not is_loopback(peer) or not is_loopback(bound) or tls:
+            return tls, "Untrusted proxy metadata"
+        expected = public_origin(origin)
+        host = expected.removeprefix("https://")
+        for name in ("X-Forwarded-Host", "X-Forwarded-Proto"):
+            if hasattr(headers, "get_all") and len(headers.get_all(name, [])) != 1:
+                return tls, "Exactly one proxy authority and scheme are required"
+        if (headers.get("Forwarded") is not None or headers.get("X-Forwarded-Host", "").lower() != host
+                or headers.get("Host", "").lower() != host or headers.get("X-Forwarded-Proto") != "https"):
+            return tls, "Proxy authority or scheme does not match configured HTTPS origin"
+        return True, request_origin_error(headers, {host}, tls=True)
+    return tls, request_origin_error(headers, addresses, tls=tls)

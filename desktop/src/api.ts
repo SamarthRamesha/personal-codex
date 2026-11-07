@@ -2,7 +2,7 @@ import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
 export type Reply = {status:number;body:string};
 export type Conversation = {id:string;title:string;project_id:string|null;provider_id:string|null;model:string;pinned:boolean;updated_at:number;last_message?:{preview:string}|null};
 export type Message = {id:string;role:string;content:string;status:string;model?:string;error?:string|null;latency_ms?:number;last_seq?:number};
-export type Provider = {id:string;kind:string;endpoint:string;model:string;cloud_allowed:boolean;enabled:boolean;health?:{status:string}};
+export type Provider = {id:string;kind:string;endpoint:string;model:string;cloud_allowed:boolean;enabled:boolean;health?:{status:string;issues?:string[];inference_location?:string}};
 export type Project = {id:string;name:string;path:string};
 export type Task = {id:string;project_id:string;prompt:string;status:string;updated_at:number};
 export type Approval = {id:string;project_id:string;kind:string;detail:string;status:string};
@@ -11,15 +11,15 @@ export type SSE = {id:number;event:string;data:Record<string,unknown>};
 
 /** Framing survives arbitrary chunk boundaries, CRLF, comments and multibyte text. */
 export class SSEParser {
-  private buffer=''; private frame:string[]=[];
+  private buffer=''; private frame:string[]=[]; private frameSize=0;
   constructor(private deliver:(event:SSE)=>void){}
   push(text:string){
     this.buffer+=text;
-    if(this.buffer.length>1_000_000) throw new Error('Event exceeds limit');
+    if(this.buffer.length+this.frameSize>64_000) throw new Error('Event exceeds limit');
     let end:number;
     while((end=this.buffer.indexOf('\n'))>=0){
       const line=this.buffer.slice(0,end).replace(/\r$/,''); this.buffer=this.buffer.slice(end+1);
-      if(line==='') {this.dispatch();this.frame=[];} else {this.frame.push(line);}
+      if(line==='') {this.dispatch();this.frame=[];this.frameSize=0;} else if(!line.startsWith(':')){this.frameSize+=line.length;if(this.frameSize>64_000)throw new Error('Event exceeds limit');this.frame.push(line);}
     }
   }
   private dispatch(){
@@ -38,8 +38,8 @@ function unpack<T>(reply:Reply):T {
 }
 export const native=isTauri();
 export async function connect(baseUrl:string,token:string){
-  if(!native) return unpack<{authenticated:boolean;server_name:string}>(await browserRequest('GET','/api/connection'));
-  return unpack<{authenticated:boolean;server_name:string}>(await invoke<Reply>('connect_backend',{baseUrl,token}));
+  if(!native) return unpack<{authenticated:boolean;server_name:string;execution_mode?:string;capabilities?:{repository_execution:boolean;mac_worker:boolean}}>(await browserRequest('GET','/api/connection'));
+  return unpack<{authenticated:boolean;server_name:string;execution_mode?:string;capabilities?:{repository_execution:boolean;mac_worker:boolean}}>(await invoke<Reply>('connect_backend',{baseUrl,token}));
 }
 export async function disconnect(){if(native) await invoke('disconnect_backend');}
 async function browserRequest(method:string,path:string,body?:unknown):Promise<Reply>{
@@ -50,16 +50,28 @@ async function browserRequest(method:string,path:string,body?:unknown):Promise<R
 export async function api<T>(path:string,method='GET',body?:unknown):Promise<T>{
   return unpack<T>(native?await invoke<Reply>('backend_request',{method,path,body:body??null}):await browserRequest(method,path,body));
 }
+let streamCounter=0;
 export async function stream(path:string,onEvent:(event:SSE)=>void,signal:AbortSignal){
+  if(signal.aborted)return;
   const parser=new SSEParser(event=>{if(!signal.aborted)onEvent(event);});
   if(native){
-    const onChunk=new Channel<{text:string}>(); onChunk.onmessage=chunk=>{if(!signal.aborted)parser.push(chunk.text);};
-    await invoke('backend_stream',{path,onChunk});
+    const streamId=`stream-${++streamCounter}`;
+    let parseError:unknown;
+    const cancel=()=>{void invoke('cancel_stream',{streamId}).catch(()=>{});};
+    const onChunk=new Channel<{text:string}>();
+    onChunk.onmessage=chunk=>{
+      if(signal.aborted||parseError)return;
+      try{parser.push(chunk.text);}catch(error){parseError=error;cancel();}
+    };
+    signal.addEventListener('abort',cancel,{once:true});
+    try{await invoke('backend_stream',{path,onChunk,streamId});if(parseError)throw parseError;}
+    finally{signal.removeEventListener('abort',cancel);}
   }else{
     const response=await fetch(path,{signal});
-    if(!response.ok||!response.body) throw new Error('Event stream unavailable');
-    const reader=response.body.getReader(); const decoder=new TextDecoder();
-    while(!signal.aborted){const {done,value}=await reader.read();if(done)break;parser.push(decoder.decode(value,{stream:true}));}
-    if(signal.aborted) await reader.cancel();
+    if(!response.ok||!response.body)throw new Error('Event stream unavailable');
+    const reader=response.body.getReader();const decoder=new TextDecoder();
+    try{
+      while(!signal.aborted){const {done,value}=await reader.read();if(done)break;parser.push(decoder.decode(value,{stream:true}));}
+    }finally{await reader.cancel().catch(()=>{});}
   }
 }

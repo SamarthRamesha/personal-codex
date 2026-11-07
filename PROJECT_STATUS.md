@@ -1,5 +1,13 @@
 # Project status
 
+## 2026-11-07 13:14 IST — AFK local backend/worker milestone
+
+Implemented private Serve contract and outbound-only Mac inference jobs, scoped authentication, leases, ordered chunks, cancellation/restart recovery, readiness, instance locking, shutdown, safe deployment execution gating and native stream/capability changes. Last full suite 205 discovered (201 passed, 4 skipped); TS/Vite and 7 frontend tests passed. Real Qwen worker-driven coding/restart proof passed 17 checks in 82.764 s on disposable Mac loopback fixtures. Remote JARVIS deployment remains unapproved; unattended dedicated-key SSH rejected. Deployment artifacts, browser auth and final QA are in progress. AFK contract supersedes step-by-step waiting; continue safe local work.
+
+## Deployment readiness correction — 2026-11-07
+
+The user's newer directive supersedes the prior SSH blocker and primary-server-inference plan. Intended deployment is Mac inference/client → private Tailscale Serve HTTPS → authenticated JARVIS localhost backend. Dedicated-key SSH and hardware inventory are reported established; do not repeat key installation/full discovery. No server deployment is authorized yet. Fresh local readiness checks: 11 security/auth tests + 4 backup/restore tests passed. Current code rejects the proposed proxy authority/origin contract, and a private Mac inference bridge plus safe execution isolation still need preparation. Current Serve/ACL/storage/runtime state and hostname resolution await one-command-at-a-time user results. DNS warning is not yet a demonstrated functional blocker. See current handoff and local-only readiness/private notes. No server/service/container/network changes were made.
+
 ## Current verified checkpoint — 2026-11-07
 
 Branch: `personal-codex/stabilization`, reconciled from remote `12a24d5` without changing `main` or the existing untracked diagnostic. Repository: `https://github.com/SamarthRamesha/personal-codex`.

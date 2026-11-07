@@ -1,5 +1,17 @@
 # Development log
 
+## 2026-11-07 13:14 IST — AFK implementation checkpoint
+
+Audited backend and created docs/IMPLEMENTATION_MATRIX.md. Implemented trusted Serve metadata only with explicit private origin, loopback proxy and owner auth. Added inference.py/mac_worker.py scoped outbound-poll worker; fixed silent HTTP/1.0 stream cancellation after two new tests exposed detached sockets. Added readiness, instance lock before lazy recovery, bounded clients, SIGTERM chat draining, private new database files and disabled all repository processes in the safe Serve profile. Last full 205-test suite passed with 4 skips; focused runtime six passed; frontend build/seven tests passed. Real Qwen worker flow: 17 checks, 82.764 s, actual patch/test/completion/restart, original fixture unchanged, no private code/model downloads/inbound listener. First fixture attempt correctly refused a different test-directory command; aligned fixture with tests/ and asserted one real executed test. Retained failed evidence. Noninteractive SSH with dedicated key rejected; no server command or mutation occurred. Continue deployment/browser/native finalization without asking absent user for ordinary decisions.
+
+## 2026-11-07 12:10:46 IST — JARVIS readiness reconciliation only
+
+Read the new user directive and current repository handoff/README/architecture/security/deployment/threat/acceptance notes. Git at entry: stabilization `4a3ea1d91e70e392faf342ea03b335d7f207169d`, tracked/staged tree clean, only user diagnostic untracked; diagnostic contents were not read. New user evidence establishes dedicated passphrase-key SSH, measured ZimaOS hardware and existing container/network prerequisites; previous default-identity rejection is historical. Intended architecture changed to Mac inference plus JARVIS localhost API behind private Serve. No implementation/deployment or Mission 2 changes were started.
+
+Reran security/auth HTTP fixture suite: 11 tests, OK, 3.347 s. Reran backup/restore suite: 4 tests, OK, 0.075 s. Historical total remains 177 discovered; no full-suite/native rebuild was repeated because runtime code is unchanged. Synthetic origin/authority checks returned `Unrecognized Host header` and `Cross-origin requests are not allowed`. Compared with official versioned Tailscale v1.98.3 reverse-proxy source (incoming Host preserved, HTTPS metadata forwarded): current direct-listener contract needs safe trusted-proxy support before Serve deployment. Existing local-provider transport also does not provide a JARVIS-to-Mac inference route. These are identified readiness gaps, not remote tests or implemented fixes.
+
+No DNS lookup, remote SSH check, container/Serve/ACL/storage inspection or server mutation was performed in this pass. Exact private supplied inventory and the first pending Mac DNS command saved outside Git. User requires one command, explanation and result at a time; final response supplies only the system-resolver lookup, then waits. Directory ownership/creation, package/service/container changes, Serve, ACL/SSH/firewall changes and downloads remain approval-gated. Updated documentation locally; no commit/push at this readiness step.
+
 ## 2026-11-07 — actual Mac implementation session
 
 Implementation committed as `c5e34159faf5c88bcfc1163e37c0ddffffebacce` on `personal-codex/stabilization`; a documentation checkpoint follows. Remote branch was rechecked before publication and remained at `12a24d5`. Main was not merged or modified. Private server target metadata was excluded from Git and retained in a local-only deliverable.

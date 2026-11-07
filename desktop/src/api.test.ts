@@ -14,3 +14,15 @@ describe('persisted event framing',()=>{
     expect(()=>parser.push('invalid}\n\n')).toThrow();expect(events).toEqual([]);
   });
 });
+
+describe('untrusted stream bounds',()=>{
+  it('bounds a frame spread over thousands of individually small lines',()=>{
+    const parser=new SSEParser(()=>{});
+    expect(()=>{for(let n=0;n<10000;n++)parser.push('data: abcdefghijklmnop\n');}).toThrow('Event exceeds limit');
+  });
+  it('discards heartbeats without constructing an unbounded frame',()=>{
+    const events:SSE[]=[];const parser=new SSEParser(e=>events.push(e));
+    for(let n=0;n<10000;n++)parser.push(': ping\n');
+    parser.push('\nevent: done\ndata: {}\n\n');expect(events).toEqual([{event:'done',id:0,data:{}}]);
+  });
+});

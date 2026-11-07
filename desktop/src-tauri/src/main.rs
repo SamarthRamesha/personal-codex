@@ -9,7 +9,7 @@ use url::Url;
 #[derive(Clone)]
 struct Connection { base: Url, token: String, client: reqwest::Client, generation: u64 }
 #[derive(Default)]
-struct Bridge { connection: Mutex<Option<Connection>>, generation: Mutex<u64>, cancel: Mutex<Option<watch::Sender<bool>>> }
+struct Bridge { connection: Mutex<Option<Connection>>, generation: Mutex<u64>, cancel: Mutex<Option<(String, watch::Sender<bool>)>> }
 #[derive(Serialize, Clone)]
 struct Reply { status: u16, body: String }
 #[derive(Serialize, Clone)]
@@ -20,7 +20,7 @@ fn validate_base(raw: &str) -> Result<Url, String> {
     if !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() || url.path() != "/" {
         return Err("Backend URL must contain only scheme, hostname and port".into());
     }
-    let host = url.host_str().ok_or("Backend hostname is required")?;
+    let host = url.host_str().ok_or("Backend hostname is required")?.trim_start_matches('[').trim_end_matches(']');
     let loopback = host == "localhost" || host.parse::<IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false);
     let tailnet = host.ends_with(".ts.net") && host.len() > 7;
     if !(loopback && (url.scheme() == "http" || url.scheme() == "https") || tailnet && url.scheme() == "https") {
@@ -29,7 +29,8 @@ fn validate_base(raw: &str) -> Result<Url, String> {
     Ok(url)
 }
 fn api_url(connection: &Connection, path: &str) -> Result<Url, String> {
-    if !path.starts_with("/api/") || path.contains('\\') || path.contains('#') || path.split('?').next().unwrap_or("").contains('%') || path.contains("..") || !path.is_ascii() {
+    let pathname = path.split('?').next().unwrap_or("");
+    if !pathname.starts_with("/api/") || path.contains('\\') || path.contains('#') || pathname.contains('%') || pathname.contains("..") || !path.is_ascii() || path.len() > 8192 || path.bytes().any(|b| b < 32 || b == 127) {
         return Err("Invalid API path".into());
     }
     let url = connection.base.join(path).map_err(|_| "Invalid API path")?;
@@ -71,7 +72,7 @@ async fn connect_backend(base_url: String, token: String, state: State<'_, Arc<B
     }
     // A disconnect or newer connection invalidates a slow handshake.
     if *state.generation.lock().map_err(|_| "Connection unavailable")? != epoch { return Err("Connection superseded".into()); }
-    if let Some(cancel) = state.cancel.lock().map_err(|_| "Connection unavailable")?.take() { let _ = cancel.send(true); }
+    if let Some((_, cancel)) = state.cancel.lock().map_err(|_| "Connection unavailable")?.take() { let _ = cancel.send(true); }
     *state.connection.lock().map_err(|_| "Connection unavailable")? = Some(connection);
     Ok(Reply { status, body })
 }
@@ -79,7 +80,7 @@ async fn connect_backend(base_url: String, token: String, state: State<'_, Arc<B
 fn disconnect_backend(state: State<'_, Arc<Bridge>>) -> Result<(), String> {
     *state.generation.lock().map_err(|_| "Connection unavailable")? += 1;
     *state.connection.lock().map_err(|_| "Connection unavailable")? = None;
-    if let Some(cancel) = state.cancel.lock().map_err(|_| "Connection unavailable")?.take() { let _ = cancel.send(true); }
+    if let Some((_, cancel)) = state.cancel.lock().map_err(|_| "Connection unavailable")?.take() { let _ = cancel.send(true); }
     Ok(())
 }
 #[tauri::command]
@@ -99,17 +100,18 @@ async fn backend_request(method: String, path: String, body: Option<serde_json::
     Ok(Reply { status, body })
 }
 #[tauri::command]
-async fn backend_stream(path: String, on_chunk: Channel<StreamChunk>, state: State<'_, Arc<Bridge>>) -> Result<(), String> {
+async fn backend_stream(path: String, on_chunk: Channel<StreamChunk>, stream_id: String, state: State<'_, Arc<Bridge>>) -> Result<(), String> {
+    if stream_id.len() > 64 || stream_id.is_empty() || !stream_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') { return Err("Invalid stream id".into()); }
     let connection = snapshot(&state)?;
     if !path.split('?').next().unwrap_or("").ends_with("/stream") { return Err("Only persisted event streams are supported".into()); }
     let mut request = connection.client.get(api_url(&connection, &path)?);
     if !connection.token.is_empty() { request = request.bearer_auth(&connection.token); }
     let (cancel, mut cancelled) = watch::channel(false);
-    if let Some(previous) = state.cancel.lock().map_err(|_| "Connection unavailable")?.replace(cancel) { let _ = previous.send(true); }
+    if let Some((_, previous)) = state.cancel.lock().map_err(|_| "Connection unavailable")?.replace((stream_id, cancel)) { let _ = previous.send(true); }
     let mut response = tokio::select! { _ = cancelled.changed() => return Ok(()), result = request.send() => result.map_err(|_| "Event stream interrupted")? };
     if response.status() != 200 { return Err(format!("Stream rejected (HTTP {})", response.status().as_u16())); }
     let mut total = 0;
-    // A chunk may end inside a UTF-8 character: send bytes as a lossless array, decode incrementally in JS.
+    // Retain incomplete UTF-8 tails until the next network chunk.
     let mut pending = Vec::new();
     loop {
         let chunk = tokio::select! { _ = cancelled.changed() => return Ok(()), result = response.chunk() => result.map_err(|_| "Event stream interrupted")? };
@@ -129,9 +131,21 @@ async fn backend_stream(path: String, on_chunk: Channel<StreamChunk>, state: Sta
     if !pending.is_empty() { return Err("Incomplete stream encoding".into()); }
     Ok(())
 }
+fn stop_stream(bridge: &Bridge, stream_id: &str) -> Result<(), String> {
+    let mut current = bridge.cancel.lock().map_err(|_| "Connection unavailable")?;
+    if current.as_ref().map(|(id, _)| id.as_str()) == Some(stream_id) {
+        if let Some((_, sender)) = current.take() { let _ = sender.send(true); }
+    }
+    Ok(())
+}
+#[tauri::command]
+fn cancel_stream(stream_id: String, state: State<'_, Arc<Bridge>>) -> Result<(), String> {
+    stop_stream(&state, &stream_id)
+}
+
 fn main() {
     tauri::Builder::default().manage(Arc::new(Bridge::default()))
-        .invoke_handler(tauri::generate_handler![connect_backend, disconnect_backend, backend_request, backend_stream])
+        .invoke_handler(tauri::generate_handler![connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
         .run(tauri::generate_context!()).expect("Personal Codex could not start");
 }
 
@@ -143,4 +157,22 @@ mod tests {
         for raw in ["http://jarvis.example.com", "https://example.com", "http://jarvis.tail.ts.net", "http://0.0.0.0:8787", "http://u:password@localhost:8787", "http://localhost:8787/api", "https://jarvis.tail.ts.net/?x=1"] { assert!(validate_base(raw).is_err(), "{raw}"); }
         for raw in ["http://127.0.0.1:8787", "https://jarvis.tail.ts.net:8787", "http://localhost:8787"] { assert!(validate_base(raw).is_ok(), "{raw}"); }
     }
+    #[test]
+    fn api_namespace_refuses_escapes_but_preserves_encoded_search() {
+        let connection = Connection { base: validate_base("http://127.0.0.1:8787").unwrap(), token: String::new(), client: reqwest::Client::new(), generation: 1 };
+        for path in ["//evil.example/api", "/api/../projects", "/api/%2e%2e/projects", "/api/x\\evil", "/api/health\r\nX: bad"] { assert!(api_url(&connection, path).is_err(), "{path}"); }
+        assert!(api_url(&connection,"/api/conversations?q=a..b%20space").is_ok());
+        assert!(validate_base("http://[::1]:8787").is_ok());
+    }
+    #[test]
+    fn stale_stream_cleanup_cannot_cancel_its_successor() {
+        let bridge = Bridge::default();
+        let (sender, receiver) = watch::channel(false);
+        *bridge.cancel.lock().unwrap() = Some(("new-stream".into(), sender));
+        stop_stream(&bridge,"old-stream").unwrap();
+        assert!(!*receiver.borrow());
+        stop_stream(&bridge,"new-stream").unwrap();
+        assert!(*receiver.borrow());
+    }
+
 }
