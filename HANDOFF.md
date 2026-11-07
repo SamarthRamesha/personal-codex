@@ -1,5 +1,10 @@
 # Handoff
 
+## Mission 1B continuation
+
+Read the current NEXT_SESSION_PROMPT.md and private Mission 1B review package first. Local security/recovery/isolation-prototype/preflight code is implemented and tested. No Linux/runtime/JARVIS acceptance or deployment is certified. Empty agent diagnosed; an additional SSH diagnostic was blocked by automatic review because access had not changed. Do not bypass/retry without approval/access change. Production coding remains disabled; no backend Docker authority. Full encrypted envelope limited to 64 MiB, with larger-data recovery still a separate gate. Preserve every local commit and the untouched untracked diagnostic; never push automatically.
+
+
 ## Current handoff — 2026-11-07
 
 Read `NEXT_SESSION_PROMPT.md` first. Continue existing `personal-codex/stabilization` with local commits; preserve the untracked diagnostic without reading or staging it. Native/worker/backend/browser changes are locally verified, including real Qwen coding and Gemma native cancellation. Initial Serve deployments require execution disabled; exact preflight, container/worker templates, API and recovery contracts are prepared. Mission 1 remains partial: target writes/networking need approval, unattended SSH authentication is unavailable and remote HTTPS/container/ACL/storage acceptance is unverified. Do not deploy automatically or change existing services. Exact private target details and the approval queue remain outside Git. Earlier text below is historical.

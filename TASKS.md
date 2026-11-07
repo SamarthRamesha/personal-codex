@@ -1,5 +1,19 @@
 # Tasks
 
+## Mission 1B completed local work and gates
+
+- [x] Worker replay/rotation/strict schemas/monotonic deadlines and real Qwen 19-check proof.
+- [x] Encrypted bounded offline DB/project/workspace/release/config recovery; stale authority invalidation; actual local restore drill.
+- [x] Operator-only no-mount/no-network executor prototype and independent host supervisor bounds.
+- [x] Storage admission/DB cap, public pinned image metadata, scoped preflight and read-only HTTPS checker.
+- [ ] SSH access change/approval; actual target kernel/cgroups/LSM/quota/runtime/Serve/policy facts.
+- [ ] Actual executor Linux adversarial acceptance and narrow backend broker integration before enabling coding.
+- [ ] Streaming encrypted recovery for data beyond 64 MiB; approved key escrow/off-device schedule/retention.
+- [ ] Approve exact directories/identity/image downloads/services/Serve/full ACL/persistent Mac worker.
+- [ ] Actual remote inference/native/HTTPS/resource/recovery/ACL acceptance and existing service health.
+- [ ] Approve GitHub publication separately. No automatic push.
+
+
 ## AFK completion and remaining gates — 2026-11-07
 
 - [x] Audit implementation matrix and preserve existing architecture/history.

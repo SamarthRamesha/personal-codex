@@ -23,6 +23,7 @@ MAX_RETAINED = 10_000
 MAX_PROMPT = 100_000
 MAX_RESPONSE = 200_000
 MAX_CHUNK = 4_000
+MAX_SEQUENCE = 4096
 LEASE_SECONDS = 15
 WORKER_TTL = 30
 SCHEMA = """
@@ -61,9 +62,17 @@ class Broker:
                                 "WHERE status IN ('queued','running') AND (deadline<=? OR (status='running' AND lease_until<=?))",
                                 ('Inference deadline or worker lease expired; request a fresh invocation',stamp,stamp,stamp))
 
+    def revoke_worker(self):
+        with self.store.lock:
+            cursor=self.store.conn.execute("UPDATE inference_jobs SET status='interrupted',prompt='',content='',lease_hash=NULL,error=?,updated_at=? WHERE status IN ('queued','running')",
+                                           ('Worker credential rotated; inference not replayed',now()))
+            self.store.conn.execute('UPDATE inference_workers SET last_seen=0')
+            self.store.conn.commit()
+            return cursor.rowcount
+
     def catalog(self):
         row=self.store.one("SELECT models,last_seen FROM inference_workers WHERE id='mac'")
-        online=bool(row and now()-row['last_seen']<WORKER_TTL)
+        online=bool(row and 0<=now()-row['last_seen']<WORKER_TTL)
         return {'online':online,'models':json.loads(row['models']) if online else [],
                 'last_seen':row['last_seen'] if row else None,'location':'mac-local','inbound_listener':False}
 
@@ -77,12 +86,12 @@ class Broker:
     def submit(self, provider_id, model, prompt, timeout=180):
         if not isinstance(prompt,str) or not prompt.strip() or len(prompt.encode())>MAX_PROMPT:
             raise ProviderTransportError('Inference prompt is empty or exceeds its byte budget')
-        catalog=self.catalog()
-        if not catalog['online']:raise ProviderTransportError('Mac inference worker is offline; no fallback was attempted')
-        if model not in catalog['models']:raise ProviderTransportError('Selected model is not reported installed by the Mac worker')
-        row=self.store.one('SELECT enabled,kind FROM providers WHERE id=?',(provider_id,))
-        if not row or not row['enabled'] or row['kind']!=KIND:raise ProviderTransportError('Enabled Mac-worker provider required')
         with self.store.lock:
+            catalog=self.catalog()
+            if not catalog['online']:raise ProviderTransportError('Mac inference worker is offline; no fallback was attempted')
+            if model not in catalog['models']:raise ProviderTransportError('Selected model is not reported installed by the Mac worker')
+            row=self.store.one('SELECT enabled,kind FROM providers WHERE id=?',(provider_id,))
+            if not row or not row['enabled'] or row['kind']!=KIND:raise ProviderTransportError('Enabled Mac-worker provider required')
             self._expire()
             count=self.store.conn.execute("SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued','running')").fetchone()[0]
             retained=self.store.conn.execute('SELECT COUNT(*) FROM inference_jobs').fetchone()[0]
@@ -99,7 +108,7 @@ class Broker:
         models=model_names(models);stamp=now()
         with self.store.lock:
             self._expire()
-            self.store.conn.execute("INSERT INTO inference_workers VALUES ('mac',?,?) ON CONFLICT(id) DO UPDATE SET models=excluded.models,last_seen=excluded.last_seen WHERE inference_workers.last_seen<=? OR inference_workers.models!=excluded.models",(json.dumps(models),stamp,stamp-5))
+            self.store.conn.execute("INSERT INTO inference_workers VALUES ('mac',?,?) ON CONFLICT(id) DO UPDATE SET models=excluded.models,last_seen=excluded.last_seen WHERE inference_workers.last_seen<=? OR inference_workers.models!=excluded.models OR inference_workers.last_seen>excluded.last_seen",(json.dumps(models),stamp,stamp-5))
             if self.store.one("SELECT id FROM inference_jobs WHERE status='running' LIMIT 1"):
                 self.store.conn.commit();return None
             candidates=self.store.rows("SELECT * FROM inference_jobs WHERE status='queued' ORDER BY created_at,rowid LIMIT ?",(MAX_JOBS,))
@@ -132,8 +141,9 @@ class Broker:
             return {'status':row['status'],'seq':row['seq'],'deadline':row['deadline']}
 
     def append(self,jid,lease,seq,text='',done=False,error=''):
-        if (isinstance(seq,bool) or not isinstance(seq,int) or not isinstance(text,str) or len(text)>MAX_CHUNK
+        if (isinstance(seq,bool) or not isinstance(seq,int) or not 1<=seq<=MAX_SEQUENCE or not isinstance(text,str) or len(text)>MAX_CHUNK
                 or not isinstance(done,bool) or not isinstance(error,str) or len(error)>400):raise ValueError('Invalid inference chunk')
+        if not text and not done and not error:raise ValueError('Empty nonterminal chunk refused; use heartbeat')
         if error and (text or done):raise ValueError('Error chunks cannot contain text or completion')
         payload=digest(json.dumps({'seq':seq,'text':text,'done':done,'error':error},sort_keys=True))
         with self.store.lock:
@@ -159,9 +169,11 @@ class Broker:
         on_text=request.get('on_text') or (lambda text:None)
         if stop():raise ProviderTransportError('Inference cancelled before submission')
         jid=self.submit(request.get('provider_id'),request.get('model'),request.get('prompt'),timeout)
-        offset=0
+        offset=0;deadline=time.monotonic()+max(2,min(300,int(timeout)))
         try:
             while True:
+                if time.monotonic()>=deadline:
+                    self.cancel(jid,'Consumer total deadline exceeded');raise ProviderTransportError('Mac inference total deadline exceeded')
                 if stop():self.cancel(jid);raise ProviderTransportError('Mac inference cancelled')
                 with self.store.lock:
                     self._expire();self.store.conn.commit();row=self.store.one('SELECT * FROM inference_jobs WHERE id=?',(jid,))

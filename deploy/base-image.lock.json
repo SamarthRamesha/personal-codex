@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "source": "Docker Official Images / library/python",
+  "tag": "3.13-slim-bookworm",
+  "checked_at_unix": 1794046688,
+  "index_digest": "sha256:a5a7017efc5969e00ae2b91c8eb0631049a569652aa4ffc4501769049ae45c72",
+  "platform": "linux/amd64",
+  "base_image": "docker.io/library/python@sha256:f3dac913ab53b78c64f26d5518fcd7043d5a1a46522d6a493b598c3ed12f62a6",
+  "config_digest": "sha256:c7ea9065843cd8081ac483d8ce0cd7f2dfed7dd77180c8c535cbfc9ee9a85a9c",
+  "compressed_layer_bytes": 44201486,
+  "layers": [
+    {
+      "digest": "sha256:dd051e1b8c92ff101fa3071ab97ea4924885942f15644e01c3dc095764e863e3",
+      "bytes": 28247982
+    },
+    {
+      "digest": "sha256:a2e654eaec5b2906de585b934a48a3240b92979100174090795933855f5436b3",
+      "bytes": 3341514
+    },
+    {
+      "digest": "sha256:a3e87ca60ef5542058ba2bbf58ae97b73da916ff72012fbbfdd48161691b56d2",
+      "bytes": 12611742
+    },
+    {
+      "digest": "sha256:f565bd0f3fa6077930c1eaa4a21872eb5bc5590bf2b1d2753845ed21d10704bf",
+      "bytes": 248
+    }
+  ],
+  "metadata_only": true,
+  "layers_downloaded": false,
+  "image_built": false,
+  "signature_verified": false,
+  "implicit_volumes": false,
+  "onbuild_triggers": false
+}

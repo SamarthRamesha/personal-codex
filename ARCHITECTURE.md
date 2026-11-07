@@ -1,5 +1,14 @@
 # Architecture
 
+## Mission 1B components
+
+`app/worker_state.py` provides durable claim-before-inference metadata, separate from server history. Worker replies have strict schemas; server jobs additionally bound sequence/empty chunks and monotonic consumer lifetime. Explicit owner token reload interrupts old worker leases without replay. The private credential directory mount permits atomic replacement, while no executor sees it.
+
+`app/secure_files.py` performs bounded descriptor-relative snapshots; `app/recovery.py` is an optional offline encrypted operator tool, not a backend dependency. Restore revokes stale authority, relocates dedicated paths and writes a completion-gated recovery lock. `app/isolation.py` plus the operator scripts compile/probe/supervise a separate no-mount/no-network executor prototype. No backend Docker authority or isolated execution mode was added.
+
+Storage write admission closes on insufficient headroom/incomplete inventory and SQLite caps its main DB pages. New read-only deployment checker and cached-image/daemon preflight distinguish metadata from actual enforcement. Target kernel/runtime/HTTPS/ACL support is still unverified.
+
+
 ## AFK architecture update — 2026-11-07
 
 Intended production flow: `Mac Tauri UI → private verified HTTPS / existing Tailscale Serve → loopback JARVIS API + SQLite`. A separate Mac worker makes outbound authenticated polls to that API, performs inference through fixed loopback Ollama, and returns bounded leased chunks. This avoids an inbound Mac proxy or exposed Ollama listener. The real worker path is locally verified; JARVIS is undeployed.

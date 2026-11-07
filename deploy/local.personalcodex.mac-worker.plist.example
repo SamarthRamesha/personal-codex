@@ -28,6 +28,8 @@
 		<string>qwen2.5-coder:14b</string>
 		<string>--log-file</string>
 		<string>/REVIEW/private/worker.log</string>
+		<string>--state-dir</string>
+		<string>/REVIEW/private/worker-state</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

@@ -1,5 +1,16 @@
 # Changelog
 
+## Mission 1B security engineering
+
+- Added persistent no-replay Mac journal, strict reply/UUID/JSON/ack checks, atomic owner-controlled credential revocation and per-request worker file reload.
+- Added monotonic inference timeout, future-presence rejection, empty/sequence flood bounds and private DB alias checks.
+- Added descriptor-relative snapshots, encrypted offline recovery, Git/database/ledger/config preservation, stale approval revocation and completion-gated recovery locks.
+- Added fail-closed storage admission, bounded accounting and SQLite main-page cap; retained explicit absence of hard overall quota.
+- Added operator-only stdin executor prototype with required Linux probe, no host mounts/network/credentials, bounded supervisor and no automatic replay or backend enablement.
+- Added public base-image digest/size lock, read-only daemon/image/HTTPS acceptance checks and actual local TLS rejection before auth transmission.
+- Real worker Qwen 19/19 and encrypted recovery drill 6/6 passed. No server installation, persistent networking or publication.
+
+
 ## AFK backend and deployment preparation — 2026-11-07
 
 - Added outbound-only scoped Mac Ollama worker and durable leased inference jobs, without an inbound Mac listener, arbitrary forwarding, model downloads or cloud fallback.

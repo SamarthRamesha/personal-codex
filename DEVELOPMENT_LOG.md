@@ -1,5 +1,11 @@
 # Development log
 
+## Mission 1B security, recovery and isolation prototype — 2026-11-07
+
+Added durable worker claims/rotation, strict schemas/clock/chunk bounds, descriptor snapshots, encrypted offline recovery with stale authority revocation/locked restore, production admission/SQLite cap, operator-only no-mount/no-network executor prototype/supervisor, official public image digest lock and read-only runtime/HTTPS checks. Actual Qwen worker19/19 in46.418s; encrypted recovery drill6/6 (tiny fixture9ms checkpoint/10ms restore). Final full suite268 discovered: HTTP264pass4skip59.754s, default213pass55skip22.517s; frontend build/7Vitest/3Rust passed. No desktop source change or new Linux/container/native remote proof.
+
+SSH local agent had no identities; no private key/config/agent change. Additional public-only handshake was rejected by automatic approval review for repeated attempt without an access change; it never ran. Pending explicit decision/access change; independent engineering continued. No JARVIS write/command, software/model download, service/Serve/ACL change or publication. Initial recovery fixture8setup errors fixed missing ledger round_id; metadata307failedclosed then exact no-auth CDN redirect handling verified digests. Full recovery64MiB limit, actual Linux isolation, broker integration and remote/policy/storage gates remain explicit in current handoff.
+
 ## AFK final preparation and client verification — 2026-11-07
 
 Saved core milestone 9109eb1. Added browser cookie sign-in/sign-out and capability gates, private rotating worker logs, snapshot concurrency/incomplete-inventory refusal, installed-model readiness, duplicate security-header rejection, bounded escaped-Unicode worker envelopes and total control deadline. Final review also blocked code proposal/patch endpoints in disabled profile and revalidated persisted project/workspace roots. Added targeted regressions for each boundary. Prepared Docker/Compose/LaunchAgent/environment/build allowlist/read-only preflight/ACL fragment and recovery/API documentation. No production mutation.

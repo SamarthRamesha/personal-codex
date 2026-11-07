@@ -2,7 +2,7 @@
 """Personal Codex local control plane. Standard-library only by design for v0."""
 from __future__ import annotations
 
-import hashlib, json, os, re, resource, shlex, signal, sqlite3, subprocess, sys, tempfile, threading, time, uuid
+import hashlib, json, os, re, resource, shlex, signal, sqlite3, stat, subprocess, sys, tempfile, threading, time, uuid
 from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -88,11 +88,17 @@ class Store:
         DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
         if DB_PATH.is_symlink():raise ValueError("Database must not be a symlink")
         new_database=not DB_PATH.exists()
+        if not new_database:
+            info=DB_PATH.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1:raise ValueError('Database must be a regular file without hardlink aliases')
+            if maintenance.enforce_enabled() and (info.st_uid!=os.getuid() or stat.S_IMODE(info.st_mode)!=0o600):raise ValueError('Private database ownership/mode needs review')
         # One connection is shared by every HTTP thread and by streamed chat workers, so access is
         # serialized here: sqlite3 cannot start a transaction while another thread's commit is open.
         self.lock = threading.RLock()
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10.0)
         if new_database:DB_PATH.chmod(0o600)
+        try:maintenance.limit_database(self.conn)
+        except Exception:self.conn.close();raise
         self.conn.row_factory = sqlite3.Row
         # A streamed chat turn writes from a worker thread while HTTP threads read; wait instead of failing.
         self.conn.execute("PRAGMA busy_timeout=5000")
@@ -189,7 +195,20 @@ STORE = LazyStore()
 STOPPING = threading.Event()
 AUTH = security.OwnerAuth.from_env()
 WORKER_AUTH = security.OwnerAuth.from_env("PERSONAL_CODEX_WORKER_TOKEN_FILE")
+WORKER_AUTH_LOCK = threading.RLock()
 conversations.WORKER_TRANSPORT = lambda request: inference.Broker(STORE).transport(request)
+
+def reload_worker_credential():
+    global WORKER_AUTH
+    candidate=security.OwnerAuth.from_env('PERSONAL_CODEX_WORKER_TOKEN_FILE')
+    if not candidate.enabled or not AUTH.enabled or candidate.digest==AUTH.digest:
+        raise ValueError('Distinct configured worker and owner credentials required')
+    with WORKER_AUTH_LOCK:
+        if candidate.digest==WORKER_AUTH.digest:return {'rotated':False,'interrupted_jobs':0}
+        count=inference.Broker(STORE).revoke_worker()
+        WORKER_AUTH=candidate
+        return {'rotated':True,'interrupted_jobs':count}
+
 
 def safe_project_path(value: str) -> Path:
     if not isinstance(value,str) or not value.strip():raise ValueError("Project path is required")
@@ -870,11 +889,19 @@ class App(SimpleHTTPRequestHandler):
             if not WORKER_AUTH.enabled or not bearer.startswith("Bearer ") or not WORKER_AUTH.valid_token(bearer[7:]):
                 self.json({"error":"Inference worker authentication required"},401); return False
             if self.command != "POST": self.json({"error":"Worker method not allowed"},405); return False
-            return True
+            return self.storage_admission()
         if WORKER_AUTH.enabled and self.headers.get("Authorization", "").startswith("Bearer ") and WORKER_AUTH.valid_token(self.headers.get("Authorization")[7:]):
             self.json({"error":"Worker credential has no owner authority"},403); return False
         if not public and not login and not AUTH.authorized(self.headers):
             self.json({"error":"Owner authentication required"},401); return False
+        return self.storage_admission()
+    def storage_admission(self):
+        route=self.route()
+        if self.command not in {"POST","PATCH","DELETE"}:return True
+        if route in {"/api/session","/api/inference/reload-credential"} or route.endswith(("/stop","/cancel","/heartbeat")):return True
+        try:maintenance.admit_writes(DATA)
+        except (ValueError,OSError):
+            self.json({"error":"Storage write admission closed; preserve reserve and review accounting"},503);return False
         return True
     def send_error(self,code,message=None,explain=None):
         self.json({"error":HTTPStatus(code).phrase if code in HTTPStatus._value2member_map_ else "Request failed"},code)
@@ -897,7 +924,7 @@ class App(SimpleHTTPRequestHandler):
         body=json.dumps(payload).encode(); self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.security_headers(api=True); self.end_headers(); self.wfile.write(body)
     def body(self):
         length=int(self.headers.get("Content-Length",0))
-        try: data=json.loads(self.rfile.read(length) or b"{}")
+        try: data=json.loads(self.rfile.read(length) or b"{}",object_pairs_hook=security.unique_json_object)
         except (json.JSONDecodeError, UnicodeDecodeError): raise ValueError("invalid JSON") from None
         if not isinstance(data, dict): raise ValueError("JSON body must be an object")
         return data
@@ -915,6 +942,9 @@ class App(SimpleHTTPRequestHandler):
             try:
                 checks['database']=STORE.one('SELECT 1 AS ok')['ok']==1
                 disk=maintenance.diagnostics(DATA)['storage']
+                if maintenance.enforce_enabled():
+                    checks['write_admission']=False
+                    maintenance.admit_writes(DATA);checks['write_admission']=True
                 checks['storage']=disk['measurement_complete'] and disk['free_bytes']>=disk['reserve_bytes'] and disk['managed_bytes']<disk['budget_bytes']
                 worker=inference.Broker(STORE).catalog()
                 required_models={row["model"] for row in STORE.rows("SELECT model FROM providers WHERE kind=? AND enabled=1",(inference.KIND,))}
@@ -1171,22 +1201,31 @@ class App(SimpleHTTPRequestHandler):
                                         '/agent/round/request','/agent/round/plan','/agent/round/execute','/merge-request','/merge','/branch-delete-request','/branch-delete'))):
                 raise ExecutionDisabledError('Repository operations are disabled for this deployment; no approval/execution was created')
             if route.startswith("/api/worker/"):
-                broker=inference.Broker(STORE)
-                try:
-                    if route == "/api/worker/poll":
-                        if set(data)!={"models"}: raise ValueError("poll accepts only installed models")
-                        return self.json({"job":broker.poll(data["models"])})
-                    match=re.fullmatch(r"/api/worker/jobs/([a-f0-9-]{36})/(heartbeat|chunks)",route)
-                    if not match:return self.json({"error":"Unknown worker operation"},404)
-                    jid,operation=match.groups()
-                    if operation=="heartbeat":
-                        if set(data)!={"lease"}:raise ValueError("heartbeat accepts only its lease")
-                        return self.json(broker.heartbeat(jid,data["lease"]))
-                    if set(data)-{"lease","seq","text","done","error"} or not {"lease","seq"}.issubset(data):
-                        raise ValueError("Unknown/missing inference chunk fields")
-                    return self.json(broker.append(jid,**data))
-                except PermissionError:return self.json({"error":"Invalid inference lease"},403)
-                except ValueError as error:return self.json({"error":str(error)},409)
+                with WORKER_AUTH_LOCK:
+                    bearer=self.headers.get('Authorization','')
+                    if not bearer.startswith('Bearer ') or not WORKER_AUTH.enabled or not WORKER_AUTH.valid_token(bearer[7:]):
+                        return self.json({'error':'Worker credential revoked before request acceptance'},401)
+                    broker=inference.Broker(STORE)
+                    try:
+                        if route == "/api/worker/poll":
+                            if set(data)!={"models"}: raise ValueError("poll accepts only installed models")
+                            return self.json({"job":broker.poll(data["models"])})
+                        match=re.fullmatch(r"/api/worker/jobs/([a-f0-9-]{36})/(heartbeat|chunks)",route)
+                        if not match:return self.json({"error":"Unknown worker operation"},404)
+                        jid,operation=match.groups()
+                        if operation=="heartbeat":
+                            if set(data)!={"lease"}:raise ValueError("heartbeat accepts only its lease")
+                            return self.json(broker.heartbeat(jid,data["lease"]))
+                        if set(data)-{"lease","seq","text","done","error"} or not {"lease","seq"}.issubset(data):
+                            raise ValueError("Unknown/missing inference chunk fields")
+                        return self.json(broker.append(jid,**data))
+                    except PermissionError:return self.json({"error":"Invalid inference lease"},403)
+                    except ValueError as error:return self.json({"error":str(error)},409)
+            if route == '/api/inference/reload-credential':
+                if set(data)!={'confirm'} or data['confirm'] is not True:return self.json({'error':'Explicit credential reload confirmation required'},400)
+                try:result=reload_worker_credential()
+                except (ValueError,OSError):return self.json({'error':'New distinct private worker credential is unavailable; active credential unchanged'},409)
+                return self.json(result)
             if route == "/api/maintenance/backup":
                 try: return self.json(maintenance.snapshot(STORE,DATA,DB_PATH),201)
                 except (ValueError,OSError,sqlite3.Error) as error: return self.json({"error":str(error)},409)
@@ -1733,12 +1772,17 @@ def main():
     security.validate_proxy_config(host, AUTH.enabled, bool(cert and key), origin)
     mode=os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")
     if mode not in {"development","disabled"}:raise ValueError("Invalid execution mode")
+    if (DATA/'RECOVERY_LOCKED.json').exists():
+        if mode!='disabled':raise ValueError('Restored data requires disabled execution until reviewed recovery acceptance')
+        if not (DATA/'RECOVERY_COMPLETE.json').is_file():raise ValueError('Incomplete recovery cannot start a backend')
     if origin and (mode!='disabled' or not os.getenv("PERSONAL_CODEX_PROJECT_ROOTS")):
         raise ValueError("Private Serve deployment requires disabled command execution and explicit repository roots")
+    if origin and not maintenance.enforce_enabled():raise ValueError('Private Serve deployment requires fail-closed storage admission')
     tls=None
     if cert:
         tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.minimum_version=ssl.TLSVersion.TLSv1_2;tls.load_cert_chain(cert,key)
     with runtime.InstanceLock(DATA):
+        maintenance.admit_writes(DATA)
         if isinstance(STORE,LazyStore):STORE=Store()
         STOPPING.clear()
         http=runtime.ControlServer((host,port),App,tls_context=tls)

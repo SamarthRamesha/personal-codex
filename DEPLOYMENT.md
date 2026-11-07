@@ -1,5 +1,21 @@
 # Deployment
 
+## Mission 1B update — 2026-11-07
+
+New local security engineering is implemented and tested; no JARVIS deployment or fresh remote command occurred. SSH agent has no loaded identity. An additional public-key-only diagnostic was rejected by automatic approval review because no access change was documented; do not retry pending approval/access change.
+
+- Worker CLI now **requires an existing private `--state-dir`**. Claims are durable before inference and survive crashes; bounded journal exhaustion fails closed. Never delete/reset replay tombstones merely to make capacity available.
+- Worker token file is reloaded per request. Owner-only `POST /api/inference/reload-credential` with `{confirm:true}` validates a distinct private replacement, revokes queued/running leases and resets presence; old requests are rechecked after body reads. Token mount is the dedicated read-only two-file credential directory so atomic replacements become visible. No recovery key or unrelated credential may be placed in that mount.
+- Initial backend adds `PERSONAL_CODEX_STORAGE_ENFORCE=1` and `PERSONAL_CODEX_DB_MAX_MIB=1024`. It checks free space for each mutation, caches bounded inventory at most one second, closes new writes within a 3 GB safety margin or on incomplete accounting, and caps main DB pages. Auth, read, cancellation/heartbeat and credential revocation remain available for recovery. This is **not an overall filesystem quota**.
+- `deploy/base-image.lock.json` pins official Python Linux/amd64 manifest/config hashes; compressed layers total 44,201,486 bytes. Only small public metadata fetched and verified, no layers/pull/build/signature/vulnerability scan. Both Dockerfiles require the pinned reference at reviewed build time. Source plus base digest enables repeatable inputs; byte-for-byte image reproducibility remains unverified. Explicit download/build approval still required.
+- `scripts/deployment_preflight.py --docker-readonly` inspects only the local daemon and reviewed cached image: versions/resource capability flags/built-in seccomp/image ID/platform/size/implicit volumes/build triggers. It cannot certify actual container enforcement before startup. No sudo, pull, build, exec or service change.
+- Operator-only isolated executor prototype has no host mounts or networking; see `docs/ISOLATION.md`. It refuses missing Linux controls, never enables backend coding, and has no actual Docker runtime proof.
+- Encrypted offline multi-component recovery and new-root restore are tested; see `docs/RECOVERY.md`. Full envelope limited to 64 MiB; exceeding it needs a separately reviewed streaming backup solution. No credentials/private keys collected and no automatic scheduling/retention.
+- `scripts/check_deployment.py` is a **read-only** HTTPS/auth/readiness/worker-scope/storage check, never a real coding/stream/restart/ACL acceptance substitute. It rejects self-signed TLS before credentials; run only after approved private installation with exact private origin/token files/model.
+
+The optional executor/runtime image and its staging/rootless data must be accounted separately within the same 75 GB total allocation; do not assume two 512 MiB image limits fit the existing 1 GB overhead allowance. Measure actual image/source/log/runtime size, reserve headroom and obtain a revised allocation plan before adding it. Existing rootful Docker/Tailscale is never reconfigured to enable jobs. Actual kernel/quota/LSM/cgroups/policy facts remain unavailable. Initial safe API profile stays chat/planning/review only.
+
+
 ## Current decision — 2026-11-07
 
 Preparation is implemented; JARVIS is not deployed. The user supplied the server inventory and reports interactive SSH/MagicDNS success. This unattended session's strict dedicated-key SSH attempt failed authentication; no remote command ran. Exact device/account/path details are in PRIVATE_DEPLOYMENT_NOTES.md outside Git. Family data and existing services remain off-limits.

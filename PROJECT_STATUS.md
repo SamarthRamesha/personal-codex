@@ -1,5 +1,12 @@
 # Project status
 
+## Mission 1B current result — 2026-11-07
+
+Implemented: worker durable replay journal/hot credential rotation/strict protocol and clock/chunk limits; descriptor snapshots; encrypted offline multi-component recovery and stale-authority revocation; production write admission/main DB cap; operator-only isolated executor prototype; pinned public image metadata and read-only runtime/HTTPS acceptance tooling. Actual Qwen worker proof passed **19/19 in 46.418 s**; recovery drill **6/6**, tiny fixture 9 ms checkpoint/10 ms restore. Final regression:268 Python discovered; HTTP264passed/4skipped, default213passed/55skipped; zero final failures,7Vitest/3Rust and frontend build passed. Exact timings in NEXT_SESSION_PROMPT.md.
+
+**No target deployment or remote command.** Agent empty; further public-key-only SSH diagnostic rejected by auto-review pending access change/approval. Local Mac has no Docker; actual Linux isolation, container constraints, quota, private HTTPS/ACL and remote inference are unverified. Coding remains disabled. Full encrypted recovery limited to 64 MiB; production growth needs reviewed streaming recovery. No publishing/installation approval exists. Earlier sections below are historical.
+
+
 ## AFK final local result — 2026-11-07
 
 Locally implemented and verified: durable outbound-only Mac worker, private Serve auth boundary/readiness, bounded runtime/shutdown, stalled-stream cancellation, native contract/capabilities, authenticated browser access and maintenance safeguards. Real Qwen worker coding proof passed 17/17 checks in 82.764 s; rebuilt native Gemma streaming/stop and browser owner sessions manually verified. Prepared nonroot bounded deployment/preflight/ACL/recovery templates; no Docker/server execution. Final regression: 219 Python discovered, HTTP 215 passed/4 skipped, default 171 passed/48 skipped, zero failures; seven Vitest and three Rust passed, optimized builds and syntax checks passed. Exact timing/evidence is in NEXT_SESSION_PROMPT.md.

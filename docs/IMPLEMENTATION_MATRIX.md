@@ -1,5 +1,18 @@
 # Backend implementation matrix
 
+## Mission 1B delta
+
+| Area | Current classification |
+| --- | --- |
+| Worker replay/rotation/protocol | Implemented, unit/HTTP tested, real Qwen workflow 19/19; remote private HTTPS unverified |
+| Offline encrypted recovery | Implemented and locally restored with Git/history/ledger/config + revoked authority; limited to 64 MiB, larger-data recovery incomplete |
+| OS execution boundary | Operator-only prototype and contract/negative tests implemented; actual Linux enforcement and backend broker integration incomplete; production coding disabled |
+| Storage enforcement | Admission/margins/bounded inventory/DB page cap implemented and tested; no total filesystem quota, actual server accounting unverified |
+| Release/preflight/acceptance | Image metadata pinned and static/mock/read-only tooling tested; no image/container/service build/install/runtime verification |
+| SSH/target infrastructure | Empty local agent diagnosed; new diagnostic blocked by auto-review; no fresh JARVIS facts |
+| Deployment/publication | Approval required; not installed, served, ACL-applied, published or complete |
+
+
 AFK audit starting at implementation c5e3415 / checkpoint 4a3ea1d. Classifications describe working code, not remote deployment evidence.
 
 | Area | Starting classification | Action in this session |

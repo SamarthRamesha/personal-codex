@@ -1,5 +1,9 @@
 # Personal Codex
 
+## Mission 1B local engineering update
+
+Worker replay/rotation and protocol hardening, encrypted offline recovery, storage write admission/DB page cap, an operator-only isolated executor prototype and read-only deployment acceptance tooling are implemented. Real Qwen worker proof passed **19/19 in 46.418 seconds**. [Isolation](docs/ISOLATION.md), [recovery](docs/RECOVERY.md), [threat model](docs/THREAT_MODEL.md) and [handoff](NEXT_SESSION_PROMPT.md) distinguish implemented controls from unverified Linux/JARVIS enforcement. No server/container/Serve/ACL/service installation or publication occurred. Production coding remains disabled; full encrypted recovery currently limited to 64 MiB.
+
 Personal Codex is a private, local-first AI coding control plane for macOS. It connects a registered Git repository, a local or explicitly consented model provider, and a task workspace where an agent can propose — and you can approve — small, auditable code changes.
 
 Nothing is autonomous by default. A model may *propose* file edits and test commands as strict JSON; Personal Codex validates them, shows you the exact digest, and only applies them to an isolated Git worktree after you approve that exact proposal. The Python backend defaults to loopback and uses the standard library. The native client has pinned React/Tauri dependencies; private remote serving supports an exact authenticated Tailscale Serve origin over a loopback backend. The legacy direct authenticated TLS listener remains available.

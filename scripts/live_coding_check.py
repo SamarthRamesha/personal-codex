@@ -30,7 +30,7 @@ def main():
     output=Path(args.output).resolve();output.mkdir(parents=True,exist_ok=False)
     os.environ['PERSONAL_CODEX_DATA']=str(output/'control-data')
     from http.server import ThreadingHTTPServer
-    from app import server, security, inference, mac_worker
+    from app import server, security, inference, mac_worker, worker_state
     token=secrets.token_urlsafe(48);server.AUTH=security.OwnerAuth(token)
     server.STREAM_PROVIDER=True
     repo=output/'fixture';repo.mkdir()
@@ -43,10 +43,12 @@ def main():
     http=ThreadingHTTPServer(('127.0.0.1',0),server.App)
     thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
     base=f'http://127.0.0.1:{http.server_port}'
-    worker_stop=threading.Event();worker_errors=[];worker_thread=None
+    worker_stop=threading.Event();worker_errors=[];worker_thread=None;journal=None
     if args.via_worker:
         worker_token=secrets.token_urlsafe(48);server.WORKER_AUTH=security.OwnerAuth(worker_token)
-        worker=mac_worker.Worker(mac_worker.Client(base,worker_token),[args.model],stop=worker_stop)
+        state_dir=output/'worker-state';state_dir.mkdir(mode=0o700)
+        journal=worker_state.ReplayJournal(state_dir)
+        worker=mac_worker.Worker(mac_worker.Client(base,worker_token),[args.model],stop=worker_stop,journal=journal)
         worker.poll_once()  # report actual installed models before owner discovery
         def work():
             while not worker_stop.is_set():
@@ -122,6 +124,14 @@ def main():
             report['worker_jobs']=server.STORE.rows('SELECT status,prompt_sha256,seq,error FROM inference_jobs ORDER BY created_at,rowid')
             check('real worker jobs completed without protocol errors',all(job['status']=='complete' for job in report['worker_jobs']) and not worker_errors)
             check('ephemeral inference payloads cleared',server.STORE.one("SELECT COUNT(*) AS count FROM inference_jobs WHERE prompt!='' OR content!=''")['count']==0)
+            claims=journal.connection.execute('SELECT id,model,prompt_sha256,status FROM claims').fetchall()
+            check('durable Mac journal records every completed invocation',len(claims)==len(report['worker_jobs']) and all(row[3]=='complete' for row in claims))
+            journal.close();journal=worker_state.ReplayJournal(state_dir)
+            first=claims[0];rejected=False
+            try:journal.claim({'id':first[0],'model':first[1],'prompt_sha256':first[2]})
+            except worker_state.ReplayError:rejected=True
+            check('worker journal restart refuses already completed job',rejected)
+
         server.STORE.conn.close();server.STORE=server.Store()
         check('conversation and completion survive restart',call('/api/conversations/'+conversation['id'])['conversation']['messages'][-1]['status']=='complete' and call(f'/api/tasks/{tid}/agent/report')['status']=='completed')
         report['ok']=True
@@ -131,6 +141,7 @@ def main():
         report['elapsed_ms']=int((time.monotonic()-started)*1000)
         worker_stop.set()
         if worker_thread is not None:worker_thread.join(6)
+        if journal is not None:journal.close()
         server.conversations.stop_all();server.conversations.drain(5)
         http.shutdown();http.server_close();thread.join();server.STORE.conn.close()
         (output/'evidence.json').write_text(json.dumps(report,indent=2)+'\n')

@@ -86,6 +86,20 @@ class BrokerTests(unittest.TestCase):
         self.assertTrue(errors);self.assertEqual(self.broker.heartbeat(job['id'],job['lease'])['status'],'cancelled')
         with self.assertRaises(ValueError):self.broker.append(job['id'],job['lease'],1,'late',True)
 
+    def test_future_worker_presence_is_offline_until_fresh_poll(self):
+        self.store.write('UPDATE inference_workers SET last_seen=?',(inference.now()+3600,))
+        self.assertFalse(self.broker.catalog()['online'])
+        self.broker.poll(['fixture']);self.assertTrue(self.broker.catalog()['online'])
+    def test_empty_chunk_and_sequence_flood_are_rejected(self):
+        jid=self.submit();job=self.broker.poll(['fixture'])
+        with self.assertRaises(ValueError):self.broker.append(jid,job['lease'],1)
+        with self.assertRaises(ValueError):self.broker.append(jid,job['lease'],inference.MAX_SEQUENCE+1,'x')
+    def test_consumer_uses_monotonic_deadline_even_if_wall_clock_stalls(self):
+        with patch.object(inference.time,'monotonic',side_effect=[0,3]):
+            with self.assertRaisesRegex(inference.ProviderTransportError,'total deadline'):
+                self.broker.transport({'provider_id':'p','model':'fixture','prompt':'test'},timeout=2)
+        self.assertEqual(self.store.one('SELECT status FROM inference_jobs ORDER BY rowid DESC LIMIT 1')['status'],'cancelled')
+
 
 class WorkerBoundaryTests(unittest.TestCase):
     def test_backend_and_ollama_url_policies(self):

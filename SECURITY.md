@@ -1,5 +1,14 @@
 # Security model
 
+## Mission 1B authority and recovery controls
+
+Durable Mac claims now prevent model-job replay across worker restart; malformed replies/UUIDs/chunks/duplicate JSON fail closed. Worker credential reload revokes in-flight leases under a shared lock, and old requests cannot pass authentication before a slow body then mutate after rotation. A valid stolen worker credential can still impersonate its principal; rotation and source ACLs are required, not hardware attestation.
+
+The operator-only executor prototype takes bounded stdin source with no host mounts, network or credentials, and requires a trusted Linux control probe before tests. It does not integrate into the API or enable coding. Actual Linux enforcement remains unverified. New snapshot walks are descriptor-relative; legacy direct tools retain documented path-race residuals.
+
+Production storage admission and a 1 GiB main DB page cap are tested, not an overall filesystem quota. Encrypted offline recovery restores only to new paths, revokes stale approvals, interrupts active state and locks execution pending review. Complete plaintext recovery envelope is limited to 64 MiB; larger-data disaster recovery remains an explicit approval/engineering gate. See the rewritten `docs/THREAT_MODEL.md`, `docs/ISOLATION.md` and `docs/RECOVERY.md`.
+
+
 ## AFK security update — 2026-11-07
 
 Serve metadata is accepted only from a loopback peer/listener, for the explicitly configured private HTTPS authority and exact forwarded scheme/Host. Duplicate auth/cookie/origin/proxy headers and cross-site requests fail closed. Local processes remain trusted; forwarded identity does not replace owner authentication. Browser tokens are exchanged for HttpOnly sessions and never saved in browser storage.

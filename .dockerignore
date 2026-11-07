@@ -10,3 +10,5 @@
 !scripts/restore_database.py
 !deploy/
 !deploy/Dockerfile
+!scripts/isolated_executor.py
+!deploy/Executor.Dockerfile

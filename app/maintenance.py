@@ -17,16 +17,18 @@ SNAPSHOT_LOCK=threading.Lock()
 
 
 def owned_bytes(root: Path) -> tuple[int,bool]:
-    total=0;count=0;complete=True
+    total=0;count=0;complete=True;started=time.monotonic()
     if root.is_symlink() or not root.is_dir():return 0,False
     def failed(_error):
         nonlocal complete
         complete=False
     for current, directories, files in os.walk(root,followlinks=False,onerror=failed):
+        count+=len(directories)
+        if count>MAX_OWN_FILES or time.monotonic()-started>2:return total,False
         directories[:]=[name for name in directories if not (Path(current)/name).is_symlink()]
         for name in files:
             count+=1
-            if count>MAX_OWN_FILES:return total,False
+            if count>MAX_OWN_FILES or time.monotonic()-started>2:return total,False
             try:
                 info=(Path(current)/name).lstat()
                 if stat.S_ISREG(info.st_mode):total+=info.st_size
@@ -56,7 +58,9 @@ def diagnostics(data: Path) -> dict:
                        'scope':'Personal Codex data directory only; externally managed Ollama models are not included','warnings':reasons},
             'cpu':{'count':os.cpu_count(),'load_average':list(os.getloadavg()) if hasattr(os,'getloadavg') else None},
             'backups':{'count':len(list((data/'backups').glob('snapshot-*.sqlite3'))),'automatic_deletion':False},
-            'telemetry':False,'cloud_fallback':False}
+            'telemetry':False,'cloud_fallback':False,
+            'storage_enforcement':{'write_admission':enforce_enabled(),'inventory_cache_seconds':ADMISSION_TTL,'admission_margin_bytes':ADMISSION_MARGIN,
+                                   'main_db_max_mib':os.getenv('PERSONAL_CODEX_DB_MAX_MIB','1024') if enforce_enabled() else None,'hard_filesystem_quota':False}}
 
 
 def require_capacity(data: Path, additional: int):
@@ -128,3 +132,42 @@ def restore_new(source: Path,destination: Path) -> dict:
     except Exception:
         destination.unlink(missing_ok=True)
         raise
+
+# Application admission, not a filesystem quota. The DB page cap separately bounds the main DB.
+ADMISSION_LOCK=threading.RLock()
+ADMISSION_CACHE={}
+ADMISSION_TTL=1.0
+ADMISSION_MARGIN=3*GB
+
+
+def enforce_enabled():return os.getenv('PERSONAL_CODEX_STORAGE_ENFORCE')=='1'
+
+
+def admit_writes(data: Path):
+    if not enforce_enabled():return
+    try:from .secure_files import reviewed_scope
+    except ImportError:from secure_files import reviewed_scope
+    reviewed_scope(data)
+    limits=policy();stamp=time.monotonic();key=(str(data),limits['reserve_bytes'],limits['budget_bytes'])
+    with ADMISSION_LOCK:
+        cached=ADMISSION_CACHE.get(key)
+        if not cached or not 0<=stamp-cached[0]<=ADMISSION_TTL:
+            report=diagnostics(data)['storage']
+            if len(ADMISSION_CACHE)>=8:ADMISSION_CACHE.clear()
+            ADMISSION_CACHE[key]=(time.monotonic(),report)
+        else:report=cached[1]
+        # Free space is cheap and checked on every admission, even when inventory is cached.
+        free=shutil.disk_usage(data).free
+        if (not report['measurement_complete'] or free<limits['reserve_bytes']+ADMISSION_MARGIN
+                or report['managed_bytes']+ADMISSION_MARGIN>limits['budget_bytes']):
+            raise ValueError('Storage write admission closed: reserve, allocation headroom or complete accounting unavailable')
+
+
+def limit_database(connection):
+    if not enforce_enabled():return
+    try:maximum=int(os.getenv('PERSONAL_CODEX_DB_MAX_MIB','1024'))
+    except ValueError:raise ValueError('Invalid main database page limit') from None
+    if not 1<=maximum<=1024:raise ValueError('Main database limit must be 1–1024 MiB')
+    page_size=connection.execute('PRAGMA page_size').fetchone()[0];pages=maximum*1024*1024//page_size
+    if connection.execute('PRAGMA page_count').fetchone()[0]>pages:raise ValueError('Existing database exceeds reviewed page cap; no automatic shrink')
+    if connection.execute(f'PRAGMA max_page_count={pages}').fetchone()[0]!=pages:raise ValueError('Database page cap unavailable')

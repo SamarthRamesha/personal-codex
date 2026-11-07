@@ -200,3 +200,11 @@ def request_boundary(headers, bound: str, port: int, peer: str, *, tls=False, or
             return tls, "Proxy authority or scheme does not match configured HTTPS origin"
         return True, request_origin_error(headers, {host}, tls=True)
     return tls, request_origin_error(headers, addresses, tls=tls)
+
+
+def unique_json_object(pairs):
+    result={}
+    for key,value in pairs:
+        if key in result:raise ValueError('Duplicate JSON object field')
+        result[key]=value
+    return result

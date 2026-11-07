@@ -15,15 +15,17 @@ from pathlib import Path
 import re
 import signal
 import ssl
+import sqlite3
 import stat
 import threading
 import time
+import uuid
 from urllib.parse import urlsplit
 
 try:
-    from . import inference, providers, security
+    from . import inference, providers, security, worker_state
 except ImportError:
-    import inference, providers, security
+    import inference, providers, security, worker_state
 
 
 class WorkerError(ValueError): pass
@@ -64,15 +66,16 @@ def read_token(path):
 
 
 class Client:
-    def __init__(self,backend,token,timeout=5):
+    def __init__(self,backend,token,timeout=5,token_file=None):
         self.parsed,self.host,self.port=backend_url(backend)
         security.OwnerAuth(token)
         if not token:raise WorkerError('Distinct worker credential required')
-        self.token=token;self.timeout=timeout
+        self.token=token;self.timeout=timeout;self.token_file=token_file
 
     def request(self,path,payload):
         if not re.fullmatch(r'/api/worker/(poll|jobs/[a-f0-9-]{36}/(heartbeat|chunks))',path):
             raise WorkerError('Worker API path is outside its scope')
+        token=read_token(self.token_file) if self.token_file else self.token
         body=json.dumps(payload).encode()
         if len(body)>inference.MAX_PROMPT:raise WorkerError('Worker request exceeds budget')
         connection=(http.client.HTTPSConnection(self.host,self.port,timeout=self.timeout,context=ssl.create_default_context())
@@ -80,15 +83,16 @@ class Client:
         response=None
         guard=providers._StreamGuard(connection,lambda:False,self.timeout)
         try:
-            connection.request('POST',path,body,{'Content-Type':'application/json','Authorization':'Bearer '+self.token,'Connection':'close'})
+            connection.request('POST',path,body,{'Content-Type':'application/json','Authorization':'Bearer '+token,'Connection':'close'})
             guard.socket=connection.sock
+            if guard.reason:raise WorkerError('Worker control deadline exceeded')
             response=connection.getresponse()
             limit=inference.MAX_PROMPT*6+16_000  # JSON escapes may expand one prompt byte sixfold.
             raw=response.read(limit)
             if guard.reason:raise WorkerError('Worker control connection exceeded its total deadline')
             if len(raw)>=limit:raise WorkerError('Worker response exceeds budget')
             if response.status!=200:raise WorkerError(f'Worker API rejected request (HTTP {response.status})')
-            try:result=json.loads(raw)
+            try:result=json.loads(raw,object_pairs_hook=security.unique_json_object)
             except (ValueError,UnicodeDecodeError):raise WorkerError('Worker API returned invalid JSON') from None
             if not isinstance(result,dict):raise WorkerError('Worker API returned an invalid object')
             return result
@@ -101,11 +105,12 @@ class Client:
 
 
 class Worker:
-    def __init__(self,client,models,ollama='http://127.0.0.1:11434',stop=None,adapter=None):
+    def __init__(self,client,models,ollama='http://127.0.0.1:11434',stop=None,adapter=None,journal=None):
         self.client=client;self.models=inference.model_names(models)
         if not self.models:raise WorkerError('Choose at least one explicit installed model')
         self.endpoint=local_ollama(ollama);self.stop=stop or threading.Event()
         self.adapter=adapter or providers.OllamaStreamTransport(timeout=180)
+        self.journal=journal or worker_state.ReplayJournal()
         self._installed=[];self._discovered_at=0.0
 
     def poll_once(self):
@@ -113,18 +118,26 @@ class Worker:
             self._installed=providers.discover_models(self.endpoint,timeout=5);self._discovered_at=time.monotonic()
         allowed=[model for model in self.models if model in self._installed]
         result=self.client.request('/api/worker/poll',{'models':allowed})
-        job=result.get('job')
+        if not isinstance(result,dict) or set(result)!={'job'}:raise WorkerError('Invalid poll response schema')
+        job=result['job']
         if job is None:return False
         if not isinstance(job,dict) or set(job)!={'id','model','prompt','prompt_sha256','deadline','lease'}:
             raise WorkerError('Invalid inference job schema')
-        if (not re.fullmatch(r'[a-f0-9-]{36}',str(job['id'])) or job['model'] not in allowed
+        if (not isinstance(job['id'],str) or not re.fullmatch(r'[a-f0-9-]{36}',job['id']) or job['model'] not in allowed
                 or not isinstance(job['prompt'],str) or len(job['prompt'].encode())>inference.MAX_PROMPT
                 or hashlib.sha256(job['prompt'].encode()).hexdigest()!=job['prompt_sha256']
                 or not isinstance(job['lease'],str) or not 32<=len(job['lease'])<=128
                 or isinstance(job['deadline'],bool) or not isinstance(job['deadline'],int)
                 or not time.time()-1<job['deadline']<=time.time()+301):
             raise WorkerError('Inference job failed model, digest, lease or deadline validation')
-        self._execute(job)
+        try:
+            if str(uuid.UUID(job['id'],version=4))!=job['id']:raise ValueError('Invalid job UUID')
+            self.journal.claim(job)
+        except (ValueError,sqlite3.Error) as error:raise WorkerError(str(error)) from None
+        try:self._execute(job)
+        except Exception:
+            self.journal.finish(job['id'],'failed');raise
+        else:self.journal.finish(job['id'],'complete')
         return True
 
     def _execute(self,job):
@@ -137,7 +150,9 @@ class Worker:
                     cancel.set();return
                 try:
                     result=self.client.request(path+'/heartbeat',{'lease':job['lease']})
-                    if result.get('status')!='running':cancel.set();return
+                    if (not isinstance(result,dict) or set(result)!={'status','seq','deadline'}
+                            or result['status']!='running' or type(result['seq']) is not int
+                            or not 0<=result['seq']<=inference.MAX_SEQUENCE or result['deadline']!=job['deadline']):cancel.set();return
                 except WorkerError:cancel.set();return
 
         monitor=threading.Thread(target=heartbeat,name='inference-lease',daemon=True);monitor.start()
@@ -148,7 +163,13 @@ class Worker:
             payload={'lease':job['lease'],'seq':seq,'text':text,'done':done,'error':error}
             # Identical last-sequence append is idempotent. No inference invocation is retried.
             for attempt in range(3):
-                try:return self.client.request(path+'/chunks',payload)
+                try:
+                    ack=self.client.request(path+'/chunks',payload)
+                    expected='failed' if error else 'complete' if done else 'running'
+                    if (set(ack)!={'status','seq','duplicate'} or ack['status']!=expected
+                            or type(ack['seq']) is not int or ack['seq']!=seq or type(ack['duplicate']) is not bool):
+                        raise WorkerError('Invalid inference append acknowledgment')
+                    return ack
                 except WorkerError:
                     if attempt==2:raise
                     if self.stop.wait(.1*(2**attempt)):raise WorkerError('Worker stopping')
@@ -219,20 +240,22 @@ def main(argv=None):
     parser.add_argument('--models',nargs='+',required=True)
     parser.add_argument('--ollama',default='http://127.0.0.1:11434')
     parser.add_argument('--once',action='store_true')
+    parser.add_argument('--state-dir',required=True,help='existing private 0700 directory for durable no-replay claims')
     parser.add_argument('--log-file',help='optional rotating log in an existing private 0700 directory')
     args=parser.parse_args(argv)
     stop=threading.Event()
     for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,lambda *_:stop.set())
     try:
         logger=worker_logger(args.log_file)
-        worker=Worker(Client(args.backend,read_token(args.token_file)),args.models,args.ollama,stop=stop)
-    except (ValueError,OSError):parser.exit(2,'Worker configuration unavailable or unsafe; review URL, private credential and log metadata.\n')
+        journal=worker_state.ReplayJournal(args.state_dir)
+        worker=Worker(Client(args.backend,read_token(args.token_file),token_file=args.token_file),args.models,args.ollama,stop=stop,journal=journal)
+    except (ValueError,OSError,sqlite3.Error):parser.exit(2,'Worker configuration unavailable or unsafe; review URL, private credential and log metadata.\n')
     backoff=1
     while not stop.is_set():
         try:
             worker.poll_once();backoff=1
             if args.once:return 0
-        except (WorkerError,providers.ProviderTransportError):
+        except (WorkerError,providers.ProviderTransportError,sqlite3.Error):
             logger.warning('Mac worker unavailable or job failed; no fallback attempted')
             if args.once:return 2
             backoff=min(30,backoff*2)

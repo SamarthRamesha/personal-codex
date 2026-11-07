@@ -1,0 +1,3 @@
+# Optional OFFLINE operator tool only; never installed/imported by the stdlib backend.
+# Version already available on this Mac. Target installation still requires approval.
+cryptography==49.0.0

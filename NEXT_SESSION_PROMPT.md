@@ -1,5 +1,49 @@
 # Personal Codex: current implementation handoff
 
+## Mission 1B authoritative implementation checkpoint — 2026-11-07
+
+The Mission 1B user directive supersedes the earlier AFK milestones below. Continue existing branch and preserve all history. No deployment, GitHub publication, server write, persistent Mac service, inbound listener or model download is approved. Do not read/stage/delete/publish the pre-existing untracked diagnostic. Exact targets/access/approval queue remain outside Git in current outputs. No new user changes were found at entry; starting source was 6c0c101.
+
+### Current implementation
+
+- `app/worker_state.py`: private durable SQLite claim before any model invocation, no prompt/token content, 10000 retained claims then fail closed. No automatic reset/tombstone archival. Production CLI requires pre-existing private `--state-dir`.
+- Worker protocol now strictly validates poll/heartbeat/append/UUID/JSON fields, duplicate keys, byte/framing/sequence/empty-chunk bounds and completed/streamed consistency. Monotonic consumer timeout and future-presence handling survive wall-clock rollback.
+- Owner-only `/api/inference/reload-credential` with exact boolean confirmation reads only configured replacement file; distinct private credential required, unchanged token is no-op. Rotation interrupts active jobs, clears leases/presence, rechecks worker authority after slow request bodies. Worker re-reads private token every request. Credential directory mount allows atomic inode replacement; contains only two token files, no recovery key.
+- `app/secure_files.py`: descriptor-relative bounded snapshots, no links/special files/aliases/protected diagnostic/control paths, change detection and known broad/family/other-app scope refusal before inventory. These improvements do not replace every legacy direct file tool's path-race boundary.
+- `app/recovery.py` / operator CLI: offline locked encrypted DB + dedicated project/workspace/Git files + release zip + five nonsecret settings. Optional existing cryptography49.0.0, backend remains stdlib. Complete plaintext envelope **64MiB max**; larger-data/75GB disaster recovery not implemented. No plaintext staging archive or credential/key collection. New-root restore relocates DB paths, revokes pending/approved approvals, interrupts active jobs/messages/operations, marks workspaces recovery-review and writes startup lock before payload/completion receipt last. Git pointers require isolated review/repair; credentials regenerated.
+- Storage: mandatory admission in private Serve mode; bounded2s/100k-entry inventory cached<=1s, free space every new mutation,3GB margin, main SQLite page cap<=1GiB. Auth/read/stop/cancel/heartbeat/revocation remain available. No total filesystem quota; overhead/images/runtime/releases/logs still need actual accounting. Existing DB hardlink aliases refused.
+- Isolated executor **operator-only prototype**, no backend integration/new execution mode/Docker authority. Bounded8MiB/2000-file approved stdin source, no Git/secrets/host mounts/network. Fixed reviewed image/argv, required trusted Linux userns/seccomp/AppArmor/capability/cgroup/tmpfs probe before tests. Host supervisor independently bounds output/time and claims before Docker; ambiguous jobs never replay. No actual Docker/Linux enforcement test passed here; server coding remains disabled.
+- Public official Python OCI lock: Linux/amd64 digest,44,201,486 compressed layer bytes. Metadata only fetched/verified; no layers/pull/build/install/signature/CVE/reproducibility proof. Default backend and separate executor Dockerfiles remain review artifacts.
+- Scoped read-only isolation inventory, cached-image/daemon preflight and HTTPS/auth/storage checker implemented. Checker onlyGET, no inference/task/service mutation; actual local self-signed certificate rejected before credentials sent. Complete remote acceptance remains separate.
+
+### Exact current verification
+
+- Python HTTP profile: **268 discovered,264 passed,0 failed/errors,4 skipped,59.754s**.
+- Default profile with authorised local sockets: **268 discovered,213 passed,0 failed/errors,55 skipped,22.517s**.
+- Full skips:3 optional disabled gateway dependency,1 Linux/proc observation inapplicable on Mac. Default skips51 additional opt-in HTTP tests. Recovery cryptography available; recovery tests executed, not skipped. No test removed/weakened.
+- Frontend TypeScript/Vite production build passed1.02s;7 Vitest passed;3 Rust passed. Desktop source unchanged; no new native bundle/UI proof claimed. Prior optimized app/native UI proof retained historically.
+- Real installed Qwen worker workflow **19/19 passed,46418ms**. Actual patch/test/completion/restart plus durable Mac journal restart/refused completed-ID replay. Synthetic only, no private repo/model download; test backend/worker exited.
+- Encrypted synthetic recovery drill **6/6**,9ms checkpoint/10ms restore for a tiny warm local fixture: Git/history/source/DB/RPO checks and explicit preservation query. Not JARVIS RTO. Unit recovery10, isolation/supervisor13, worker inference20 + hardening11, storage5, metadata4 and acceptance3 are subsets of full suite.
+- Python compile, JS syntax, shell syntax, JSON/plist/static constraints and Git diff whitespace passed. Metadata/CDN resolution originally failed closed on307; added exact Docker CDN allowlist with no auth-header forwarding, digest verification succeeded. Initial recovery tests had8 fixture setup errors (missing ledger round_id); fixed fixture then10 passed. Preserve failure receipts separately.
+
+### SSH and actual JARVIS evidence
+
+Only local SSH metadata/agent inspection occurred: dedicated key exists owner0600, public file present, config absent, known_hosts0600, agent reachable but **no identities loaded**. Existing passphrase-protected identity cannot sign in BatchMode without an interactive unlock. No private key read, passphrase request, keychain/passwordless storage, agent/config modification or new identity.
+
+Automatic approval review **rejected** the proposed additional public-key-only diagnostic because no access change was documented since earlier failures. Command never executed; do not bypass via another tool/remote shell or retry unchanged. A pending asynchronous question requests that exact diagnostic approval. A real agent unlock/access change permits renewed authorised read-only inspection after confirming it. No remote command, fresh kernel/runtime/storage/Serve/certificate/policy fact or target acceptance obtained in Mission1B. User-provided historical inventory remains historical.
+
+### Next action and deployment gates
+
+Read `docs/THREAT_MODEL.md`, `docs/ISOLATION.md`, `docs/RECOVERY.md`, `DEPLOYMENT.md`, `docs/API.md` and the private queue. First obtain a real access change/explicit blocked-probe decision, then inspect only authorised metadata. Do not guess identity, cached image ID, policy relationships or free space.
+
+Actual Linux cgroup/LSM/userns/runtime proof, bounded image build/size/provenance, full family-aware ACL/current device policy, HTTPS certificate, source-device rejection, remote model/native stream/stop/retry/restart, target recovery and existing service health remain unverified. The complete policy proposal cannot be finalised without its current policy/device/family/admin facts.
+
+Approve exact dedicated layout/ownership, bounded image download/build, API service, Serve/full ACL changes, persistent Mac worker/state/logs and optional recovery dependencies/key escrow/schedule separately. Never change existing Docker/Tailscale to make the prototype work, never enable production coding without actual containment + separate narrow broker integration, never reset replay journals, never delete backups automatically. Before exceeding64MiB recovery scope, approve/test vetted streaming encrypted backup tooling. Overall75GB/200GB reserve and executor/rootless overhead need measured review; main DB cap is not whole-volume quota.
+
+Mission1 remains **PARTIAL**. Local engineering/review artifacts are ready; production/security certification is not. Read-only access is already authorised but currently unavailable/review-blocked; no need to ask routine architectural questions. Safe future work depends on these facts for the correct runtime/integration choice. No automatic GitHub push or deployment.
+
+Deliverables under current chat outputs: MISSION_1B_REPORT.md, MISSION_1B_ARTIFACTS.json, current source archive, AFK_APPROVAL_QUEUE.md, PRIVATE_DEPLOYMENT_NOTES.md, MISSION_1B_SSH_LOCAL_INSPECTION.json, MISSION_1B_RECOVERY_VERIFIED.json, mission-1b-live-worker/evidence.json and mission-1b-evidence logs. Old outputs/AFK artifacts retained. See final local report/Git log for exact new commit tip; earlier checkpoint narrative below is historical.
+
 Current as of 2026-11-07, Asia/Kolkata. Continue the existing checkout; do not recreate it. Latest AFK autonomy instructions permit ordinary local code, tests, synthetic fixtures, native builds, documentation and local commits. Queue infrastructure approvals and continue independent work. No automatic deployment.
 
 ## Repository and preservation

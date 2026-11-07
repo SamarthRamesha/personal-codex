@@ -45,3 +45,11 @@ The Mac process polls only the explicit private HTTPS backend and a fixed loopba
 Configure an exact `PERSONAL_CODEX_PUBLIC_ORIGIN=https://host.tailnet.ts.net` only with owner authentication, HTTP loopback listener, disabled repository execution and explicit project roots. Forwarded metadata is accepted only from loopback with exact Host/X-Forwarded-Host and HTTPS scheme. Duplicate security/proxy headers, cross-site origins and standard Forwarded are rejected. Forwarded identity does not authenticate requests. Direct loopback diagnostics remain HTTP. Local processes remain in the trust boundary; this is not a cryptographic proxy identity check.
 
 Native `api_stream` carries a stream ID; scoped `cancel_stream` prevents stale cleanup from cancelling a successor. Both browser and native SSE parsers cap frames at 64 KiB and release transport/listeners on abort or malformed frames. Native HTTPS verification has no insecure bypass.
+
+## Mission 1B additions
+
+`POST /api/inference/reload-credential` is owner-only with exactly `{confirm: true}`. It reads only the configured private worker-token file, rejects missing/unsafe/same-owner credentials, treats unchanged token as a no-op, and atomically interrupts queued/running jobs/clears leases/presence before replacing active authority. Worker routes recheck current token after body read under the rotation lock. Never send replacement token values over this endpoint. Existing completed history remains; no inference replay.
+
+Production mutation admission may return **503** before creating state when measured headroom/reserve is insufficient or inventory incomplete. Reads/auth/cancel/stop/heartbeat/credential reload remain available. `/api/ready` adds write-admission state; diagnostics reports admission/cache/margin/DB cap and explicitly `hard_filesystem_quota: false`. This does not enforce a volume quota.
+
+Worker CLI requires a private durable state directory; every accepted UUID is claimed before inference and never replayed. Sequence is 1–4096, empty nonterminal chunks refused, future-dated presence offline until fresh report, consumer lifetime additionally uses monotonic time. Journal exhaustion is a fail-closed condition, never an automatic tombstone reset. No executor API or new production coding mode was introduced.
