@@ -149,3 +149,45 @@ class WorkerHttpTests(unittest.TestCase):
     def test_mac_provider_cannot_smuggle_endpoint_or_cloud_flag(self):
         for extra in ({'endpoint':'http://evil.example'},{'cloud_allowed':True},{'secret_ref':'CLOUD_KEY'}):
             self.assertEqual(self.call('/api/providers',{'kind':'mac-worker','model':'fixture',**extra})[0],400)
+
+    def test_readiness_requires_all_enabled_worker_models_to_be_installed(self):
+        with patch.dict(os.environ,{'PERSONAL_CODEX_RESERVE_GB':'1'}):
+            self.call('/api/providers',{'kind':'mac-worker','model':'fixture'})
+            self.call('/api/worker/poll',{'models':['other']},True)
+            status,body=self.call('/api/ready',method='GET')
+            self.assertEqual(status,503);self.assertFalse(body['checks']['inference_worker'])
+            self.call('/api/worker/poll',{'models':['fixture']},True)
+            status,body=self.call('/api/ready',method='GET')
+            self.assertEqual(status,200);self.assertTrue(body['checks']['inference_worker'])
+
+    def test_worker_client_accepts_bounded_json_escaped_unicode_prompt(self):
+        _,provider=self.call('/api/providers',{'kind':'mac-worker','model':'fixture'})
+        self.call('/api/worker/poll',{'models':['fixture']},True)
+        prompt='😀'*24000
+        broker=inference.Broker(server.STORE);jid=broker.submit(provider['id'],'fixture',prompt)
+        client=mac_worker.Client(f'http://127.0.0.1:{self.http.server_port}',self.worker_token)
+        job=client.request('/api/worker/poll',{'models':['fixture']})['job']
+        self.assertEqual(job['prompt'],prompt);self.assertEqual(job['id'],jid)
+        broker.cancel(jid)
+
+    def test_worker_control_total_deadline_bounds_slow_drip_responses(self):
+        from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+        finished=threading.Event()
+        class Slow(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get('Content-Length',0)))
+                self.send_response(200);self.send_header('Content-Length','100');self.end_headers()
+                try:
+                    for _ in range(100):
+                        self.wfile.write(b' ');self.wfile.flush()
+                        if finished.wait(.05):return
+                except OSError:pass
+            def log_message(self,*_):pass
+        http=ThreadingHTTPServer(('127.0.0.1',0),Slow)
+        thread=threading.Thread(target=http.serve_forever,daemon=True);thread.start()
+        try:
+            client=mac_worker.Client(f'http://127.0.0.1:{http.server_port}',self.worker_token,timeout=.25)
+            started=time.monotonic()
+            with self.assertRaises(mac_worker.WorkerError):client.request('/api/worker/poll',{'models':[]})
+            self.assertLess(time.monotonic()-started,1.2)
+        finally:finished.set();http.shutdown();http.server_close();thread.join()

@@ -1,5 +1,11 @@
 # Project status
 
+## AFK final local result — 2026-11-07
+
+Locally implemented and verified: durable outbound-only Mac worker, private Serve auth boundary/readiness, bounded runtime/shutdown, stalled-stream cancellation, native contract/capabilities, authenticated browser access and maintenance safeguards. Real Qwen worker coding proof passed 17/17 checks in 82.764 s; rebuilt native Gemma streaming/stop and browser owner sessions manually verified. Prepared nonroot bounded deployment/preflight/ACL/recovery templates; no Docker/server execution. Final regression: 219 Python discovered, HTTP 215 passed/4 skipped, default 171 passed/48 skipped, zero failures; seven Vitest and three Rust passed, optimized builds and syntax checks passed. Exact timing/evidence is in NEXT_SESSION_PROMPT.md.
+
+Mission 1 remains **PARTIAL**. No JARVIS installation or networking change; unattended SSH authentication failed before remote commands. Initial deployment disables code proposal/patch/command/Git/worktree actions until OS containment is approved. Remote HTTPS/ACL/resources/storage freshness, hard quota, automatic backup schedule and server acceptance remain unverified. Local AFK changes are committed only, not pushed. Preserve the untracked diagnostic without reading/staging it. Earlier checkpoints below are historical.
+
 ## 2026-11-07 13:14 IST — AFK local backend/worker milestone
 
 Implemented private Serve contract and outbound-only Mac inference jobs, scoped authentication, leases, ordered chunks, cancellation/restart recovery, readiness, instance locking, shutdown, safe deployment execution gating and native stream/capability changes. Last full suite 205 discovered (201 passed, 4 skipped); TS/Vite and 7 frontend tests passed. Real Qwen worker-driven coding/restart proof passed 17 checks in 82.764 s on disposable Mac loopback fixtures. Remote JARVIS deployment remains unapproved; unattended dedicated-key SSH rejected. Deployment artifacts, browser auth and final QA are in progress. AFK contract supersedes step-by-step waiting; continue safe local work.

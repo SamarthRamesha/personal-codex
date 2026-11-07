@@ -201,6 +201,17 @@ def safe_project_path(value: str) -> Path:
     if not p.exists() or not p.is_dir(): raise ValueError("Project path must be an existing directory")
     return p
 
+def safe_workspace_path(workspace: dict) -> Path:
+    root=Path(workspace['path']).resolve()
+    if os.getenv('PERSONAL_CODEX_PROJECT_ROOTS'):
+        base=(DATA/'workspaces').resolve()
+        if base not in root.parents:raise ValueError('Stored workspace is outside the dedicated workspace root')
+        project=STORE.one('SELECT path FROM projects WHERE id=?',(workspace.get('project_id'),))
+        if not project:raise ValueError('Workspace project is unavailable')
+        safe_project_path(project['path'])
+    return root
+
+
 def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: str, cloud_allowed: bool) -> dict:
     """Validate metadata only; this function never reads an environment secret or contacts a provider."""
     if kind not in PROVIDER_KINDS: raise ValueError("Unsupported provider kind")
@@ -314,7 +325,7 @@ def provider_row(provider_id):
 
 def build_agent_prompt(task: dict, workspace: dict, extra: str = "") -> str:
     """Deterministic agent instruction so an approval binds one exact prompt."""
-    listing=[entry["path"] for entry in tools.list_files(Path(workspace["path"]), ".", 1, 60)["entries"] if entry["path"] != ".git"]
+    listing=[entry["path"] for entry in tools.list_files(safe_workspace_path(workspace), ".", 1, 60)["entries"] if entry["path"] != ".git"]
     prompt=tools.agent_instruction(listing)+f"\nTask: {str(task['prompt'])[:2000]}"
     if extra: prompt+=f"\nExtra instructions: {extra[:2000]}"
     return prompt
@@ -350,7 +361,7 @@ def round_history_text(rounds: list) -> str:
 
 def build_round_prompt(task: dict, workspace: dict, extra: str = "", rounds: list = (), context_text: str = "") -> str:
     """Deterministic iterative instruction; history and selected context are part of the approved prompt bytes."""
-    listing = [entry["path"] for entry in tools.list_files(Path(workspace["path"]), ".", 1, 60)["entries"] if entry["path"] != ".git"]
+    listing = [entry["path"] for entry in tools.list_files(safe_workspace_path(workspace), ".", 1, 60)["entries"] if entry["path"] != ".git"]
     prompt = tools.agent_instruction(listing)
     if context_text:
         prompt += "\n\n" + context_text
@@ -636,6 +647,7 @@ def visible_files(root: Path, cap=160):
 
 
 def repository_summary(root: Path) -> dict:
+    if os.getenv("PERSONAL_CODEX_PROJECT_ROOTS"):root=safe_project_path(str(root))
     files = visible_files(root)
     manifests = [x for x in files if Path(x).name in {"package.json","pyproject.toml","Cargo.toml","go.mod","requirements.txt","README.md"}]
     git = (root / ".git").exists()
@@ -905,8 +917,8 @@ class App(SimpleHTTPRequestHandler):
                 disk=maintenance.diagnostics(DATA)['storage']
                 checks['storage']=disk['measurement_complete'] and disk['free_bytes']>=disk['reserve_bytes'] and disk['managed_bytes']<disk['budget_bytes']
                 worker=inference.Broker(STORE).catalog()
-                needs_worker=bool(STORE.one("SELECT id FROM providers WHERE kind=? AND enabled=1 LIMIT 1",(inference.KIND,)))
-                checks['inference_worker']=not needs_worker or (WORKER_AUTH.enabled and worker['online'])
+                required_models={row["model"] for row in STORE.rows("SELECT model FROM providers WHERE kind=? AND enabled=1",(inference.KIND,))}
+                checks['inference_worker']=not required_models or (WORKER_AUTH.enabled and worker['online'] and required_models.issubset(worker['models']))
             except (ValueError,OSError,sqlite3.Error):pass
             ready=all(checks.values())
             return self.json({"ready":ready,"checks":checks,"authenticated":AUTH.enabled,"api_version":1,
@@ -981,7 +993,7 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/tasks/") and route.endswith("/workspace-recovery"):
             tid=route.split("/")[3]; workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=?",(tid,))
             if not workspace: return self.json({"error":"workspace not found"},404)
-            present=Path(workspace["path"]).is_dir()
+            present=safe_workspace_path(workspace).is_dir()
             clean=workspace_clean(workspace["path"]) if present else None
             return self.json({**workspace,"present":present,"clean":clean,"branch_preserved":True})
         if route.startswith("/api/tasks/") and route.endswith("/merge-preview"):
@@ -1023,7 +1035,7 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/projects/") and route.endswith(("/files", "/file")):
             pid=route.split("/")[3]; project=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             if not project: return self.json({"error":"project not found"},404)
-            root=Path(project["path"]); inventory=context.walk(root)
+            root=safe_project_path(project["path"]); inventory=context.walk(root)
             if route.endswith("/files"): return self.json({"files":inventory,"limit":context.MAX_WALK_FILES})
             name=(parse_qs(urlparse(self.path).query).get("path") or [""])[0]
             if name not in inventory: return self.json({"error":"file is not in the permitted project inventory"},403)
@@ -1047,7 +1059,7 @@ class App(SimpleHTTPRequestHandler):
             query=(params.get("q") or [""])[0]
             try: limit=int((params.get("limit") or ["25"])[0])
             except ValueError: return self.json({"error":"limit must be an integer"},400)
-            try: result=context.search(project["path"], query, limit)
+            try: result=context.search(str(safe_project_path(project["path"])), query, limit)
             except ValueError as error: return self.json({"error":str(error)},400)
             return self.json({"project_id":pid, **result})
         if route.startswith("/api/tasks/") and route.endswith("/events/stream"):
@@ -1155,7 +1167,8 @@ class App(SimpleHTTPRequestHandler):
             route=self.route(); data=self.body()
             if (os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")=='disabled' and route.startswith('/api/tasks/')
                     and route.endswith(('/workspace-request','/workspace','/workspace-release-request','/workspace-release',
-                                        '/execution-request','/execute','/merge-request','/merge','/branch-delete-request','/branch-delete'))):
+                                        '/execution-request','/execute','/agent/request','/agent/plan','/agent/execute',
+                                        '/agent/round/request','/agent/round/plan','/agent/round/execute','/merge-request','/merge','/branch-delete-request','/branch-delete'))):
                 raise ExecutionDisabledError('Repository operations are disabled for this deployment; no approval/execution was created')
             if route.startswith("/api/worker/"):
                 broker=inference.Broker(STORE)
@@ -1393,7 +1406,7 @@ class App(SimpleHTTPRequestHandler):
                 rounds=decoded_rounds(tid)
                 changed=[path for entry in rounds for path in ((entry.get("test_result") or {}).get("changed_files") or [])]
                 failed=[name for entry in rounds for name in ((entry.get("test_result") or {}).get("failed_tests") or [])]
-                selection=context.select(Path(workspace["path"]), str(task["prompt"]), str(data.get("prompt") or ""),
+                selection=context.select(safe_workspace_path(workspace), str(task["prompt"]), str(data.get("prompt") or ""),
                                          changed_files=changed, failed_tests=failed, max_bytes=MAX_CONTEXT_BYTES)
                 memory=memory_lines(task["project_id"], str(task["prompt"]), [snippet["path"] for snippet in selection["files"]])
                 context_text=context.prompt_block(selection, memory)
@@ -1447,7 +1460,7 @@ class App(SimpleHTTPRequestHandler):
                     return self.json({"error":"task was cancelled during planning; its response was retained but cannot execute"},409)
                 parsed=tools.parse_round_proposal(result["text"])
                 if parsed["status"]=="continue":
-                    operations=tools.bind_hashes(Path(workspace["path"]), parsed["operations"])
+                    operations=tools.bind_hashes(safe_workspace_path(workspace), parsed["operations"])
                     digest=tools.proposal_digest(tid, workspace["branch"], operations)
                     if STORE.one("SELECT id FROM rounds WHERE task_id=? AND proposal_digest=? AND status!='cancelled'",(tid,digest)):
                         task_event(tid,"security","warning",f"Round {number} repeated an already-seen proposal; it was refused.")
@@ -1516,8 +1529,8 @@ class App(SimpleHTTPRequestHandler):
                 def stop_check():
                     row=cancellation_row(tid)
                     return bool(row and row["round_id"] in (None,round_row["id"]))
-                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=stop_check), stop_check=stop_check, on_event=on_event)
-                feedback=tools.round_feedback(Path(workspace["path"]), operations, outcome["operations"], redact=redacted)
+                outcome=tools.execute_operations(safe_workspace_path(workspace), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=stop_check), stop_check=stop_check, on_event=on_event)
+                feedback=tools.round_feedback(safe_workspace_path(workspace), operations, outcome["operations"], redact=redacted)
                 add_usage(tid, test_output_bytes=len(str(feedback.get("test_output") or "").encode("utf-8")))
                 hard_failures=[r for r in outcome["operations"] if r["status"]=="error" and r["tool"]!="run_tests"]
                 cancel_row=cancellation_row(tid)
@@ -1597,7 +1610,7 @@ class App(SimpleHTTPRequestHandler):
                 digest_prompt=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
                 STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest_prompt,result["text"],now()))
                 parsed=tools.parse_proposal(result["text"])
-                operations=tools.bind_hashes(Path(workspace["path"]), parsed["operations"])
+                operations=tools.bind_hashes(safe_workspace_path(workspace), parsed["operations"])
                 digest=tools.proposal_digest(tid, workspace["branch"], operations); proposal_id=uid()
                 STORE.write("INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?,?,?)",(proposal_id,tid,workspace["branch"],workspace["path"],parsed["summary"],json.dumps(operations),digest,"pending",None,now()))
                 approval_detail_value=approval_detail("agent-proposal", tid, workspace=workspace["branch"], workspace_path=workspace["path"], proposal=digest)
@@ -1619,7 +1632,7 @@ class App(SimpleHTTPRequestHandler):
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],detail))
                 if not permitted: return self.json({"error":"approved agent proposal for this exact workspace and digest required"},403)
                 if STORE.claim_execution(proposal["id"])!="ok": return self.json({"error":"Proposal is already being executed"},409)
-                outcome=tools.execute_operations(Path(workspace["path"]), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=lambda: STOPPING.is_set() or bool(cancellation_row(tid))))
+                outcome=tools.execute_operations(safe_workspace_path(workspace), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=lambda: STOPPING.is_set() or bool(cancellation_row(tid))))
                 final="executed" if outcome["ok"] else "failed"
                 STORE.write("UPDATE proposals SET status=?, results=? WHERE id=?",(final,json.dumps(outcome["operations"]),proposal["id"]))
                 for entry in outcome["operations"]:

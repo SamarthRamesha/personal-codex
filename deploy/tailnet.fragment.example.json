@@ -1,0 +1,15 @@
+{
+  "hosts": {
+    "pc-mac-example": "100.100.100.101",
+    "pc-backend-example": "100.100.100.102",
+    "pc-other-example": "100.100.100.103"
+  },
+  "grants": [
+    {"src": ["pc-mac-example"], "dst": ["pc-backend-example"], "ip": ["tcp:443", "tcp:22"]}
+  ],
+  "tests": [
+    {"src": "100.100.100.101", "accept": ["pc-backend-example:443", "pc-backend-example:22"], "deny": ["pc-backend-example:8787"]},
+    {"src": "100.100.100.102", "deny": ["pc-mac-example:11434"]},
+    {"src": "100.100.100.103", "deny": ["pc-backend-example:443", "pc-backend-example:8787"]}
+  ]
+}

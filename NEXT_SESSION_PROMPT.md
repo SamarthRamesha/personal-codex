@@ -1,139 +1,81 @@
-# Next-session implementation handoff
+# Personal Codex: current implementation handoff
 
-Continue this existing project from the actual repository state. Do not recreate the project or replace functioning components. Read this prompt and the current status/acceptance/threat documents first; verify every claim against code and tests. Preserve user changes and project history. This handoff is current as of 2026-11-07 (Asia/Kolkata).
+Current as of 2026-11-07, Asia/Kolkata. Continue the existing checkout; do not recreate it. Latest AFK autonomy instructions permit ordinary local code, tests, synthetic fixtures, native builds, documentation and local commits. Queue infrastructure approvals and continue independent work. No automatic deployment.
 
-## Authoritative AFK implementation checkpoint — 2026-11-07 13:14 IST
+## Repository and preservation
 
-**The latest AFK autonomy contract supersedes the earlier one-command/wait workflow.** Continue ordinary local code, tests, fixtures, native work, docs and local commits independently. Do not interrupt the absent user for routine decisions. Record approval-dependent work and keep implementing independent components. No JARVIS install, directory creation, persistent service/container/Serve/ACL/firewall/SSH change, Mac network exposure or model download is authorized. No private keys/passphrases/tokens in logs or Git; no diagnostic-file access. Local synthetic loopback tests and installed models are explicitly authorized.
+- Repository: `https://github.com/SamarthRamesha/personal-codex`.
+- Checkout: `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex`.
+- Branch: `personal-codex/stabilization`; historical published tip `4a3ea1d91e70e392faf342ea03b335d7f207169d`.
+- AFK core milestone `9109eb1`: durable outbound worker, private proxy/runtime and native contract fixes. Further local preparation/handoff commits follow; use `git log -3` for exact current tip. No AFK changes pushed.
+- Preserve all local work. Never reset, clean, rebase, force-push, delete recovery data or overwrite unexpected edits.
+- Pre-existing untracked `personal-codex-diagnostic.txt` is excluded: never read, stage, delete or publish it. Use explicit staging paths, never `git add .`.
+- Private deployment targets, SSH identity metadata and approval queue are outside Git under current chat outputs. Do not copy them into public docs/source archives.
 
-Intended architecture remains Mac inference/client → private Serve HTTPS → authenticated JARVIS localhost API. Implemented since 4a3ea1d: exact trusted-loopback Serve policy/secure cookies without bypassing auth; durable scoped outbound Mac inference worker (no inbound listener/arbitrary forwarding); lease/sequence/idempotency/timeout/cancellation/non-replay recovery; model allowlists/location/health; readiness; one-instance data lock and lazy DB startup; bounded service clients; SIGTERM shutdown of silent chats with persisted partial status; private new DB permissions; explicit project roots; disabled repository subprocess/Git operations for Serve deployment pending OS containment; native per-stream cancellation, bounded SSE frames, deployment capabilities and Mac worker selection.
+## Current result
 
-Last full HTTP suite: 205 discovered, 201 passed, 4 skipped, 51.508 s; prior 199 run exposed two silent-socket cancellation failures, fixed and targeted tests passed. Runtime 6 passed (one fixture expectation corrected for macOS /var→/private/var normalization). Frontend: TS/Vite build and 7 tests passed. Rust stream-policy tests expanded from 1 to 3; see latest execution log for result. Additional final regression, deployment prep, browser login, native packaging/QA and documentation remain in progress. Do not claim them complete from this checkpoint.
+Mission 1 is **PARTIAL**. The single-owner native/local backend coding slice works, including real local-model patch/tests/completion. The intended production architecture is Mac native UI + loopback Ollama inference, JARVIS API/persistence/orchestration and private existing Tailscale Serve HTTPS. No JARVIS app directory, container, service, Serve/ACL/firewall/SSH change, model download or Mac inbound listener has been created.
 
-Real installed Qwen 14B via the new authenticated worker HTTP queue: 17 checks passed, 82,764 ms total. Chat, provider/proposal approval, worktree patch, actual test execution, model completion, worker stop, ephemeral job-payload clearing and restart persistence all passed. Control plane and worker were disposable loopback fixtures on the Mac, not actual JARVIS. Failed first attempt retained: the reviewer refused a model-selected tests-directory command against the prior root-level fixture. The conventional tests/ fixture now accepts only known equivalent unittest commands and explicitly checks 'Ran 1 test'; tool/schema/file restrictions were not weakened.
+User reports interactive dedicated-key SSH/MagicDNS success and supplied server inventory. This unattended session's strict dedicated-key BatchMode SSH failed authentication (`publickey,password`); no remote command ran. Do not reinterpret this as a fresh server inspection. Do not retry unchanged credentials, request secrets, change agents/keys/SSH or use sudo workarounds. Resume read-only inspection only when access changes.
 
-Unattended read-only SSH with the supplied dedicated identity was attempted with BatchMode, strict existing host trust and no host-key updates; rejected (publickey,password). This does not invalidate the user's earlier successful interactive test; unlocked credentials are unavailable in this unattended session. No server commands executed, privilege workaround, key reinstall or configuration change occurred. User's latest evidence now also reports successful Mac MagicDNS lookup; treat DNS warning as non-blocking absent a fresh functional failure. No DNS repair.
+## Implemented architecture
 
-**Current next work:** finish deployment/preflight/recovery/API docs and exact approval queue; browser cookie login and native contract/QA; remaining focused security tests, complete regression; preserve local commits and refresh this handoff. Do not stop merely because real deployment is approval/credential blocked. Do not deploy. Exact private target metadata remains outside Git in PRIVATE_DEPLOYMENT_NOTES.md.
+- `app/server.py`: SQLite schema/additive migration/recovery, exact approvals and operation ledger, chats/projects/tasks/rounds/context/memory/files/diffs/tests, auth/readiness/diagnostics/snapshot APIs. Lazy Store import avoids incidental DB recovery; process startup locks data root first.
+- `app/security.py`: owner-only regular token files, bearer/hashed expiring cookie sessions, login throttling, Host/Origin/Sec-Fetch checks, duplicate header rejection. Explicit exact private Serve origin trusts forwarded Host/HTTPS only from HTTP loopback; identity does not authorize requests. Direct authenticated private TLS listener retained.
+- `app/runtime.py`: private single-instance flock, 32-client cap, 10-second client sockets/deferred TLS handshake and graceful SIGINT/SIGTERM shutdown/drain. Interrupted operations/generations are never automatically replayed.
+- `app/inference.py`: durable outbound-worker jobs; max four active, one running, 15-second leases, 30-second worker presence, 100,000-byte prompts, 200,000-byte responses, ordered/idempotent chunks, bounded deadlines, cancellation, startup interruption, 10,000-row retained-metadata cap. No automatic audit deletion; exhausted retention needs reviewed archival. Ephemeral job payload clears after consumption/recovery; normal chat/invocation history persists. Not secure erasure of SQLite pages/backups.
+- `app/mac_worker.py` / `scripts/mac_worker.py`: outbound authenticated private HTTPS polling; fixed loopback Ollama, installed explicit allowlist, closed job schema/digests, no filesystem/shell/download/arbitrary proxy capability. Distinct worker token has no owner authority. Control loss cancels inference. Rotating 0600 logs, optional existing 0700 directory, generic messages only. No inference retry/cloud fallback. JSON escaping accounted under a bounded control-response cap and total deadline.
+- `app/providers.py`: local Ollama/OpenAI-compatible adapters/discovery, bounded real streaming; cancellation/total-deadline guard shuts down detached HTTP/1.0 sockets too. Native provider tool-calling protocol is not implemented; strict model-proposed JSON tools are the coding interface. Optional Respan gateway remains disabled by default and unused.
+- `app/conversations.py`: ordered persisted chunks/resume cursor, bounded recent context, one generation per chat/two total, retry/stop/search/history, worker transport seam and shutdown drain. No cloud chat/self-created consent.
+- `app/context.py` / `app/tools.py`: bounded ignore/secret/symlink-pruned context/search, hash-bound exact patches and approved tests/diffs. Worktrees/command allowlists are not an OS sandbox.
+- `app/maintenance.py`: bounded own-data inventory; errors mark measurement incomplete; private verified SQLite snapshots, one at a time, seven retained then refusal, SHA/integrity/time/capacity checks and restore-to-new-file only. Snapshots do not back up repositories/worktrees/secrets/models/configuration.
+- Private Serve profile **requires execution disabled and explicit project roots**. Code proposal generation, patch application, Git, worktrees and interpreter routes are blocked before approvals/tools. Persisted project paths are rechecked on file/search/summary access; persisted workspace reads must remain in the dedicated data workspace root and an allowed project. Chat, high-level task planning and persisted review remain available.
+- Native `desktop/`: Tauri/React/TypeScript with Rust in-memory credentials and verified HTTPS, bounded API/SSE, scoped stream IDs/cancellation, encoded-path escape rejection, truthful MAC/BACKEND model status and deployment capability gates. File pane read-only; approved command runner, no full editor or PTY.
+- Browser dashboard: owner cookie sign-in/sign-out, password input cleared, no browser credential storage, restricted controls follow server capability. Static CSP/local assets retained.
+- `deploy/`: Docker/Compose/environment/LaunchAgent/ACL **review templates only**, source build-context allowlist; read-only `scripts/deployment_preflight.py`. No Docker on Mac: static property/preflight tests are not actual container integration.
 
-## Objective and current result
+## Verification
 
-Build Personal Codex into a private, local-first autonomous coding environment: native Mac UI and primary local inference on the Mac, with ZimaOS backend/persistence/orchestration accessed through existing private Tailscale Serve HTTPS, persistent chat/tasks/memory, approval-controlled coding/worktrees/tests/diffs and robust recovery. No ChatGPT/Codex/Freebuff/hosted model is a runtime dependency. No training on private data, silent cloud fallback, telemetry, public service or unrestricted model shell/filesystem access is permitted.
+- Final HTTP-enabled Python suite: **219 discovered, 215 executed/passed, 0 failed/errors, 4 skipped**, 53.607 s.
+- Final default Python suite with authorized local-socket access: **219 discovered, 171 executed/passed, 0 failed/errors, 48 skipped**, 20.316 s.
+- Seven Vitest tests passed (two files); three Rust tests passed; TypeScript/Vite production build and optimized Tauri app build passed (Rust release compilation 28.03 s, bundle about 12.91 MiB).
+- Python compile, browser JS syntax, prepared JSON/plist parse, dashboard static contracts and Git diff whitespace checks passed. Strict deep codesign verification passed after ad-hoc signing the new output bundle.
+- Four full-profile skips: three optional disabled Respan dependency tests and one Linux /proc observation test on macOS. Default skips 44 additional opt-in local HTTP tests. No tests removed or weakened.
+- Final targeted changed-policy tests: eight proxy/profile tests passed; worker tests 17 passed; six deployment/rotation tests passed. These counts are subsets of the complete suite, not additional independent coverage.
 
-Mission 1 is **PARTIAL**, not complete. The native client and real Mac local-model workflow work. The user's later deployment directive reports successful dedicated-key SSH and completed server hardware inventory; the earlier SSH-rejection blocker is superseded. Deployment remains unapproved, with DNS/service/ACL/storage freshness checks and application proxy/inference/isolation readiness outstanding. Mission 2 is out of scope.
+Real installed `qwen2.5-coder:14b`, outbound-worker HTTP bridge: **17/17 checks passed in 82,764 ms**. Synthetic authenticated chat → scoped worktree → approved hash-bound patch → actual `Ran 1 test` / exit 0 → evidence-checked completion → restart persistence, no invocation replay or private code. First fixture attempt failed safely because the generated test command mismatched the previous layout; failed evidence is retained separately, fixture corrected and rerun passed. Earlier direct-loopback Qwen evidence remains historical.
 
-## Repository and Git
+Rebuilt optimized native app manually verified via CUA against a disposable authenticated backend + real installed Gemma worker: invalid auth 401, valid owner, actual installed model MAC location, real streamed response (about 2.4 s), actual Stop generation with stopped/display-only persisted partial text, execution controls disabled and disconnect clears prior state. Browser invalid/valid owner login, rendered state, disabled worktree/command/Git controls and sign-out back to login were manually verified. Synthetic DB shows worker statuses complete/cancelled and no retained job payload. This is manual local UI evidence, not JARVIS HTTPS or automated native integration coverage. Transient capture failures recovered by reselecting app.
 
-- Official remote: `https://github.com/SamarthRamesha/personal-codex.git` (`origin`).
-- Actual checkout: `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex`.
-- Active branch: `personal-codex/stabilization`. Do not blindly switch to historical main.
-- Session began at `414e0cb`; remote stabilization had advanced to `12a24d59041af2c2a8b1023c40b55a63a660e8e6` (`test: isolate unreachable provider discovery from host state`). Fetched and fast-forwarded; main remained `3ab25b0`.
-- Latest implementation commit: `c5e34159faf5c88bcfc1163e37c0ddffffebacce` — `feat(desktop): add authenticated native coding workspace and recovery controls`. This handoff update is a following documentation checkpoint; run `git log -1` for its actual tip. The code milestone was committed with only the pre-existing diagnostic left untracked. Publication is verified separately after the checkpoint push.
-- The pre-existing untracked `personal-codex-diagnostic.txt` belongs to the user. Do not read, stage, delete or publish it.
-- Do not reset/clean/rebase/force-push, overwrite unexpected changes, merge important branches without authorization or publish private application data. Push completed safe milestones to the existing stabilization branch when authentication/state permit. Remote private host metadata is intentionally absent from Git.
+Failures fixed during AFK: two stalled-socket cancellation assertions, macOS resolved-path expectation, worker log recreation permissions, Unicode control-envelope sizing, disabled proposal/patch routes and persisted root revalidation. One default run inside restricted socket sandbox had 37 environmental errors and 44 skips; rerunning with authorized loopback access passed. Preserve logs; do not count that failed invocation as a successful run.
 
-## Architecture
+## Build and local environment
 
-- `app/server.py`: standard-library HTTP API, SQLite Store/schema/additive migrations, immutable digest approvals, projects/tasks/worktrees/Git merge recovery, provider/agent rounds, operation ledger, cancellation/budgets/context/memory, SSE, contained file APIs, connection/diagnostics/backup routes. Backend is authoritative; UI never authorizes itself.
-- `app/security.py`: owner-only regular token-file validation with no symlink following; bearer token and hashed in-memory cookie sessions (one-hour TTL, bounded sessions/login throttling); Host/Origin/Sec-Fetch checks; non-loopback binding requires an explicit Tailscale IP plus authentication and TLS. Loopback unauthenticated development mode remains explicit.
-- `app/conversations.py`: persistent conversations/messages/chunks; actual streamed tokens; atomic content/resume cursor; newest bounded history; at most one active answer per chat and two total chat generations; cloud chat disabled until separately reviewed consent exists; stop/error text is display-only.
-- `app/providers.py`: hardened Ollama and OpenAI-compatible transports/discovery, NDJSON/SSE terminal validation, timeout/size/redirect/proxy protections, redaction. Round streaming now defaults on (`PERSONAL_CODEX_STREAM_PROVIDER=1`). Native provider-tool handling is absent and capability metadata says so.
-- `app/gateway.py`: historical optional Respan integration, **disabled by default**. Runtime requires explicit `PERSONAL_CODEX_ENABLE_GATEWAY=1` and a separate `network` approval even though its first hop is local. No external gateway was used this session.
-- `app/tools.py`: closed list/read/hash-bound exact patch/approved test protocol, containment, bounded diff review; unmatched patches are now stale. Allowlisting/worktrees are **not** an OS sandbox.
-- `app/context.py`: deterministic bounded lexical/docs/symbol context and search, `.gitignore`/secret filtering; walks now prune ignored/generated directories rather than sorting an entire recursive tree.
-- `app/maintenance.py`: own-data-only usage/CPU/load diagnostics, free-reserve/quota-checked private SQLite snapshots, integrity/SHA verification, seven-snapshot refusal without deletion, 30-second snapshot budget, restore to new files only.
-- `desktop/`: Tauri 2 + React 19 + TypeScript + Vite client; Rust credential/HTTP bridge with verified HTTPS, private URL policy, redirect/proxy refusal, bounded responses/streams, no privileged plugins or updater. JS stores only backend URL, never token. Streaming resumes by persisted cursor with bounded retries; mutations are not retried automatically. Source icon is original SVG.
-- `web/`: existing dependency-free dashboard retained, including features without native parity. Cookie API exists but browser login UI is pending.
-- `PERSONAL_CODEX_DATA` selects a dedicated backend data root; defaults to repo `data/`, fully Git-ignored. SQLite default filename `personal_codex.db`.
-
-## Completed in this milestone
-
-Native Mac app with conversations/history/search, projects, actual local-provider/model discovery and selection, real Markdown/code streaming, copy/stop/retry, chat-to-task, safe file previews, task/proposal/operation/diff inspection, exact approval decisions, approved command execution, cancellation, round/test evidence, diagnostics and snapshot controls. File pane is read-only and terminal is an approved command runner; no general editor or PTY exists.
-
-Added application auth/private TLS listener policy, object/body/framing limits, browser origin/rebinding defenses and method/status-only HTTP logs. Removed chat's self-created cloud approvals, disabled external gateway by default, corrected unverified native-tool capabilities. Fixed atomic approval races, proposal/round claim rollback, cancellation arriving during provider planning, history truncation, duplicate chat sends, atomic stream cursors and stale diff presentation. Native disconnect clears credentials and prior backend selections/data; failed reconnection leaves no fallback connection.
-
-Verified database snapshot/restore, capacity/retention failures and symlink/corruption handling. No auto-deletion, model download, vector database or additional inference engine was added.
-
-## Exact files changed
-
-Application: `.gitignore`, `app/context.py`, `app/conversations.py`, `app/server.py`, `app/tools.py`, new `app/security.py`, `app/maintenance.py`.
-Scripts: `scripts/gateway_check.py`, new `inspect_host.sh`, `live_coding_check.py`, `private_backend.py`, `restore_database.py`.
-Tests: `tests/test_conversations.py`, `test_gateway.py`, `test_interaction.py`, `test_server.py`, new `test_security.py`, `test_maintenance.py`.
-Native: `desktop/package.json`, `package-lock.json`, `tsconfig.json`, `vite.config.ts`, `index.html`, `README.md`, `app-icon.svg`, `src/App.tsx`, `src/api.ts`, `src/api.test.ts`, `src/main.tsx`, `src/style.css`, `src-tauri/Cargo.toml`, `Cargo.lock`, `build.rs`, `tauri.conf.json`, `capabilities/default.json`, `src/main.rs`, generated Mac PNG/ICNS icon files. Build products/node_modules/toolchains are not tracked.
-Docs: `README.md`, `PROJECT_STATUS.md`, `TASKS.md`, `ARCHITECTURE.md`, `SECURITY.md`, `DEPLOYMENT.md`, `HANDOFF.md`, `CHANGELOG.md`, `DEVELOPMENT_LOG.md`, this handoff, new `docs/MISSION_1_ACCEPTANCE.md`, `docs/THREAT_MODEL.md`. Prior milestone documentation is preserved as historical sections.
-
-## Tests and genuine integration evidence
-
-- Reconciled baseline: 156 tests discovered, HTTP-enabled OK with 4 skips.
-- Final: `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` → 177 discovered, 173 executed, OK (skipped=4), 46.327 s.
-- Default: `python3 -m unittest discover -s tests -v` → 177 discovered, 143 executed, OK (skipped=34), 20.701 s.
-- Skips: optional gateway dependency absent (3), Linux `/proc` process test inapplicable on macOS (1); default additionally skips opt-in listeners (30). No test was removed/weakened.
-- `python3 -m py_compile app/*.py scripts/*.py`, `node --check web/app.js`, `git diff --check` passed.
-- `cd desktop && npm run build && npm test` → TypeScript/Vite production build and 2 Vitest SSE-framing tests passed.
-- `cd desktop/src-tauri && cargo test --locked -j 2` → 1 native URL-policy test passed. No lint suite is configured.
-- Debug and optimized native app bundles built. Optimized release build: 3m 28s, reported 12.92 MiB. Delivered app received an ad-hoc local signature; strict codesign verification passed. No Apple distribution identity or notarization.
-- Real installed `llama3.2:3b`: JSON probe 5,186 ms; streaming 2,031 ms / 23 chunks / 103 bytes; chat and patch/tests passed, but it repeated work instead of concluding. Record as PARTIAL.
-- Real installed `qwen2.5-coder:14b`: authenticated chat → approved fixture worktree → read/patch/test proposal → current digest-bound diff → separate approval → actual patch/test exit 0 → model completion accepted by evidence → conversation/task persistence after Store restart, all passed. Total 110,671 ms; proposal invocation 65,546 ms. One tiny synthetic fixture, not a model benchmark/server certification. No private repository was sent. No models were downloaded.
-- Actual native UI via CUA: launch, persisted history, a real streamed answer, stop, file preview, task/round/test/diff display, snapshot count 0→1, disconnect/reconnect, missing-token HTTP 401, valid synthetic owner auth, self-signed TLS refusal with no fallback, cleared prior data. Corrected issues found during review; optimized release launch inspected too. UI checks are manual evidence, not automated regression coverage.
-
-Full machine-local evidence/artifacts: `/Users/macbramesha/Documents/Codex/2026-11-07/files-pasted-by-the-user-personal/outputs`. Preserve the failed fixture evidence separately from the successful Qwen evidence. Do not publish databases, private deployment notes or diagnostics to GitHub.
-
-## Current services / hardware / access
-
-Mac: Apple Silicon arm64 (user-provided M3/16 GB); macOS 26.6; Python 3.13.9; Node 24.22.1; Command Line Tools installed. Cargo/Rust initially absent; user approved project dependencies and a project-isolated toolchain. Rust 1.99.1 installed at `/Users/macbramesha/Documents/Codex/2026-11-07/files-pasted-by-the-user-personal/work/toolchain/{cargo,rustup}` without shell/global changes. Add that Cargo bin directory to PATH and set CARGO_HOME/RUSTUP_HOME for builds; prefer two jobs. Mac free storage remained roughly 70–73 GB during work.
-
-Existing Ollama and Tailscale services were discovered and left untouched. Installed Mac models: llama3.2:3b (2.0 GB), qwen2.5-coder:14b (9.0 GB), gemma3:1b (815 MB). Their existence is not a recommendation to install them on ZimaOS. Tokens/s, peak RAM/pressure and model concurrency are unmeasured. No inference engine/model was installed.
-
-The user's later deployment directive reports working dedicated-key SSH, server inventory, direct Tailscale connectivity and enabled MagicDNS/HTTPS. This supersedes the previous session's failed default-identity SSH attempt. Targeted remote freshness checks are blocked in this unattended session by rejected dedicated-key authentication; do not prompt for credentials or stop independent implementation. Exact private targets and key path are kept outside Git. No server changes are authorized yet.
-
-Temporary UI fixture backends on 8787/8788/8789 were stopped. The delivered native app was left open, disconnected. No Personal Codex production service is installed or running. Existing Ollama/Tailscale services remain as found.
-
-## Remaining risks and blockers
-
-The previous SSH blocker is superseded by the user's successful dedicated-key evidence. Current readiness blockers are safe Serve proxy compatibility, a private JARVIS-to-Mac inference connection, execution isolation, targeted fresh infrastructure checks and explicit deployment approval. Mac inference is now the intended primary compute; do not install a server model. HTTPS enablement is reported but actual Serve certificate/hostname operation is not yet tested. Do not bypass certificate validation or substitute public exposure.
-
-Other incomplete items: OS-level filesystem/network sandboxing (approved tests still execute host-accessible code), multi-user/project-scoped auth, bounded global task scheduler, comprehensive quotas including external model storage, server supervision/scheduled backups, editor/PTY, attachments/audio/image/reasoning capabilities, native memory/Git parity, provider-native tools, retrieval benchmarks, signed/notarized distribution and update strategy. Optional features must not displace core remote acceptance. No training on private data.
-
-Resource policy: at least 200 GB free and an initial 75 GB total app/models/caches/logs/data allocation on the shared server. Code defaults to 200 GB reserve on Linux, 5 GB on Mac, and 75 GB owned-data budget. Diagnostics only count the dedicated data root; external Ollama weights must be measured and subtracted from the total allocation before deployment. No broad cleanup or family-backup changes, ever. Storage override values do not authorize exceeding the user's budget.
-
-## Exact next steps
-
-1. Continue safe local engineering autonomously under the AFK contract. Inspect current work/logs before repeating tests. Finish the work listed in the current AFK checkpoint.
-2. Prepare concrete deployment/service/storage/Serve/ACL changes and preflight/recovery commands for review; do not execute infrastructure changes or create the dedicated server directory. Preserve existing container and family data.
-3. Complete local real-model/worker/native and security evidence, including fresh relevant tests, then update status/API/deployment/threat/acceptance documentation and this handoff. Commit coherent local milestones without including the diagnostic/private notes.
-4. Queue exact required approvals and unresolved remote credential/current-policy/runtime/storage checks. The user reports working interactive SSH and DNS; no reinstall, DNS changes or global-policy replacement. Never ask for keys/passphrases.
-5. Only after explicit approval and working authorized access, perform reviewed infrastructure changes and verify remote acceptance. Mission 1 is still PARTIAL; no Mission 2 breadth or completion claim based on local proof.
-
-## Resume commands
-
-Historical local development reference only. Do not bulk-run these or start a service during infrastructure readiness; follow the current AFK authorization/approval contract above.
+Mac Python 3.13 / Node 24 available. Existing npm dependencies and previously approved isolated Rust 1.99.1 used, no server installation. For Rust/Tauri:
 
 ```sh
-cd /Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex
-git status --short --branch
-git log -8 --oneline
-git remote -v
-python3 -m unittest discover -s tests -v
-PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v
-python3 -m py_compile app/*.py scripts/*.py
-node --check web/app.js
-python3 app/server.py
-# Separate terminal:
-cd desktop
-npm ci
-npm run build
-npm test
-npm run tauri -- dev
+export CARGO_HOME=/Users/macbramesha/Documents/Codex/2026-11-07/files-pasted-by-the-user-personal/work/toolchain/cargo
+export RUSTUP_HOME=/Users/macbramesha/Documents/Codex/2026-11-07/files-pasted-by-the-user-personal/work/toolchain/rustup
+export PATH="$CARGO_HOME/bin:$PATH"
+# from desktop/: npm run build && npm test
+# cargo test --manifest-path src-tauri/Cargo.toml --locked -j 2
+# CARGO_BUILD_JOBS=2 npm run tauri -- build --bundles app
 ```
 
-`python3 scripts/live_coding_check.py --model <exact-installed-local-model> --output <new-owned-directory>` repeats only the synthetic local fixture. It intentionally refuses to approve arbitrary model edits/commands and retains failed evidence. Treat fixture auto-approvals as a constrained diagnostic, not human approval or remote acceptance.
+Tests must use disposable data, e.g. `PERSONAL_CODEX_DATA="$PWD/work/tests/data" PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v`. Both profiles include some pre-existing local-socket tests even without HTTP flag; use authorized loopback sandbox access. Default skips optional HTTP tests; full HTTP still skips optional gateway dependency (3) and Linux /proc child observation on macOS (1).
 
-## Security / permission constraints
+Deliverables/evidence live at `/Users/macbramesha/Documents/Codex/2026-11-07/files-pasted-by-the-user-personal/outputs`: AFK_REPORT.md, AFK_APPROVAL_QUEUE.md, PRIVATE_DEPLOYMENT_NOTES.md, AFK_ARTIFACTS.json, current source archive, `afk-native/Personal Codex.app` plus zip and UI_EVIDENCE.json, and real worker proof directories. New native app is ad-hoc signed/strictly verified, not notarized. Older app/source/evidence retained. Temporary fixture backend/worker on 8791 stopped; native app left disconnected; original Ollama/Tailscale unchanged.
 
-User allows ordinary reversible code/tests/docs and explicitly approved project dependency downloads plus the isolated Rust toolchain. User authorized **read-only SSH inspection only** on the home server. Do not install/modify server software/configuration, use new credentials, touch backups, change network/tailnet settings, exceed budgets, merge/delete important branches or perform destructive/irreversible actions without explicit approval. Do not repeatedly ask permission already granted. Keep tokens/passwords/keys and exact private deployment inventory out of logs/Git/publications. Registered project data stays in the user's controlled environment; only explicit reviewed network approvals authorize optional cloud task calls. Cloud chat and external gateway remain off by default.
+## Deployment gates and exact next action
 
-## PERMANENT CROSS-ACCOUNT CONTINUATION PROTOCOL
+Read `DEPLOYMENT.md`, `docs/API.md`, `docs/IMPLEMENTATION_MATRIX.md` and the private review queue. Initial candidate uses host-network nonroot Docker to reach the existing host-loopback Serve backend, read-only rootfs/cap drops/no-new-privileges/CPU-memory-PID/tmpfs/log bounds, no Docker socket/family mounts. Host networking shares host namespace and gives no egress isolation. Directory mounts refuse implicit creation. Need actual target Docker/Compose/version/image-digest/constraints checks; no production certification.
 
-This protocol is permanent and recursive. Every future session/account/agent must inspect actual Git, code and tests; preserve history/user changes; regenerate `NEXT_SESSION_PROMPT.md` after each meaningful verified milestone, at the end of every development phase/request, whenever the user requests a handoff/account switch, and before usage exhaustion. Each replacement must remain self-contained and carry this same obligation forward. Never merely append an obsolete prompt or rely on hidden chat history.
+Storage: preserve >=200 decimal GB free, <=75 GB total application allocation; template data budget 74 GB leaves 1 GB overhead. Readiness and snapshots measure usage, **not hard quota enforcement**. Hard quota, actual image/source/log accounting, automated monitoring and backup scheduling remain unresolved approval-dependent work. Do not enable global filesystem options or delete data to make room.
 
-Every handoff must include objective; actual architecture; repository/branch/latest verified commit and uncommitted state; completed work and exact changed files; commands/tests/results/skips; dependencies and hardware observations; running services; known issues/access blockers; prioritized next implementation steps; security/approval/resource constraints; Git/publication status and this protocol. Never include credentials or private diagnostic dumps. On an explicit handoff request, stop starting new work, save/test/document the checkpoint, commit/push when authorized/available and display the complete copyable prompt. In ordinary development continue meaningful implementation after a checkpoint while access/budget permit. Keep README and all status/security/deployment/history documents honest about implemented, tested, partial and blocked work.
+1. Wait for an actual access/approval change, then refresh only authorised read-only server metadata and existing Serve configuration. No repeated failed SSH or personal directory scan.
+2. Review exact dedicated directory, nonroot UID/GID, pinned image/size, project roots, storage/quota and existing full ACL/family-app dependencies. No placeholder identity or assumed Docker permission.
+3. Obtain explicit approval before server directories/tokens/image install/service startup, Serve modification, full ACL change or persistent Mac LaunchAgent. Narrow grants do not override existing allow-all; no blind replacement. No Funnel, public ports, router change, Ollama exposure or model download.
+4. After approval, execute scoped deployment/preflight and verify actual private HTTPS, unauthorized rejection, MAC worker inference/stream/stop/retry/restart, resources, snapshot/restore and permitted/denied tailnet clients. Record actual evidence.
+5. Keep code proposals/patches/commands/Git disabled on JARVIS until an approved OS execution/egress sandbox is implemented and tested. This is a separate prerequisite for full coding Mission 1.
+
+Safe independent future work: design a concrete OS containment boundary for review, portable Linux CI without private secrets, automated native end-to-end coverage and reviewed metadata archival. Do not add speculative services or downloads to fill approval gaps. No pending routine local regression failure is known; remaining production gaps are explicit above.

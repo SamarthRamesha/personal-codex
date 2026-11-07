@@ -1,5 +1,15 @@
 # Security model
 
+## AFK security update — 2026-11-07
+
+Serve metadata is accepted only from a loopback peer/listener, for the explicitly configured private HTTPS authority and exact forwarded scheme/Host. Duplicate auth/cookie/origin/proxy headers and cross-site requests fail closed. Local processes remain trusted; forwarded identity does not replace owner authentication. Browser tokens are exchanged for HttpOnly sessions and never saved in browser storage.
+
+A distinct worker token can only poll/report model inference. Owner and worker credentials cannot substitute for each other. Jobs are leased, sequential, bounded and cancelled on control loss. Terminal output must match streamed output; failed/partial generations cannot complete a proposal. Restart interrupts work rather than replaying modifications or inference. The worker opens no inbound listener and cannot forward arbitrary URLs, download models or execute tools.
+
+Initial private Serve deployments require repository execution disabled and explicit project roots. This blocks Git subprocesses too, because repository hooks/configuration can execute code. Do not enable execution until an approved OS containment and egress design is tested. Host-network Docker shares the host network namespace; capability drops/read-only mounts are useful restrictions, not a complete sandbox. No OS quota, per-user roles, encrypted data at rest or automatic disaster recovery is supplied.
+
+Storage and snapshots cover owned backend data only; the deployment's 74 GB data budget leaves 1 GB for reviewed overhead inside the 75 GB overall allocation, but is not a hard filesystem quota. Real images, logs and source need accounting. Snapshots do not capture Git worktrees, credentials or model files. SQLite snapshots/free pages may retain prior bytes after ephemeral payload clearing. Keep private deployment notes, data and secrets outside Git. The pre-existing diagnostic is never an input or deliverable.
+
 ## Current security boundary — 2026-11-07
 
 Read `docs/THREAT_MODEL.md` for the current threat matrix and residual risks. The inventory below preserves prior work and is superseded where it describes authentication/TLS/CSP/streaming as absent.

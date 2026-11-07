@@ -9,14 +9,20 @@ import stat
 import sys
 import tempfile
 import time
+import threading
 
 GB=1_000_000_000
 MAX_OWN_FILES=100_000
+SNAPSHOT_LOCK=threading.Lock()
 
 
 def owned_bytes(root: Path) -> tuple[int,bool]:
-    total=0;count=0
-    for current, directories, files in os.walk(root,followlinks=False):
+    total=0;count=0;complete=True
+    if root.is_symlink() or not root.is_dir():return 0,False
+    def failed(_error):
+        nonlocal complete
+        complete=False
+    for current, directories, files in os.walk(root,followlinks=False,onerror=failed):
         directories[:]=[name for name in directories if not (Path(current)/name).is_symlink()]
         for name in files:
             count+=1
@@ -24,8 +30,8 @@ def owned_bytes(root: Path) -> tuple[int,bool]:
             try:
                 info=(Path(current)/name).lstat()
                 if stat.S_ISREG(info.st_mode):total+=info.st_size
-            except OSError:continue
-    return total,True
+            except OSError:complete=False
+    return total,complete
 
 
 def policy() -> dict:
@@ -45,7 +51,7 @@ def diagnostics(data: Path) -> dict:
     elif usage.free<limits['reserve_bytes']+5*GB:reasons.append('free storage is approaching the safety reserve')
     if size>=limits['budget_bytes']:reasons.append('Personal Codex data exceeds its storage budget')
     elif size>=int(limits['budget_bytes']*.8):reasons.append('Personal Codex data is approaching its storage budget')
-    if not complete:reasons.append('managed file inventory limit reached; usage is a lower bound')
+    if not complete:reasons.append('managed file inventory incomplete or limit reached; usage is a lower bound')
     return {'storage':{**limits,'free_bytes':usage.free,'total_bytes':usage.total,'managed_bytes':size,'measurement_complete':complete,
                        'scope':'Personal Codex data directory only; externally managed Ollama models are not included','warnings':reasons},
             'cpu':{'count':os.cpu_count(),'load_average':list(os.getloadavg()) if hasattr(os,'getloadavg') else None},
@@ -71,6 +77,12 @@ def verify_database(path: Path) -> None:
 
 
 def snapshot(store,data: Path,db_path: Path) -> dict:
+    if not SNAPSHOT_LOCK.acquire(blocking=False):raise ValueError('A snapshot is already in progress')
+    try:return _snapshot(store,data,db_path)
+    finally:SNAPSHOT_LOCK.release()
+
+
+def _snapshot(store,data: Path,db_path: Path) -> dict:
     target=data/'backups'
     if target.is_symlink():raise ValueError('Backup directory must not be a symlink')
     target.mkdir(mode=0o700,exist_ok=True)

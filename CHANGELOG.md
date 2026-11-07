@@ -1,5 +1,14 @@
 # Changelog
 
+## AFK backend and deployment preparation — 2026-11-07
+
+- Added outbound-only scoped Mac Ollama worker and durable leased inference jobs, without an inbound Mac listener, arbitrary forwarding, model downloads or cloud fallback.
+- Added exact Serve loopback trust, readiness with installed-model checks, single-instance locking, bounded clients and graceful shutdown. Disabled deployment execution rejects Git/worktrees/interpreters.
+- Fixed cancellation/total timeouts for stalled provider reads, scoped native stream cleanup, SSE framing limits, pre-header missing-stream errors and lazy Store startup.
+- Added authenticated browser login/logout, truthful inference location/capabilities, private rotating worker logs, concurrent snapshot refusal and fail-closed incomplete storage inventory.
+- Prepared nonroot bounded Docker/LaunchAgent templates, source build allowlist, read-only preflight, synthetic ACL fragment, API and recovery documentation. Nothing installed or changed on JARVIS.
+- Verified real Qwen worker coding proof (17 checks, 82.764 s) and rebuilt native Gemma streaming/stop plus browser auth manually. Final test results are in NEXT_SESSION_PROMPT.md and the local AFK report.
+
 ## Mission 1 native client and private API — 2026-11-07
 
 - Added native Tauri 2 / React / TypeScript client (client/API version 0.2.0), original icon, bounded authenticated Rust transport, persisted streaming chat, local-model discovery/selection, project files, task/proposal/diff/approval controls, approved commands and diagnostics.

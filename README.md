@@ -2,13 +2,15 @@
 
 Personal Codex is a private, local-first AI coding control plane for macOS. It connects a registered Git repository, a local or explicitly consented model provider, and a task workspace where an agent can propose — and you can approve — small, auditable code changes.
 
-Nothing is autonomous by default. A model may *propose* file edits and test commands as strict JSON; Personal Codex validates them, shows you the exact digest, and only applies them to an isolated Git worktree after you approve that exact proposal. The Python backend defaults to loopback and uses the standard library. The native client has pinned React/Tauri dependencies; remote serving requires explicit authenticated TLS configuration on a Tailscale IP.
+Nothing is autonomous by default. A model may *propose* file edits and test commands as strict JSON; Personal Codex validates them, shows you the exact digest, and only applies them to an isolated Git worktree after you approve that exact proposal. The Python backend defaults to loopback and uses the standard library. The native client has pinned React/Tauri dependencies; private remote serving supports an exact authenticated Tailscale Serve origin over a loopback backend. The legacy direct authenticated TLS listener remains available.
 
 ## Status
 
-Updated 2026-11-07: native Tauri + React + TypeScript Mac client, persistent streaming chat, owner authentication, guarded private TLS listener, project file previews, exact approvals/diffs, approved commands, diagnostics and verified SQLite snapshots are implemented. **Mission 1 is PARTIAL**: JARVIS SSH authentication was rejected, so no ZimaOS deployment or server-model evaluation has occurred.
+Updated 2026-11-07: native Mac app, persistent streaming chat, exact coding approvals/diffs/tests, private authentication, restart recovery and verified SQLite snapshots are implemented. The AFK update adds a durable outbound Mac inference worker, strict Tailscale Serve proxy compatibility, readiness, graceful shutdown, bounded private logging and browser login/logout. The initial server profile disables repository execution until OS containment is approved. **Mission 1 is PARTIAL:** JARVIS deployment, Serve/ACL/service changes and remote acceptance are pending approval; this unattended session's SSH authentication was rejected.
 
-The installed Mac `qwen2.5-coder:14b` completed a genuine synthetic coding workflow in 110.7 seconds, including patch, tests, evidence-checked completion and restart persistence. `llama3.2:3b` produced a valid patch and tests but repeated work instead of completing. No model was downloaded. These are local Mac observations, not server or general-quality certifications.
+The installed Mac `qwen2.5-coder:14b` passed the real outbound-worker synthetic coding workflow: 17 checks in 82.764 seconds, including actual patch/test execution, evidence-checked completion and restart persistence. The rebuilt native app also streamed a real Gemma answer and cancelled a second worker generation. These are local fixture observations, not JARVIS or model-quality certification. No models were downloaded.
+
+See [API contract](docs/API.md), [deployment proposal](DEPLOYMENT.md), [implementation matrix](docs/IMPLEMENTATION_MATRIX.md) and [current handoff](NEXT_SESSION_PROMPT.md). Prepared deployment files have not been installed or exercised in Docker.
 
 Verification: 177 Python tests discovered; HTTP-enabled run passed with 4 skips, default run passed with 34 skips; TypeScript/production build passed; 2 Vitest framing tests and 1 Rust connection-policy test passed. The actual Mac app was exercised, including token authentication and refusal of an untrusted TLS certificate.
 

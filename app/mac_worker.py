@@ -8,6 +8,8 @@ import argparse
 import hashlib
 import http.client
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import re
@@ -75,10 +77,16 @@ class Client:
         if len(body)>inference.MAX_PROMPT:raise WorkerError('Worker request exceeds budget')
         connection=(http.client.HTTPSConnection(self.host,self.port,timeout=self.timeout,context=ssl.create_default_context())
                     if self.parsed.scheme=='https' else http.client.HTTPConnection(self.host,self.port,timeout=self.timeout))
+        response=None
+        guard=providers._StreamGuard(connection,lambda:False,self.timeout)
         try:
             connection.request('POST',path,body,{'Content-Type':'application/json','Authorization':'Bearer '+self.token,'Connection':'close'})
-            response=connection.getresponse();raw=response.read(inference.MAX_PROMPT+16_000)
-            if len(raw)>=inference.MAX_PROMPT+16_000:raise WorkerError('Worker response exceeds budget')
+            guard.socket=connection.sock
+            response=connection.getresponse()
+            limit=inference.MAX_PROMPT*6+16_000  # JSON escapes may expand one prompt byte sixfold.
+            raw=response.read(limit)
+            if guard.reason:raise WorkerError('Worker control connection exceeded its total deadline')
+            if len(raw)>=limit:raise WorkerError('Worker response exceeds budget')
             if response.status!=200:raise WorkerError(f'Worker API rejected request (HTTP {response.status})')
             try:result=json.loads(raw)
             except (ValueError,UnicodeDecodeError):raise WorkerError('Worker API returned invalid JSON') from None
@@ -86,7 +94,10 @@ class Client:
             return result
         except (OSError,TimeoutError,http.client.HTTPException):
             raise WorkerError('Worker control connection unavailable or TLS verification failed') from None
-        finally:connection.close()
+        finally:
+            guard.close()
+            if response is not None:response.close()
+            connection.close()
 
 
 class Worker:
@@ -175,6 +186,32 @@ class Worker:
             heartbeat_done.set();monitor.join(timeout=6)
 
 
+class PrivateRotatingHandler(RotatingFileHandler):
+    def _open(self):
+        fd=os.open(self.baseFilename,os.O_WRONLY|os.O_APPEND|os.O_CREAT|getattr(os,'O_NOFOLLOW',0),0o600)
+        return os.fdopen(fd,'a',encoding=self.encoding,errors=self.errors)
+
+
+def worker_logger(path=None):
+    logger=logging.getLogger('personal_codex.mac_worker');logger.setLevel(logging.INFO);logger.propagate=False
+    for old in list(logger.handlers):old.close();logger.removeHandler(old)
+    if path:
+        target=Path(path).expanduser().absolute();parent=target.parent
+        info=parent.stat()
+        if parent.is_symlink() or info.st_uid!=os.getuid() or stat.S_IMODE(info.st_mode)!=0o700:
+            raise WorkerError('Worker log needs an existing owner-only 0700 directory')
+        fd=os.open(target,os.O_WRONLY|os.O_APPEND|os.O_CREAT|getattr(os,'O_NOFOLLOW',0),0o600)
+        try:
+            info=os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or stat.S_IMODE(info.st_mode)!=0o600:
+                raise WorkerError('Worker log must be an owner-only regular file')
+        finally:os.close(fd)
+        handler=PrivateRotatingHandler(target,maxBytes=262144,backupCount=2,encoding='utf-8')
+    else:handler=logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'));logger.addHandler(handler)
+    return logger
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Outbound-only private Mac Ollama worker; never opens a listener.')
     parser.add_argument('--backend',required=True)
@@ -182,17 +219,21 @@ def main(argv=None):
     parser.add_argument('--models',nargs='+',required=True)
     parser.add_argument('--ollama',default='http://127.0.0.1:11434')
     parser.add_argument('--once',action='store_true')
+    parser.add_argument('--log-file',help='optional rotating log in an existing private 0700 directory')
     args=parser.parse_args(argv)
     stop=threading.Event()
     for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,lambda *_:stop.set())
-    worker=Worker(Client(args.backend,read_token(args.token_file)),args.models,args.ollama,stop=stop)
+    try:
+        logger=worker_logger(args.log_file)
+        worker=Worker(Client(args.backend,read_token(args.token_file)),args.models,args.ollama,stop=stop)
+    except (ValueError,OSError):parser.exit(2,'Worker configuration unavailable or unsafe; review URL, private credential and log metadata.\n')
     backoff=1
     while not stop.is_set():
         try:
             worker.poll_once();backoff=1
             if args.once:return 0
         except (WorkerError,providers.ProviderTransportError):
-            print('Mac worker unavailable or job failed; no fallback attempted',flush=True)
+            logger.warning('Mac worker unavailable or job failed; no fallback attempted')
             if args.once:return 2
             backoff=min(30,backoff*2)
         stop.wait(backoff)

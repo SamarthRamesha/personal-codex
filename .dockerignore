@@ -1,0 +1,12 @@
+# Allowlist: never send working copies, data, diagnostics, credentials or Git metadata.
+**
+!app/
+!app/*.py
+!web/
+!web/index.html
+!web/app.js
+!web/style.css
+!scripts/
+!scripts/restore_database.py
+!deploy/
+!deploy/Dockerfile

@@ -173,6 +173,9 @@ def request_boundary(headers, bound: str, port: int, peer: str, *, tls=False, or
     Forwarded identity never authenticates a request. The owner/worker token is still required.
     Local diagnostics remain HTTP and cannot acquire HTTPS cookie semantics accidentally.
     """
+    if hasattr(headers,"get_all"):
+        for field in ("Authorization","Cookie","Origin","Sec-Fetch-Site"):
+            if len(headers.get_all(field,[]))>1:return tls,"Duplicate security header"
     authority = f"{'['+bound+']' if ':' in bound else bound}:{port}"
     addresses = {authority}
     if is_loopback(bound):

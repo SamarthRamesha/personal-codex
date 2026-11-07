@@ -5,3 +5,5 @@
 .diff .hunk{color:#8ab4f8}
 .tag.ok{border-color:#2f6f57;color:#74e0ba}
 .tag.warn{border-color:#7a4a4a;color:#ffb4a8}
+
+[hidden]{display:none!important}dialog{background:#172027;color:#eaf1f5;border:1px solid #52616c;border-radius:16px;padding:28px;max-width:440px;width:85vw}dialog::backdrop{background:#081014ed}dialog p{line-height:1.5}dialog form{display:grid;gap:14px}#owner-error{color:#ff9e9e}

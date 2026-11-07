@@ -21,3 +21,18 @@ AFK audit starting at implementation c5e3415 / checkpoint 4a3ea1d. Classificatio
 | Remote HTTPS/ACL/storage acceptance | Blocked by explicit infrastructure approval | Prepare exact commands/proposals and record residual checks; no automatic deployment |
 
 Mac inference, JARVIS control plane and private Serve HTTPS remain the intended architecture. New worker opens outbound connections to the approved control plane and fixed loopback Ollama only; it never opens an inbound Mac listener. Remote deployment, Serve/ACL/service/directory changes remain unexecuted.
+
+## Final local classification
+
+| Area | Final classification / evidence |
+| --- | --- |
+| Auth/API/conversations/persistence/ledger/context/memory | Complete for the implemented single-owner local scope; Python regressions, migrations, recovery, snapshots/restore and client checks pass |
+| Coding tools/worktrees/approvals/tests | Complete for trusted local fixtures; real Qwen patch/test/completion proof passes. OS containment missing; remote execution deliberately disabled |
+| Mac inference bridge | Complete and locally verified, real worker proof plus native streaming/stop; remote cross-device HTTPS unverified |
+| Cancellation/timeouts/lifecycle | Complete within cooperative process limits; stalled sockets, leases, stream IDs, signal shutdown and restart covered |
+| Native integration | Verified for changed flows using rebuilt app; broader prior manual proof retained. Read-only files and approved command runner; editor/PTY absent |
+| Browser authentication | Complete and manually verified: invalid/valid login, cookie session, sign-out and disabled execution controls |
+| Backup/resource diagnostics | Complete for own-data SQLite snapshots and bounded measurement; unattended schedule/full repository disaster recovery absent |
+| Deployment/logging/monitoring | Templates/preflight complete and statically tested; actual container/version/resource behavior blocked by approval/access |
+| Remote HTTPS/ACL/storage | Blocked by external approval/access; exact local review queue prepared, no installation performed |
+| OS sandbox/egress/hard quota/multi-user auth | Missing; not represented as implemented or secure by worktree path checks |

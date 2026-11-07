@@ -2,7 +2,7 @@
 
 ## Current handoff — 2026-11-07
 
-Read the regenerated `NEXT_SESSION_PROMPT.md` first; it replaces the older milestone narrative below. Continue on `personal-codex/stabilization`, not historical main. The native client, private authenticated API, recovery fixes, diagnostics/snapshots and genuine Mac Qwen 14B workflow are implemented and verified. Mission 1 remains PARTIAL because SSH authentication to confirmed JARVIS (`<ssh-user>@<server-tailscale-ip>`, home `/DATA`) failed. No server or backup changes occurred. Next: establish authorized access, run the read-only inspection script, then prepare an approved dedicated deployment based on actual hardware and storage. Preserve the user's untracked diagnostic and all historical Git work.
+Read `NEXT_SESSION_PROMPT.md` first. Continue existing `personal-codex/stabilization` with local commits; preserve the untracked diagnostic without reading or staging it. Native/worker/backend/browser changes are locally verified, including real Qwen coding and Gemma native cancellation. Initial Serve deployments require execution disabled; exact preflight, container/worker templates, API and recovery contracts are prepared. Mission 1 remains partial: target writes/networking need approval, unattended SSH authentication is unavailable and remote HTTPS/container/ACL/storage acceptance is unverified. Do not deploy automatically or change existing services. Exact private target details and the approval queue remain outside Git. Earlier text below is historical.
 
 See `docs/MISSION_1_ACCEPTANCE.md`, `docs/THREAT_MODEL.md` and `desktop/README.md`. The old text below is retained as historical context, not current status.
 

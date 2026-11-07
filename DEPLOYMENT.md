@@ -1,118 +1,84 @@
 # Deployment
 
-## Current deployment contract — 2026-11-07
+## Current decision — 2026-11-07
 
-The native client and Mac backend are verified. JARVIS is **not deployed**. Authorized read-only SSH to `<ssh-user>@<server-tailscale-ip>` reached the host but the existing identity was rejected. The user's home directory is `/DATA`; do not treat that directory or its contents as application storage. No family backup directory was traversed and no server configuration was changed.
+Preparation is implemented; JARVIS is not deployed. The user supplied the server inventory and reports interactive SSH/MagicDNS success. This unattended session's strict dedicated-key SSH attempt failed authentication; no remote command ran. Exact device/account/path details are in PRIVATE_DEPLOYMENT_NOTES.md outside Git. Family data and existing services remain off-limits.
 
-### Local Mac development
+The initial reviewed profile is **chat/planning/review only**. Repository commands, Git subprocesses, worktrees, code proposals and patch application are disabled. High-level task planning and chat remain available. Worktrees and allowlists do not contain malicious code; coding execution on JARVIS needs a separate approved OS containment and egress design. Mission 1 remains partial until remote acceptance is verified.
 
-```sh
-python3 app/server.py
-# In another terminal:
-cd desktop
-npm ci
-npm run tauri -- dev
-```
+## Prepared artifacts
 
-The backend defaults to `127.0.0.1:8787` and `data/personal_codex.db`. This is an explicitly unauthenticated development mode. A packaged client connects to an already-running backend and does not silently launch or install a service. The existing browser dashboard is still served at the backend root.
+- `deploy/Dockerfile`: stdlib backend/web only; requires an explicitly reviewed official Python image digest. No package installation or Git. Build context allowlist in `.dockerignore` excludes diagnostics, working data, keys and Git metadata.
+- `deploy/compose.review.json`: nonroot UID/GID, read-only root filesystem, all capabilities dropped, no-new-privileges, 1 CPU, 512 MiB memory with no additional swap allocation, 128 PIDs, 16 MiB tmpfs, bounded Docker logs (2 MiB × 3), liveness probe, restart policy and 15-second grace period. No Docker socket, privileged mode or published ports. Existing Tailscale container is untouched.
+- `deploy/review.env.example`: five nonsecret literal settings. Copy outside Git, replace all review placeholders. `PC_IMAGE` must be a reviewed local image ID; pull policy is never.
+- `scripts/deployment_preflight.py`: read-only inspection of the five settings and exact dedicated paths; no mkdir, shell expansion, Docker calls or shared-storage scan. Requires pre-existing private directories, reviewed numeric ownership, distinct 0600 tokens and at least 205 GB free. A passing preflight still reports overall readiness false until external checks pass.
+- `deploy/local.personalcodex.mac-worker.plist.example`: prepared outbound-only LaunchAgent, not installed. Replace executable/repository/private paths and exact backend origin. Worker log is private and rotates at 256 KiB × 3; no prompt, URL, token or exception details in log messages.
 
-For real local data, configure authentication:
+Docker is unavailable in this Mac environment. JSON/property/preflight tests pass; no Docker build, Compose parse against the actual server version, container startup or server resource enforcement has been tested. Do not describe static template checks as container integration tests.
 
-```sh
-mkdir -p data
-python3 scripts/private_backend.py --create-token data/owner-token
-PERSONAL_CODEX_TOKEN_FILE="$PWD/data/owner-token" python3 scripts/private_backend.py
-```
+## Storage and isolation proposal
 
-The generator creates a 0600 file and refuses overwrite; it never prints the token. Enter its contents into the native app yourself, not in chat or logs. The native app holds the token in memory until disconnect/quit; only the backend URL is saved. Cookie login is available at `POST /api/session` with a JSON token, and logout at `DELETE /api/session`; a browser login form is not yet implemented.
-
-### Read-only JARVIS discovery
-
-The exact confirmed IP, hostname and SSH username are preserved only in local deliverable `PRIVATE_DEPLOYMENT_NOTES.md`, outside Git. Once SSH access works on the Mac, set `PC_SSH_USER` and `PC_SERVER_IP` to those confirmed values, then from the repository root:
-
-```sh
-ssh -o StrictHostKeyChecking=yes "${PC_SSH_USER}@${PC_SERVER_IP}" 'sh -s' < scripts/inspect_host.sh
-```
-
-Do not paste a password or private key into chat. Keep host-key verification on. The script prints CPU/instruction sets, OS/kernel, memory/load, filesystem metadata, accelerator devices, runtime availability, basic container names/images/ports, listeners/interfaces, Tailscale version/IP and local model metadata. It does not list or read `/DATA` contents, backup directories, environment variables or container secrets. It does not install, configure, clean or download anything.
-
-Actual CPU, acceleration, filesystem, free storage, Docker/service support and models remain unknown. Choose deployment/inference technology only after this inventory. Current Tailscale observation: Mac Running; confirmed JARVIS online/active at `<server-tailscale-ip>`, MagicDNS `<server>.<tailnet>.ts.net`. No public probe, Serve/Funnel, router forwarding or ACL change was used.
-
-### Reviewed private deployment (not yet authorized or executed)
-
-Before deployment writes, prepare and obtain approval for the exact dedicated application directory, least-privilege account, repository roots, service supervision, certificate source and storage plan. Do not install a second inference engine or select a server model based on the Mac's model results. Do not configure or enable Tailscale HTTPS/Serve/Funnel/ACLs without explicit approval. The native app does not accept untrusted/self-signed certificates and has no insecure bypass.
-
-The implemented backend configuration, **only after review and approval**, is:
+Use only an approved dedicated `PersonalCodex` root under the server's application-data parent:
 
 ```text
-PERSONAL_CODEX_DATA=<approved dedicated application data directory>
-PERSONAL_CODEX_HOST=<server-tailscale-ip>
-PERSONAL_CODEX_PORT=8787
-PERSONAL_CODEX_SERVER_NAME=<server>.<tailnet>.ts.net
-PERSONAL_CODEX_TOKEN_FILE=<approved owner-only token file>
-PERSONAL_CODEX_TLS_CERT=<existing approved trusted hostname certificate>
-PERSONAL_CODEX_TLS_KEY=<approved private key file>
-PERSONAL_CODEX_RESERVE_GB=200
-PERSONAL_CODEX_STORAGE_GB=75
+PersonalCodex/                 # private 0700, approved nonroot UID/GID
+  data/                       # mounted /var/lib/personal-codex
+    personal_codex.db          # initialized by backend only after approved startup
+    projects/                 # explicit allowed project root, no family mounts
+    workspaces/               # execution disabled in initial profile
+    backups/                  # maximum seven snapshots, no automatic deletion
+  secrets/                    # separate 0700 directory
+    owner-token               # unique 0600, never included in Git/build/image
+    worker-token              # distinct scoped 0600, securely copied to Mac after approval
 ```
 
-Start with `python3 scripts/private_backend.py`. Startup refuses wildcard/public/LAN binds and refuses non-loopback Tailscale binds without authentication and TLS. It does not configure firewalls or prove that an IP belongs to the intended tailnet; verify the actual interface/identity first. Register inference on the backend's loopback interface so private prompts stay on that server. Mac client URL: `https://<server>.<tailnet>.ts.net:8787` with the owner token; no automatic alternate host or cloud fallback exists.
+The service data budget is 74 decimal GB, reserving 1 GB of the 75 GB total allocation for image/source/log overhead. Readiness and backups enforce measured storage checks; these are not a filesystem quota and do not prevent every database growth event. A hard quota/monitoring and actual image/source/log accounting still require review before unattended production use. Preserve at least 200 decimal GB free. No model downloads or inference installation on JARVIS.
 
-Storage diagnostics cover `PERSONAL_CODEX_DATA` only. The configurable defaults are 75 GB owned-data budget and, on Linux, 200 GB free reserve. Mac development defaults to a 5 GB reserve. Externally managed Ollama weights/caches are not included: measure them separately and reduce the data allocation so total Personal Codex consumption stays within 75 GB. No model download/cleanup endpoint exists. Snapshots refuse reserve/quota exhaustion; general file writes and externally managed models do not yet have an enforced global quota. Do not exceed total budget or reserve without explicit approval.
+Host networking keeps the Python listener truly on host `127.0.0.1:8787` so the existing host-network Tailscale Serve can reach it. It also shares the host network namespace and is **not network containment**. No OS egress sandbox is supplied by this template. Keep execution disabled; do not add family mounts or broad bind paths. Approved installation must verify the actual Docker/Compose version honors every constraint.
 
-### Backup and recovery
+## Approval-gated deployment sequence (not executed)
 
-`GET /api/diagnostics` returns authenticated own-data usage/free-space warnings, CPU/load and retained snapshot count. `POST /api/maintenance/backup` creates a private SQLite snapshot under `data/backups`, verifies integrity, computes a streaming SHA-256, uses no-overwrite publication, checks capacity and enforces a 30-second backup time budget. At seven retained snapshots it refuses another; it never automatically deletes anything. Native settings expose these controls.
+Every step below that writes a server, installs/pulls an image, creates a service, persists a Mac worker, or changes Serve/ACL requires approval. Do not treat this document or a successful preflight as authorization.
 
-Backups include database state only, not repository/worktree files, provider weights or credentials. Keep the same separate approval and storage rules for those assets. Schedule supervision/backups only after server environment discovery and approval; none was installed in this session.
-
-Restore to a new candidate file:
+1. Restore unattended read-only SSH using the user's existing access method; no password/key/agent changes or privilege workaround. Inspect only current free space, dedicated-path existence, numeric identity, Docker permission/version and named existing Tailscale/Serve settings. Do not scan personal data. Verify port 8787 is free.
+2. Review numeric service UID/GID, exact private origin/root, image digest/size/provenance, filesystem quota, approved project roots and current full tailnet policy. Reserve 200 GB; cap total app allocation at 75 GB. Review host-network risk and execution-disabled acceptance.
+3. After approval, create only the exact private layout and release staging path. Generate each token with the existing no-overwrite helper as the approved service identity, never on a command line or in logs. Transfer only worker credential to an approved private Mac file; native owner token remains in process memory while connected.
+4. After download/build approval, build the source allowlist for Linux x86_64 from the pinned Python image. Record `docker image inspect` ID/size/architecture, do not use a mutable tag at startup. No push or third-party source upload is needed. Validate locally staged settings/layout:
 
 ```sh
-python3 scripts/restore_database.py <owned-snapshot.sqlite3> <new-owned-restore-candidate.db>
+python3 scripts/deployment_preflight.py "$PC_REVIEW_ENV"
+docker compose --env-file "$PC_REVIEW_ENV" -f deploy/compose.review.json config --quiet
+# MUTATION — execute only after explicit installation approval:
+docker compose --env-file "$PC_REVIEW_ENV" -f deploy/compose.review.json up -d --pull never --no-build
 ```
 
-The command refuses overwrite and checks SQLite integrity and expected schema. Verify the candidate while the original remains untouched. Replacing a live database is a separate stopped-service maintenance action requiring explicit approval and a preserved rollback copy. Restart recovery marks interrupted operations/messages honestly and never replays partial execution.
+5. Verify liveness over loopback, unauthenticated owner routes return 401, authenticated readiness and execution rejection. Inspect actual listener bind/resource limits/log limits/mounts; no external backend port. Run a real synthetic snapshot/restore-to-new-path check, preserving original state.
+6. Snapshot current Serve configuration privately and confirm HTTPS 443 has no existing handler to overwrite. With approval only, use the **verified existing** container name:
 
-### Runtime and update limits
+```sh
+docker exec "$PC_TAILSCALE_CONTAINER" tailscale serve status --json
+# MUTATION — only after Serve approval and a conflict-free configuration review:
+docker exec "$PC_TAILSCALE_CONTAINER" tailscale serve --bg --https=443 http://127.0.0.1:8787
+```
 
-Approved commands still execute with host permissions. Worktrees/allowlists are not an OS sandbox; untrusted test execution next to family backups is not ready. See `docs/THREAT_MODEL.md`. No service, OS-level egress policy, signed update channel, Apple signing identity or notarization was installed/configured. Use reviewed manual bundles and retain an earlier app plus verified database snapshot for rollback.
+Do not reset/recreate Tailscale, touch its volumes/capabilities, run Funnel or bypass certificate validation. Confirm actual v1.98.3 CLI syntax from its help. If a handler exists, prepare a revised scoped plan instead of overwriting it. HTTPS termination follows [Tailscale Serve CLI](https://tailscale.com/docs/reference/tailscale-cli/serve).
 
-### Verification
+7. Review the full ACL/grants policy and family-app dependencies before changing anything. A narrow grant does not restrict an existing allow-all rule: grants combine permissions. Prepare Mac → backend TCP 443 and SSH TCP 22, deny direct TCP 8787, and no backend → Mac Ollama listener. The outbound worker requires no inbound Mac service. See [grants syntax](https://tailscale.com/docs/reference/syntax/grants). `deploy/tailnet.fragment.example.json` is a synthetic fragment with tests, never a replacement policy; exact private fragment is outside Git. Preserve existing family access and emergency administration, validate policy tests before saving with approval.
+8. After approval, run the Mac worker interactively first using its explicit private backend URL, distinct token file and installed allowlist. Verify real model status/chat/stream/stop/retry across private verified HTTPS. Then approve any persistent LaunchAgent installation separately. Keep Ollama bound to loopback, no listener/networking change or model download.
+9. Native acceptance: verified HTTPS, owner auth, model MAC location, persistent chat, cancellation/retry/restart, project/review state, execution refusal, backup/recovery. Check unauthorised tailnet device rejection after ACL change. Only then assess the limited initial deployment as passed; full coding mission still needs OS containment.
 
-Backend: `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` (177 discovered, OK with 4 skips). Default suite: 177, OK with 34 skips. Native: `cd desktop && npm run build && npm test`; `cd src-tauri && cargo test --locked -j 2`. Build: `npm run tauri -- build --bundles app`.
+Long bind syntax with `create_host_path: false` avoids implicit host directory creation, as described in [Docker Compose services](https://docs.docker.com/reference/compose-file/services/). This remains a proposal until exercised on the target.
 
-A real local Qwen 14B synthetic coding workflow passed on the Mac. Actual native owner authentication, invalid token rejection and untrusted TLS refusal passed on loopback fixtures. Home/remote Tailscale service operation, server inference and genuine native-to-JARVIS acceptance remain blocked. See `docs/MISSION_1_ACCEPTANCE.md` for the full criterion table.
+## Backup, recovery and rollback
 
-## Historical deployment notes (retained)
+`POST /api/maintenance/backup` creates one verified SQLite snapshot at a time, with SHA-256, integrity check, capacity/reserve checks and seven-snapshot retention refusal. Incomplete own-data measurements fail closed. This captures SQLite state only: it does not back up Git repositories/worktrees, model files, secrets or service configuration. No automatic backups or cleanup are scheduled. A production backup schedule and retained storage destinations need approval.
 
-The notes below document earlier milestones. Current instructions above supersede absent-auth/TLS/desktop claims and unconditional model installation suggestions.
+Copy/restore into an explicitly **new** path with `python3 scripts/restore_database.py SNAPSHOT NEW_DATABASE`; existing destinations are refused. Verify integrity and expected records in a disposable instance before switching a service. Stop only the dedicated backend, retain the previous image/source/database, and review schema compatibility before any approved switch. Startup interrupts in-flight work; it never replays patches, tests or inference jobs. An approved rollback must reconcile worktrees/operation ledger with restored state before enabling execution. Never overwrite a live DB or delete recovery data automatically.
 
-## Mac local development
+For a newly created, otherwise unused 443 Serve handler, reviewed rollback removes only that handler (`tailscale serve --https=443 off`) via the verified existing container; never `serve reset`. If other handlers/configuration exist, restore the reviewed scoped change instead. Stop the dedicated Compose project only after approval; do not use `down -v`, prune, remove images or delete data. Worker rollback unloads only its separately approved LaunchAgent; no Ollama/Tailscale changes.
 
-Run `python3 app/server.py` from the repository root. The database will be created at `data/personal_codex.db`, which is ignored by Git.
+## Local development
 
-The service passed an approved loopback smoke test: `/api/health` returned its expected JSON response and the dashboard was served. On the owner's Mac, run `curl http://127.0.0.1:8787/api/health` and open the URL in a browser.
+`python3 -m app.server` defaults to unauthenticated loopback development with repository execution available under approval gates. For real local data use `PERSONAL_CODEX_TOKEN_FILE` and the no-overwrite `scripts/private_backend.py --create-token PATH` helper. Browser root now has cookie sign-in/sign-out; native uses the in-memory bearer bridge. Never put tokens in URLs or browser storage.
 
-The dashboard supports a release → preview → critical-approved merge → separately critical-approved recovery-branch deletion flow. Resolve conflicts manually in a dedicated workspace; the service only reports them and will not leave the main worktree in a conflicted merge state.
-
-Provider registration is safe to use during local setup because it validates metadata only. It does not probe an Ollama instance, contact a cloud endpoint, or retrieve an environment-variable secret.
-
-Provider invocation now reaches a real adapter per invocation. To probe a local install, start `ollama serve`, pull a model (for example `ollama pull qwen2.5-coder`), register the provider with endpoint `http://127.0.0.1:11434` and that model name, request the invocation approval, approve it, and invoke. The request goes to `/api/chat` and the bounded reply is stored in the ledger. No model is required for the automated tests, which use a stub loopback server.
-
-For an OpenAI-compatible local server (llama.cpp, LM Studio, vLLM), register endpoint `http://127.0.0.1:<port>/v1` and, if the server needs a key, a `secret_ref` naming the environment variable that holds it. The key is read only at call time and is never stored. A cloud endpoint additionally requires `cloud_allowed: true` at registration and a separate `network` approval before each distinct invocation, and its `secret_ref` is mandatory.
-
-The agent workflow adds no new deployment step: create a task, approve its workspace, request an
-agent plan approval, approve it, build the plan, approve the proposal digest, then execute. The
-dashboard shows the operation list and results. Releasing, previewing, merging, and deleting the
-recovery branch keep their existing separate approvals.
-
-If no transport should be available at all, set `server.PROVIDER_TRANSPORT = unavailable_provider_transport`; every invocation then fails closed with a clear message.
-
-## ZimaOS
-
-Do not deploy anything to ZimaOS yet. First collect an authorized, read-only inventory (OS, Docker availability, storage, services, open ports, and CPU/RAM) and choose a non-conflicting port. The eventual worker must be private-network only, authenticated, encrypted, and separately backed up.
-
-## Iterative rounds
-
-`PERSONAL_CODEX_MAX_ROUNDS` sets the per-task round budget (1–10, default 3). `PERSONAL_CODEX_MAX_TASK_SECONDS` (default 1800), `PERSONAL_CODEX_MAX_PROMPT_BYTES`, `PERSONAL_CODEX_MAX_RESPONSE_BYTES`, `PERSONAL_CODEX_MAX_TEST_OUTPUT_BYTES`, `PERSONAL_CODEX_MAX_CONTEXT_BYTES` and `PERSONAL_CODEX_MAX_INVOCATIONS` bound cumulative usage; each is clamped to a safe range and a malformed value falls back to the default. Rounds keep the 8-operations-per-round cap. `PERSONAL_CODEX_STREAM_PROVIDER=1` enables bounded Ollama streaming for round calls; it does not change approval binding. The live diagnostic is run manually (`python3 scripts/live_provider_check.py --model <name>`) and needs no server running. Nothing new is exposed: the round endpoints are part of the same loopback API, so the service still binds `127.0.0.1` only. A cloud provider still needs its per-invocation `network` approval before any round prompt leaves the machine.
+Development mode is for trusted local fixtures. The private Serve configuration requires disabled execution, explicit project roots and a distinct worker credential if enabled. A packaged native app connects to an existing backend and does not install or launch a persistent backend itself.

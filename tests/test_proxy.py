@@ -4,7 +4,8 @@ import os
 import unittest
 from email.message import Message
 from unittest.mock import patch
-from app import security
+from app import security,server
+from pathlib import Path
 import test_security as fixture
 
 ORIGIN='https://backend.example.ts.net'
@@ -42,6 +43,11 @@ class ProxyPolicyTests(unittest.TestCase):
         fields['X-Forwarded-Proto']='https'
         self.assertIsNotNone(security.request_boundary(fields,'127.0.0.1',8787,'127.0.0.1',origin=ORIGIN)[1])
 
+    def test_duplicate_security_headers_are_rejected(self):
+        for name in ('Authorization','Cookie','Origin','Sec-Fetch-Site'):
+            fields=headers(Host='localhost:8787');fields[name]='first';fields[name]='second'
+            self.assertIsNotNone(security.request_boundary(fields,'127.0.0.1',8787,'127.0.0.1')[1])
+
     def test_local_diagnostic_does_not_inherit_proxy_cookie_security(self):
         self.assertEqual(security.request_boundary(headers(Host='localhost:8787'),'127.0.0.1',8787,'127.0.0.1',origin=ORIGIN),(False,None))
 
@@ -66,3 +72,25 @@ class ServeHttpTests(unittest.TestCase):
         cookie=response['Set-Cookie'].split(';')[0]
         self.assertEqual(self.request('GET','/api/projects',headers={**proxy,'Cookie':cookie})[0],200)
         self.assertEqual(self.request('POST','/api/conversations',{}, {**proxy,'Cookie':cookie,'Origin':'https://evil.ts.net'})[0],403)
+
+    def test_disabled_profile_rejects_patch_and_proposal_paths_before_tools_or_approvals(self):
+        with patch.dict(os.environ,{'PERSONAL_CODEX_EXECUTION_MODE':'disabled'}),patch.object(server.tools,'execute_operations') as execute:
+            for suffix in ('workspace-request','workspace','execution-request','execute','agent/request','agent/plan','agent/execute','agent/round/request','agent/round/plan','agent/round/execute'):
+                status,_,_=self.request('POST','/api/tasks/synthetic/'+suffix,{}, {'Authorization':'Bearer '+self.token})
+                self.assertEqual(status,403,suffix)
+            execute.assert_not_called()
+            self.assertEqual(server.STORE.one('SELECT COUNT(*) AS n FROM approvals')['n'],0)
+
+    def test_stored_project_and_workspace_paths_are_rechecked_under_changed_root_policy(self):
+        allowed=server.DATA/'projects';allowed.mkdir()
+        outside=server.DATA/'outside';outside.mkdir();(outside/'README.md').write_text('must not be read')
+        server.STORE.write('INSERT INTO projects VALUES (?,?,?,?)',('outside','outside',str(outside),1))
+        server.STORE.write('INSERT INTO projects VALUES (?,?,?,?)',('inside','inside',str(allowed),1))
+        with patch.dict(os.environ,{'PERSONAL_CODEX_PROJECT_ROOTS':str(allowed)}),patch.object(server.context,'walk') as walk,patch.object(server.context,'search') as search:
+            for suffix in ('files','file?path=README.md','summary','search?q=read'):
+                self.assertEqual(self.request('GET','/api/projects/outside/'+suffix,headers={'Authorization':'Bearer '+self.token})[0],400,suffix)
+            walk.assert_not_called();search.assert_not_called()
+            with self.assertRaisesRegex(ValueError,'workspace root'):
+                server.safe_workspace_path({'project_id':'inside','path':str(outside)})
+            workspace=server.DATA/'workspaces'/'synthetic';workspace.mkdir(parents=True)
+            self.assertEqual(server.safe_workspace_path({'project_id':'inside','path':str(workspace)}),workspace.resolve())

@@ -50,3 +50,16 @@ class SnapshotTests(unittest.TestCase):
         baseline=maintenance.owned_bytes(server.DATA)[0]
         (server.DATA/'link').symlink_to(outside,target_is_directory=True)
         self.assertEqual(maintenance.owned_bytes(server.DATA)[0],baseline)
+
+    def test_unreadable_measurement_is_incomplete_and_blocks_backup(self):
+        def broken_walk(_root,**options):
+            options['onerror'](PermissionError('synthetic inaccessible entry'))
+            return iter(())
+        with patch.object(maintenance.os,'walk',side_effect=broken_walk):
+            self.assertFalse(maintenance.owned_bytes(server.DATA)[1])
+            with self.assertRaisesRegex(ValueError,'Cannot verify'):maintenance.require_capacity(server.DATA,1)
+
+    def test_concurrent_snapshot_is_rejected_before_work(self):
+        with maintenance.SNAPSHOT_LOCK:
+            with self.assertRaisesRegex(ValueError,'already in progress'):maintenance.snapshot(self.store,server.DATA,server.DB_PATH)
+        self.assertFalse((server.DATA/'backups').exists())

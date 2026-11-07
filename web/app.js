@@ -1,16 +1,43 @@
 const $=s=>document.querySelector(s);
-const api=(url,opt={})=>fetch(url,{headers:{'Content-Type':'application/json'},...opt}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d});
+function showOwnerLogin(){
+ stopLive(); tasks=[]; selectedId=null; providerCache=[];
+ document.querySelector('main').hidden=true;
+ if(!$('#owner-login').open) $('#owner-login').showModal();
+}
+const api=(url,opt={})=>fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...opt}).then(async r=>{
+ const d=await r.json(); if(r.status===401) showOwnerLogin();
+ if(!r.ok)throw Error(d.error||'Request failed'); return d;
+});
+let executionAllowed=false;
+function applyExecutionPolicy(){
+ $('#execution-policy').textContent=executionAllowed?'Development execution: approvals required. Worktrees do not provide OS containment.':'Repository execution is disabled on this backend. Chat, planning and review remain available.';
+ if(!executionAllowed) for(const id of ['request-workspace','create-workspace','request-command','run-command','request-release','release-workspace','preview-merge','request-merge','merge-branch','request-branch-delete','delete-branch','request-agent-plan','build-agent-plan','request-agent-round','plan-agent-round','execute-agent-plan','execute-agent-round']) document.getElementById(id).disabled=true;
+}
+async function loginOwner(event){
+ event.preventDefault(); const input=$('#owner-token'); const token=input.value; input.value='';
+ $('#owner-submit').disabled=true;
+ try{await api('/api/session',{method:'POST',body:JSON.stringify({token})}); $('#owner-login').close(); document.querySelector('main').hidden=false; await refresh()}
+ catch(error){$('#owner-error').textContent=error.message}
+ finally{$('#owner-submit').disabled=false}
+}
+$('#owner-submit').onclick=loginOwner;
+$('#owner-form').onsubmit=loginOwner;
+$('#owner-login').addEventListener('cancel',event=>event.preventDefault());
+$('#logout').onclick=async()=>{try{await api('/api/session',{method:'DELETE'});stopLive();location.reload()}catch(error){showOwnerLogin();$('#owner-error').textContent=error.message}};
 const esc=v=>{const d=document.createElement('div');d.textContent=v??'';return d.innerHTML};
 const msg=(el,text,fail=false)=>{el.textContent=text;el.style.color=fail?'#ff9e9e':'#74e0ba'};
 let tasks=[], selectedId=null, providerCache=[], invoking=false;
 function updateProviderHint(){
  const p=providerCache.find(x=>x.id===$('#provider-select').value);
- $('#provider-hint').textContent=p?`${p.kind} · ${p.model} · ${p.endpoint} · ${p.cloud_allowed?'cloud transmission needs a separate network approval':'loopback only — no network approval needed'}${p.last_latency_ms!=null?` · last call ${p.last_latency_ms} ms`:''}${p.health&&p.health.issues.length?` · ${p.health.issues.join(', ')}`:''}`:'No provider selected; register one below before requesting an invocation.';
+ $('#provider-hint').textContent=p?`${p.kind} · ${p.model} · ${p.endpoint||'outbound Mac worker'} · ${p.kind==='mac-worker'?'Mac-local inference through the authenticated worker':p.cloud_allowed?'cloud transmission needs a separate network approval':'backend loopback only — no network approval needed'}${p.last_latency_ms!=null?` · last call ${p.last_latency_ms} ms`:''}${p.health&&p.health.issues.length?` · ${p.health.issues.join(', ')}`:''}`:'No provider selected; register one below before requesting an invocation.';
 }
 
 async function refresh(){
  try{
-  const [projects,nextTasks,approvals,providers]=await Promise.all(['/api/projects','/api/tasks','/api/approvals','/api/providers'].map(api));
+  const [projects,nextTasks,approvals,providers,connection]=await Promise.all(['/api/projects','/api/tasks','/api/approvals','/api/providers','/api/connection'].map(url=>api(url)));
+  executionAllowed=connection.capabilities?.repository_execution===true;
+  $('#backend-address').textContent=location.host;
+  $('#logout').hidden=!connection.authenticated;
   tasks=nextTasks;
   $('#project').innerHTML=projects.length?projects.map(p=>`<option value="${p.id}">${esc(p.name)} — ${esc(p.path)}</option>`).join(''):'<option value="">Add a project first</option>';
   $('#tasks').innerHTML=tasks.length?tasks.map(t=>`<div class="item clickable" data-task="${t.id}"><span class=tag>${esc(t.status)}</span><strong>${esc(t.prompt)}</strong><small>${new Date(t.updated_at*1000).toLocaleString()}</small></div>`).join(''):'<div class=empty>No planned tasks yet.</div>';
@@ -26,6 +53,7 @@ async function refresh(){
   $('#provider-select').onchange=updateProviderHint; updateProviderHint();
   $('#approval-count').textContent=approvals.length;
   if(selectedId) await renderSelected();
+  applyExecutionPolicy();
  }catch(e){console.error(e)}
 }
 async function decide(id,status){try{await api(`/api/approvals/${id}`,{method:'PATCH',body:JSON.stringify({status})});await refresh()}catch(e){alert(e.message)}}
@@ -52,6 +80,7 @@ async function renderSelected(){
   const responses=invocations.map(x=>`<div class=item><span class=tag>sha ${esc(x.prompt_sha256.slice(0,12))}</span><strong>${esc(x.provider_id)}</strong><div class=output>${esc(x.response)}</div></div>`);
   $('#task-invocations').innerHTML=responses.length?responses.join(''):'<div class=empty>No provider responses yet.</div>';
  }catch(e){msg($('#action-result'),e.message,true)}
+ applyExecutionPolicy();
 }
 let busy=false;
 async function action(path,body,success){if(busy)return;busy=true;try{const d=await api(path,{method:'POST',body:JSON.stringify(body||{})});msg($('#action-result'),success(d));await refresh()}catch(e){msg($('#action-result'),e.message,true)}finally{busy=false}}

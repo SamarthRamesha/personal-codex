@@ -1,5 +1,15 @@
 # Architecture
 
+## AFK architecture update — 2026-11-07
+
+Intended production flow: `Mac Tauri UI → private verified HTTPS / existing Tailscale Serve → loopback JARVIS API + SQLite`. A separate Mac worker makes outbound authenticated polls to that API, performs inference through fixed loopback Ollama, and returns bounded leased chunks. This avoids an inbound Mac proxy or exposed Ollama listener. The real worker path is locally verified; JARVIS is undeployed.
+
+`app/inference.py` owns durable claims, limits, lease expiry, idempotent ordered chunks, cancellation and restart interruption. `app/mac_worker.py` accepts only the installed-model allowlist and closed job schema; it has no shell/file/download protocol. Its credential cannot act as owner. `app/runtime.py` provides an instance lock, bounded clients, socket timeouts and graceful signal shutdown. Provider streams and worker control calls have total-deadline guards that wake stalled reads.
+
+`PERSONAL_CODEX_PUBLIC_ORIGIN` selects strict loopback proxy trust and secure cookie semantics, never identity-based authentication. Serve startup requires disabled repository execution and explicit roots. Git and interpreters are refused in that profile; local development retains exact approvals. Browser cookie sign-in/sign-out now exists. Native streaming cancellation is scoped by stream ID, and provider health distinguishes Mac from backend inference.
+
+See `docs/API.md`, `deploy/` and `DEPLOYMENT.md`. Snapshots now reject concurrent work and incomplete inventories. Templates provide resource/log limits for review, without a verified container deployment, hard filesystem quota, OS execution/egress sandbox or automatic backup schedule.
+
 ## Current architecture — 2026-11-07
 
 `Native React/TypeScript UI → Tauri Rust IPC bridge → authenticated Python API → SQLite + approved Git worktrees → explicitly chosen local provider`.

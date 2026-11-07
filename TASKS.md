@@ -1,5 +1,20 @@
 # Tasks
 
+## AFK completion and remaining gates — 2026-11-07
+
+- [x] Audit implementation matrix and preserve existing architecture/history.
+- [x] Scoped outbound worker, durable leases, restart recovery, model discovery/location and no silent fallback.
+- [x] Serve auth/proxy boundary, readiness, execution-disabled profile, instance lock, graceful shutdown and provider cancellation.
+- [x] Authenticated browser path, native protocol/capability alignment, optimized app and real synthetic UI/worker verification.
+- [x] Bounded snapshots/logging, deployment/preflight/resource/backup/recovery/ACL templates and API docs.
+- [ ] Restore unattended read-only SSH; refresh exact free space, target permissions, Docker and existing Serve state.
+- [ ] Approve exact service identity/root/image/quota and server writes, private Serve change and reviewed full ACL policy.
+- [ ] Approve persistent outbound Mac worker after a real remote HTTPS test; no Ollama exposure needed.
+- [ ] Validate actual Docker constraints, HTTPS, ACL rejection, remote model cancellation/restart and restore-to-new-path on JARVIS.
+- [ ] Design and approve OS execution/egress containment before enabling coding on JARVIS; general editor/PTY and multi-user access remain unimplemented.
+
+Mission 1 remains partial. All deployment-dependent tasks are gated; no production service or networking change was performed.
+
 ## Mission 1 priorities — 2026-11-07
 
 - [x] Reconcile actual checkout and remote stabilization branch; preserve untracked diagnostic and historical main.
