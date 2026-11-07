@@ -7,7 +7,7 @@
 - Fixed cancellation/total timeouts for stalled provider reads, scoped native stream cleanup, SSE framing limits, pre-header missing-stream errors and lazy Store startup.
 - Added authenticated browser login/logout, truthful inference location/capabilities, private rotating worker logs, concurrent snapshot refusal and fail-closed incomplete storage inventory.
 - Prepared nonroot bounded Docker/LaunchAgent templates, source build allowlist, read-only preflight, synthetic ACL fragment, API and recovery documentation. Nothing installed or changed on JARVIS.
-- Verified real Qwen worker coding proof (17 checks, 82.764 s) and rebuilt native Gemma streaming/stop plus browser auth manually. Final test results are in NEXT_SESSION_PROMPT.md and the local AFK report.
+- Verified real Qwen worker coding proof (17 checks, 82.764 s) and rebuilt native Gemma streaming/stop plus browser auth manually. Final regression: 219 Python discovered (HTTP 215 passed/4 skipped; default 171 passed/48 skipped), seven Vitest and three Rust tests passed, zero final failures. Timings and limits are in NEXT_SESSION_PROMPT.md and the local AFK report.
 
 ## Mission 1 native client and private API — 2026-11-07
 

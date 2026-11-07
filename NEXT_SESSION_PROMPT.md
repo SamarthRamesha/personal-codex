@@ -7,7 +7,7 @@ Current as of 2026-11-07, Asia/Kolkata. Continue the existing checkout; do not r
 - Repository: `https://github.com/SamarthRamesha/personal-codex`.
 - Checkout: `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex`.
 - Branch: `personal-codex/stabilization`; historical published tip `4a3ea1d91e70e392faf342ea03b335d7f207169d`.
-- AFK core milestone `9109eb1`: durable outbound worker, private proxy/runtime and native contract fixes. Further local preparation/handoff commits follow; use `git log -3` for exact current tip. No AFK changes pushed.
+- AFK core milestone `9109eb1`: durable outbound worker, private proxy/runtime and native contract fixes. Local preparation implementation commit `31f5f1d` adds the final browser, maintenance, profile/path enforcement and deployment artifacts. A documentation receipt follows; use `git log -3` for its exact tip. No AFK changes pushed.
 - Preserve all local work. Never reset, clean, rebase, force-push, delete recovery data or overwrite unexpected edits.
 - Pre-existing untracked `personal-codex-diagnostic.txt` is excluded: never read, stage, delete or publish it. Use explicit staging paths, never `git add .`.
 - Private deployment targets, SSH identity metadata and approval queue are outside Git under current chat outputs. Do not copy them into public docs/source archives.
