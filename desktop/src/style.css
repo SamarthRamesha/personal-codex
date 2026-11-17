@@ -12,3 +12,15 @@
 .attachment-tools{display:flex;flex-wrap:wrap;gap:.5rem;margin:.4rem 0;max-height:12rem;overflow:auto}
 .attachment-tools details{max-width:100%;border:1px solid #405449;border-radius:.4rem;padding:.4rem .6rem}
 .attachment-tools pre{white-space:pre-wrap;overflow-wrap:anywhere}
+
+.full-task-button{width:100%;margin:.35rem 0 .8rem;text-align:left;font-weight:600}
+.full-task-dialog{max-height:90vh;overflow:auto}
+.full-task-dialog label{display:grid;gap:.35rem;margin:0 0 .85rem;color:#acbdb2}
+.full-task-dialog label :is(textarea,select,input){width:100%;margin:0}
+.full-task-dialog textarea{min-height:8rem}
+.full-task-dialog .full-budgets{display:grid;grid-template-columns:1fr 1fr;gap:.85rem}
+.full-attachments>button{border:1px solid #405449;padding:.45rem .65rem}
+.full-attachments{margin:.8rem 0}
+.full-task-report{margin:.75rem 0;padding:.8rem;border:1px solid #405449;border-radius:.65rem}
+.full-task-report pre{padding:.6rem;background:#151c17;overflow:auto}
+.full-task-dialog .message-error{white-space:pre-wrap}

@@ -13,7 +13,7 @@ DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
 
 @contextmanager
-def parent_directory(root, relative, *, create=False):
+def parent_directory(root, relative, *, create=False, root_identity=None):
     path = PurePosixPath(relative)
     parts = relative.split("/")
     if (path.is_absolute() or len(parts) > 12 or "\\" in relative
@@ -22,6 +22,10 @@ def parent_directory(root, relative, *, create=False):
         raise ValueError("File path must use canonical relative components")
     current = os.open(root, DIRECTORY)
     try:
+        if root_identity is not None:
+            info = os.fstat(current)
+            if (info.st_dev, info.st_ino) != tuple(root_identity):
+                raise ValueError("The selected project directory changed")
         for part in parts[:-1]:
             if create:
                 try:
@@ -70,11 +74,11 @@ def text_file(root, relative):
         raise ValueError("Workspace file is not UTF-8 text") from None
 
 
-def write_file(root, relative, content, *, expected=None, make_parents=False):
+def write_file(root, relative, content, *, expected=None, make_parents=False, root_identity=None):
     """Publish a fully written file. New files are installed without replacement."""
     if len(content) > LIMIT or b"\x00" in content:
         raise ValueError("Generated UTF-8 text exceeds the file limit or contains NUL")
-    with parent_directory(root, relative, create=make_parents) as (parent, name):
+    with parent_directory(root, relative, create=make_parents, root_identity=root_identity) as (parent, name):
         mode = 0o600
         if expected is not None:
             before, info = snapshot(parent, name)

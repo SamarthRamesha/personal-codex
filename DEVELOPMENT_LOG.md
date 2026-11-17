@@ -1,5 +1,13 @@
 # Development log
 
+## Full task execution — 2026-11-17
+
+A single scoped authorization now covers planning, implementation, contained tests and build checks, repair, final review, and delivery. The desktop reports real progress and exposes Finder destination selection, multiple attachments, cancellation, recovery, and exact commands. Scope is persisted with the approved directory identity and baseline revision. No validation succeeds on test-only edits or a test run with zero passing tests.
+
+On the Apple M3, a real `qwen3.5:9b` run with Wi-Fi disabled delivered source, tests, and README in 69.74 seconds. Both unit tests passed. Direct runs from the delivered folder printed 5 for addition and 12 for attachment-driven multiplication. Earlier live attempts exposed missing README handling and loss of repair evidence after rejected model responses. The workflow now generates missing standard documentation and preserves the latest verification output. Synthetic runs exercised real test failure and repair, modifying an existing project, conflict refusal, and cancel/resume.
+
+The prior 8K model benchmark remains the basis for keeping the primary model and existing 14B fallback. The recorded offline run is one small end-to-end task. Broader dependency provisioning, live web application checks, and full dataset processing remain open.
+
 ## Native local coding agent — 2026-11-17
 
 Created explicit Finder authorization for new folders and existing repositories. The app shows the resolved destination and authenticates the native selection through a scoped loopback request. Git initialization and registration happen inside the app, and stored native scope is tied to directory identity.

@@ -1,5 +1,13 @@
 # Security model
 
+## Full task execution boundary
+
+The owner-authorized offline workflow binds a task to one repository directory identity, an exact Git baseline, selected reference files, an installed loopback model and run budgets. The native bridge keeps the owner token and Finder capability in process memory. Attachment text is treated as reference material. Execution uses the existing macOS process sandbox with the network denied and the task worktree as the writable project root. Validation commands are selected from the Python and Node allowlists and a constrained interpreter smoke command.
+
+Automatic delivery preflights each affected target file and compares its content to the Git baseline. Already-delivered identical files make retries safe. Symlinks, unexpected file types, conflicting edits and security-sensitive paths are refused. An individual file write is atomic. A failure during a multi-file delivery can leave a subset applied, and the result names that subset and retains the task worktree. Existing validation files still require separate reviewed authorization to change.
+
+Existing code and installed packages can have effects within the writable worktree during checks. Task-level authorization does not vend system installers, network access, secrets, deletion, deployment, or Git push. Attached files and generated tests cannot establish semantic correctness or completeness on their own. Local owner processes and Git repositories remain within the trust boundary.
+
 ## Mission 1C.1 production outbound boundary
 
 Private Serve startup now requires `PERSONAL_CODEX_INFERENCE_POLICY=worker-only` and `PERSONAL_CODEX_DENY_CONNECT=1`, supported Linux x86_64, disabled execution and literal loopback binding. All direct/legacy provider metadata/discovery/chat/round paths are blocked before transport or chat writes. Development local-provider support remains outside this production profile.

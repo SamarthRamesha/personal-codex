@@ -89,3 +89,22 @@ export async function stream(path:string,onEvent:(event:SSE)=>void,signal:AbortS
     }finally{await reader.cancel().catch(()=>{});}
   }
 }
+
+export function chooseFullAttachments() {
+  return invoke<string[]>('choose_full_attachments');
+}
+
+export async function importFullAttachments(projectId: string, names: string[]) {
+  const replies = await invoke<Reply[]>('import_full_attachments', {projectId});
+  return replies.map((reply,index)=>{
+    try {
+      return {attachment:unpack<Attachment>(reply)};
+    } catch (reason) {
+      return {error:`${names[index]||'Selected file'} — ${String(reason instanceof Error?reason.message:reason)}`};
+    }
+  });
+}
+
+export function openFullDestination(taskId: string) {
+  return invoke<void>('open_full_destination', {taskId});
+}

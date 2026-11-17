@@ -1,5 +1,13 @@
 # Personal Codex: current implementation handoff
 
+## Full task execution — 2026-11-17
+
+Continue `personal-codex/stabilization` from the latest local commit. Start from this checkout with `python3 scripts/offline_workstation.py`. The preferred local bundle is `data/full-task-app/Personal Codex.app`. Quit the earlier session before reusing its ports. Run with `--app 'data/autonomous-app/Personal Codex.app'` for the preceding manual workflow.
+
+The sidebar's **Full task execution** dialog takes one request, a Git destination, and multiple Finder attachments. The backend keeps one full task active, with an isolated worktree, bounded Python or Node verification, terminal results, contained repair, and automatic guarded delivery. The A–H report and exact commands appear in the workspace. Do not switch the user profile, read the diagnostic, or push this branch without user authorization.
+
+Use `python3 scripts/full_task_acceptance.py --output /path/to/a/new/disposable-directory` and the `--live`, `--existing`, `--conflict`, or `--cancel` switches to reproduce acceptance. The installed 9B model delivered a calculator and ran both checks in 69.74 seconds with Wi-Fi off. The previous 14B fallback remains available. Extend runtime support through contained commands and explicit dependency policy. Rich screenshot interpretation, raw dataset staging, multi-service app lifecycle and visual browser verification remain open.
+
 ## Current Mac coding-agent release — 2026-11-17
 
 Continue the existing `personal-codex/stabilization` branch from `git log -1`. Normal startup from this checkout is `python3 scripts/offline_workstation.py`. Quit an earlier running Personal Codex session before restarting on its normal loopback port. The launcher selects the new signed bundle at `data/autonomous-app/Personal Codex.app`. Launch the previous bundle for recovery with `python3 scripts/offline_workstation.py --app 'data/offline-app/Personal Codex.app'`. The previous bundle remains separately installed.

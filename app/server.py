@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review  # script execution puts app/ on sys.path
+    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review
+    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -75,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_message ON message_chunks(message_id, seq)
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at);
 CREATE TABLE IF NOT EXISTS conversation_tasks (conversation_id TEXT NOT NULL, task_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (conversation_id, task_id));
 """
-SCHEMA += inference.SCHEMA + project_agent.SCHEMA + attachments.SCHEMA
+SCHEMA += inference.SCHEMA + project_agent.SCHEMA + attachments.SCHEMA + full_task.SCHEMA
 MIGRATIONS = {
     "providers": {"last_latency_ms": "INTEGER", "last_checked_at": "INTEGER"},
     "memory": {"source_task_id": "TEXT", "source_round_id": "TEXT", "evidence": "TEXT", "digest": "TEXT"},
@@ -124,6 +124,8 @@ class Store:
         stamp = now()
         self.conn.execute("UPDATE autonomous_runs SET status='interrupted', summary=?, updated_at=? WHERE status='running'",
                           ("Service restarted. Review the workspace before explicitly resuming.", stamp))
+        self.conn.execute("UPDATE tasks SET status='interrupted', updated_at=? WHERE status='running' "
+                          "AND id IN (SELECT task_id FROM full_tasks)", (stamp,))
         recovered_messages = self.conn.execute(
             "UPDATE messages SET status='stopped', error=?, updated_at=? WHERE status IN ('queued','streaming')",
             ("service restarted before this answer finished; the partial text is display-only and will not be resumed",
@@ -905,7 +907,7 @@ def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None, 
                 env = {**local_runner.base_env(root), "TMPDIR": str(scratch),
                        "npm_config_cache": str(scratch), "npm_config_prefix": str(root),
                        "npm_config_offline": "true", "NODE_OPTIONS": "--max-old-space-size=768"}
-                programs = (local_runner.trusted_program("node"),) if argv[0] == "npm" else ()
+                programs = (local_runner.trusted_program("node"),) if argv[0] in ("npm", "node") else ()
                 writable = [scratch]
                 if argv == ["npm", "run", "build"]:
                     dist = root / "dist"
@@ -915,7 +917,7 @@ def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None, 
                     writable.append(dist)
                 launch = local_runner.sandboxed(argv, reads=(root, scratch), writes=writable, programs=programs)
             process=subprocess.Popen(launch, cwd=root, env=env, stdout=output_file, stderr=subprocess.STDOUT,
-                                     preexec_fn=lambda: child_limits(timeout, address_space=not (contained and argv[0] == "npm")),
+                                     preexec_fn=lambda: child_limits(timeout, address_space=not (contained and argv[0] in ("npm", "node"))),
                                      start_new_session=True)
             deadline=time.time()+timeout
             while True:
@@ -1082,6 +1084,13 @@ class App(SimpleHTTPRequestHandler):
                 return self.json({"error": "No task workspace is available"}, 404)
             relative = parse_qs(urlparse(self.path).query).get("path", [""])[0]
             return self.json(tools.read_file(safe_workspace_path(workspace), relative, tools.MAX_READ_BYTES))
+        open_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/full-destination", route)
+        if open_route and network_policy.offline_only() and AUTH.enabled:
+            task = STORE.one("SELECT project_id FROM tasks WHERE id=?", (open_route[1],))
+            if not task or not full_task.fetch(STORE, open_route[1]):
+                return self.json({"error": "Full task not found"}, 404)
+            project = STORE.one("SELECT path FROM projects WHERE id=?", (task["project_id"],))
+            return self.json({"path": str(safe_project_path(project["path"]))})
         agent_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous", route)
         if agent_route and network_policy.offline_only():
             task_id = agent_route[1]
@@ -1326,11 +1335,69 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            if route == "/api/full-tasks":
+                if not network_policy.offline_only() or not AUTH.enabled:
+                    return self.json({"error": "Full task execution requires authenticated offline mode"}, 403)
+                require_execution()
+                required = {"project_id", "prompt", "attachments", "provider_id", "rounds", "confirm"}
+                if not required.issubset(data) or set(data)-required-{"seconds"} or data["confirm"] is not True:
+                    raise ValueError("Authorize one scoped full-task run and delivery to the selected repository")
+                if (not isinstance(data["prompt"], str) or not data["prompt"].strip()
+                        or len(data["prompt"]) > full_task.MAX_PROMPT):
+                    raise ValueError("Enter a complete task instruction of up to 8,000 characters")
+                if type(data["rounds"]) is not int or not 2 <= data["rounds"] <= 12:
+                    raise ValueError("Choose between two and twelve full-task rounds")
+                seconds = data.get("seconds", 540)
+                if type(seconds) is not int or not 120 <= seconds <= 900:
+                    raise ValueError("Choose a time budget between two and fifteen minutes")
+                project = STORE.one("SELECT * FROM projects WHERE id=?", (data["project_id"],))
+                if not project:
+                    return self.json({"error": "Select a project first"}, 404)
+                provider = provider_row(data["provider_id"])
+                if not provider or not provider["enabled"]:
+                    raise ValueError("Select an installed local provider")
+                network_policy.require_provider(provider)
+                source = safe_project_path(project["path"])
+                if not (source / ".git").is_dir() or (source / ".git").is_symlink():
+                    raise ValueError("Select a Git repository with a regular .git directory")
+                current = project_review.git_read(source, None, ["rev-parse", "HEAD"])
+                if current.returncode:
+                    raise ValueError("The project needs an initial Git revision")
+                baseline = current.stdout.decode("ascii").strip()
+                if not re.fullmatch(r"[a-f0-9]{40,64}", baseline):
+                    raise ValueError("Could not determine the current Git revision")
+                references = full_task.attachment_inputs(STORE, project["id"], data["attachments"])
+                info = source.stat()
+                scope = {"identity": [info.st_dev, info.st_ino], "baseline": baseline, "source":str(source),
+                         "seconds": seconds, "attachments": references,
+                         "attachment_names": [item["name"] for item in references]}
+                tid, stamp = uid(), now()
+                task = {"id": tid, "project_id": project["id"], "prompt": data["prompt"].strip(),
+                        "created_at": stamp, "updated_at": stamp}
+                run = project_agent.start(sys.modules[__name__], task, provider, "full-task", data["rounds"], scope=scope)
+                return self.json({"task_id": tid, "run": run}, 202)
+            resume_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/full-resume", route)
+            if resume_route and network_policy.offline_only() and AUTH.enabled:
+                require_execution()
+                task_id = resume_route[1]
+                if set(data) != {"confirm"} or data["confirm"] is not True:
+                    raise ValueError("Authorize another bounded attempt within the original scope")
+                previous = project_agent.report(STORE, task_id)
+                if not previous.get("full_task"):
+                    return self.json({"error": "Full task not found"}, 404)
+                task = STORE.one("SELECT * FROM tasks WHERE id=?", (task_id,))
+                provider = provider_row(previous["provider_id"])
+                network_policy.require_provider(provider or {})
+                if provider is None or not provider["enabled"]:
+                    raise ValueError("The authorized local provider is unavailable")
+                return self.json(project_agent.start(sys.modules[__name__], task, provider, "full-task", 4), 202)
             publish_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous/apply", route)
             if publish_route and network_policy.offline_only() and AUTH.enabled:
                 require_execution()
                 if set(data) != {"digest", "confirm"} or data["confirm"] is not True:
                     raise ValueError("Authorize the exact reviewed file changes")
+                if full_task.fetch(STORE, publish_route[1]):
+                    raise ValueError("Full-task delivery is managed by its approved execution session")
                 source, review, contents = review_autonomous_changes(publish_route[1])
                 if not review["can_apply"] or review["digest"] != data["digest"]:
                     raise ValueError("Only this exact reviewed changeset can be applied to the new project")
@@ -1537,6 +1604,15 @@ class App(SimpleHTTPRequestHandler):
                 path, info = enroll(data, data=DATA, source=ROOT)
                 project = {"id": uid(), "name": path.name, "path": str(path)}
                 with STORE.lock, STORE.conn:
+                    previous = STORE.one("SELECT id,name,path FROM projects WHERE path=?", (str(path),))
+                    if previous and existing:
+                        root = STORE.one("SELECT device,inode FROM native_project_roots WHERE path=?", (str(path),))
+                        if root and (root["device"], root["inode"]) != (info.st_dev, info.st_ino):
+                            raise ValueError("The registered project has a different directory identity")
+                        if not root:
+                            STORE.conn.execute("INSERT INTO native_project_roots VALUES (?,?,?)",
+                                               (str(path), info.st_dev, info.st_ino))
+                        return self.json(previous, 201)
                     STORE.conn.execute("INSERT INTO native_project_roots VALUES (?,?,?)",
                                        (str(path), info.st_dev, info.st_ino))
                     STORE.conn.execute("INSERT INTO projects VALUES (?,?,?,?)",

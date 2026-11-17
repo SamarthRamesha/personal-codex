@@ -12,8 +12,10 @@ import zipfile
 
 MAX_TEXT = 12_000
 XML_LIMIT = 2_000_000
+TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".py", ".js", ".ts", ".tsx", ".jsx",
+                 ".json", ".jsonl", ".yaml", ".yml", ".html", ".css", ".sql", ".toml", ".rs", ".go"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
-SUFFIXES = {".pdf", ".docx", ".pptx", ".xlsx", ".csv", ".txt", ".md", ".markdown", *IMAGE_SUFFIXES}
+SUFFIXES = {".pdf", ".docx", ".pptx", ".xlsx", ".csv", *TEXT_SUFFIXES, *IMAGE_SUFFIXES}
 
 
 def local_name(tag):
@@ -95,7 +97,7 @@ def extract(path):
         with path.open(encoding="utf-8-sig", newline="") as source:
             return "\n".join(" | ".join(item[:300] for item in row[:30])
                              for row in islice(csv.reader(source), 35))[:MAX_TEXT]
-    if suffix in {".txt", ".md", ".markdown"}:
+    if suffix in TEXT_SUFFIXES:
         with path.open(encoding="utf-8-sig") as source:
             return source.read(MAX_TEXT)
     raise ValueError("Unsupported attachment format")

@@ -1,16 +1,18 @@
 # Personal Codex
 
-## Local coding agent on macOS
+## Full task execution on macOS
 
-Use `python3 scripts/offline_workstation.py` and select **Connect backend**. On the prepared Mac the launcher uses `data/autonomous-app/Personal Codex.app` when installed. The earlier bundle is available with `--app 'data/offline-app/Personal Codex.app'`.
+Run `python3 scripts/offline_workstation.py` and choose **Connect backend**. On the prepared Mac the launcher uses `data/full-task-app/Personal Codex.app`. The previous app remains available with `--app 'data/autonomous-app/Personal Codex.app'`.
 
-Type a request such as “Create a new Python project with a CSV validator and unit tests,” or click **New project**. Set the project name, select its parent in Finder, confirm the displayed destination, and create the project. **Open project** enrolls an already existing Git repository after a separate Finder selection and confirmation.
+1. Choose **Full task execution** in the sidebar. Describe the deliverables, expected behavior, and a concrete example to verify.
+2. Use a registered Git project, open an existing Git root in Finder, or enter a name and select the parent of a new project. Confirm the displayed destination.
+3. Use **Choose attachments in Finder** to select up to eight files using Command-click. The task uses the selected attachments as project references.
+4. Choose **Authorize and run full task**. Personal Codex plans, edits an isolated worktree, runs the planned checks, uses actual output to repair failures, reviews the work, and delivers verified files to the approved directory. Use **Stop local run** to save work for a possible resume.
+5. The workspace shows delivery status, checks, **Open project in Finder**, and **Copy exact commands**. For existing repositories, review the changes using `git diff` and commit them through your normal workflow.
 
-In the coding task, select **Run local agent**, read the scope, and confirm the exact validation command. The agent works in a local Git worktree. It reads bounded project context, creates or patches real files, runs the approved command through the Mac process sandbox, and uses the returned output on subsequent rounds. **Stop local run** preserves progress. **Resume local run** starts a new bounded attempt with the same command and model.
+The run supports local Python and Node checks and works with already available runtimes and dependencies. Attachments are processed locally as bounded excerpts. The image pipeline extracts text with local OCR. A run that encounters a conflict, missing dependency, or exhausted budget keeps the worktree and reports the failing step. The individual approval workflow remains available from existing coding tasks.
 
-Use **Review changes** after validation. **Apply reviewed files to project** is available for exact new files against an empty Git baseline. Existing repository edits stay in the task worktree for Git review. The project conversation supports Finder attachments and explicit import after a single-file drop. Image attachments provide local OCR text. The current extractor reads text PDFs and bounded Office, CSV and text excerpts.
-
-Run `scripts/agent_acceptance.py --output <new-directory>` with Python to repeat the synthetic failure/repair proof on macOS. Use `--live` for an installed Ollama model. The previous and current verification receipts are referenced in [the handoff](NEXT_SESSION_PROMPT.md).
+Use `python3 scripts/full_task_acceptance.py --output /path/to/a/new/disposable-directory` to exercise the repair and delivery flow. Add `--live` to use the installed primary model, or select a focused fixture with `--existing`, `--conflict`, or `--cancel`. See [the current handoff](NEXT_SESSION_PROMPT.md) for the results.
 
 ## Offline hackathon workstation
 
@@ -20,9 +22,9 @@ From this checkout on the prepared Mac, quit the Ollama menu-bar app if it alrea
 python3 scripts/offline_workstation.py
 ```
 
-Choose **Connect backend**. The window shows **Offline mode · owner authenticated** and **ollama · qwen3.5:9b**. The launcher starts the installed Ollama with cloud features disabled at `127.0.0.1:11434`, the authenticated backend at `127.0.0.1:8787`, and the prebuilt app at `data/offline-app/Personal Codex.app`. Quit the window to shut down its services. The app needs the compiled bundle, the installed Ollama model cache, Python and Git for normal use.
+Choose **Connect backend**. The window shows **Offline mode · owner authenticated** and **ollama · qwen3.5:9b**. The launcher starts the installed Ollama with cloud features disabled at `127.0.0.1:11434`, the authenticated backend at `127.0.0.1:8787`, and the current prebuilt app. Quit the window to shut down its services. The app needs the compiled bundle, the installed Ollama model cache, Python and Git for normal use.
 
-Select **ollama · qwen2.5-coder:14b** in the provider selector for the fallback, or restart with `python3 scripts/offline_workstation.py --model qwen2.5-coder:14b` to make it the default for that launch. Both tags use an 8192-token context and share one model slot. The controller uses a separate private profile in `data/offline`; its Git project root is `data/offline/projects` unless you supply a dedicated `--project-root`. Register a local Git repository within that root. File changes and test commands still require exact approvals.
+Select **ollama · qwen2.5-coder:14b** in the provider selector for the fallback, or restart with `python3 scripts/offline_workstation.py --model qwen2.5-coder:14b` to make it the default for that launch. Both tags use an 8192-token context and share one model slot. The controller uses a separate private profile in `data/offline`; its Git project root is `data/offline/projects` unless you supply a dedicated `--project-root`. The managed root is a default for registered Git repositories. Native Finder can authorize another selected directory.
 
 The Mac passed real model generation, cancellation and recovery, persisted history and a local approved test across verified Wi-Fi-off windows. The desktop UI and actual model-produced patch/test workflow were also exercised. See [the current handoff](NEXT_SESSION_PROMPT.md) for local reports and exact verification details.
 
@@ -32,7 +34,7 @@ Worker replay/rotation and protocol hardening, encrypted offline recovery, stora
 
 Personal Codex is a private, local-first AI coding control plane for macOS. It connects a registered Git repository, a local or explicitly consented model provider, and a task workspace where an agent can propose — and you can approve — small, auditable code changes.
 
-Nothing is autonomous by default. A model may *propose* file edits and test commands as strict JSON; Personal Codex validates them, shows you the exact digest, and only applies them to an isolated Git worktree after you approve that exact proposal. The Python backend defaults to loopback and uses the standard library. The native client has pinned React/Tauri dependencies; private remote serving supports an exact authenticated Tailscale Serve origin over a loopback backend. The legacy direct authenticated TLS listener remains available.
+In the individual approval workflow, a model may *propose* file edits and test commands as strict JSON; Personal Codex validates them, shows you the exact digest, and only applies them to an isolated Git worktree after you approve that exact proposal. The Python backend defaults to loopback and uses the standard library. The native client has pinned React/Tauri dependencies; private remote serving supports an exact authenticated Tailscale Serve origin over a loopback backend. The legacy direct authenticated TLS listener remains available.
 
 ## Status
 
