@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
-use std::{net::IpAddr, sync::{Arc, Mutex}, time::Duration};
+use std::{net::IpAddr, path::PathBuf, sync::{Arc, Mutex}, time::Duration};
 use tauri::{ipc::Channel, State};
 use tokio::sync::watch;
 use url::Url;
@@ -9,7 +9,7 @@ use url::Url;
 #[derive(Clone)]
 struct Connection { base: Url, token: String, client: reqwest::Client, generation: u64 }
 #[derive(Default)]
-struct Bridge { connection: Mutex<Option<Connection>>, generation: Mutex<u64>, cancel: Mutex<Option<(String, watch::Sender<bool>)>> }
+struct Bridge { offline_token_file: Option<PathBuf>, connection: Mutex<Option<Connection>>, generation: Mutex<u64>, cancel: Mutex<Option<(String, watch::Sender<bool>)>> }
 #[derive(Serialize, Clone)]
 struct Reply { status: u16, body: String }
 #[derive(Serialize, Clone)]
@@ -48,8 +48,47 @@ async fn bounded_body(mut response: reqwest::Response, limit: usize) -> Result<S
     }
     String::from_utf8(body).map_err(|_| "Backend returned invalid UTF-8".into())
 }
+const OFFLINE_BACKEND: &str = "http://127.0.0.1:8787";
+
+#[cfg(unix)]
+fn read_offline_token(path: &std::path::Path) -> Result<String, String> {
+    use std::{fs::OpenOptions, io::Read, os::unix::fs::{MetadataExt, OpenOptionsExt}};
+
+    let error = || "Local owner token file must be an owner-only regular file".to_string();
+    let file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path).map_err(|_| error())?;
+    let info = file.metadata().map_err(|_| error())?;
+    if !info.is_file() || info.mode() & 0o077 != 0 || info.uid() != unsafe { libc::geteuid() }
+        || info.len() > 1024 || info.nlink() != 1 {
+        return Err(error());
+    }
+    let mut value = String::new();
+    file.take(1025).read_to_string(&mut value).map_err(|_| error())?;
+    if value.len() > 1024 || value.trim().is_empty() { return Err(error()); }
+    Ok(value.trim().to_string())
+}
+
+#[cfg(not(unix))]
+fn read_offline_token(_: &std::path::Path) -> Result<String, String> {
+    Err("This offline launcher requires macOS".into())
+}
+
+#[tauri::command]
+fn offline_session(state: State<'_, Arc<Bridge>>) -> bool {
+    state.offline_token_file.is_some()
+}
+
 #[tauri::command]
 async fn connect_backend(base_url: String, token: String, state: State<'_, Arc<Bridge>>) -> Result<Reply, String> {
+    let offline = state.offline_token_file.as_deref();
+    let token = if let Some(path) = offline {
+        if base_url != OFFLINE_BACKEND || !token.is_empty() {
+            return Err("Offline mode uses only the fixed local backend and its owner token file".into());
+        }
+        read_offline_token(path)?
+    } else {
+        token
+    };
     let base = validate_base(&base_url)?;
     if !token.is_empty() && (token.len() < 32 || token.len() > 512 || !token.is_ascii() || token.chars().any(char::is_whitespace)) {
         return Err("Invalid owner token format".into());
@@ -69,6 +108,10 @@ async fn connect_backend(base_url: String, token: String, state: State<'_, Arc<B
     let report: serde_json::Value = serde_json::from_str(&body).map_err(|_| "Invalid backend identity response")?;
     if report["api_version"] != 1 || report["ok"] != true || (connection.base.scheme() == "https" && report["authenticated"] != true) {
         return Err("Backend identity or authentication policy is incompatible".into());
+    }
+    if offline.is_some() && (report["inference_policy"] != "offline" || report["authenticated"] != true
+        || report["cloud_fallback"] != false) {
+        return Err("The authenticated offline backend is required".into());
     }
     // A disconnect or newer connection invalidates a slow handshake.
     if *state.generation.lock().map_err(|_| "Connection unavailable")? != epoch { return Err("Connection superseded".into()); }
@@ -144,8 +187,12 @@ fn cancel_stream(stream_id: String, state: State<'_, Arc<Bridge>>) -> Result<(),
 }
 
 fn main() {
-    tauri::Builder::default().manage(Arc::new(Bridge::default()))
-        .invoke_handler(tauri::generate_handler![connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
+    let bridge = Bridge {
+        offline_token_file: std::env::var_os("PERSONAL_CODEX_OFFLINE_TOKEN_FILE").map(PathBuf::from),
+        ..Bridge::default()
+    };
+    tauri::Builder::default().manage(Arc::new(bridge))
+        .invoke_handler(tauri::generate_handler![offline_session, connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
         .run(tauri::generate_context!()).expect("Personal Codex could not start");
 }
 

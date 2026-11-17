@@ -1,5 +1,15 @@
 # Development log
 
+## Offline hackathon workstation — 2026-11-17
+
+Added an opt-in inference policy for the two installed Qwen tags at the exact Ollama loopback origin. Existing local provider transports enforce the offline model boundary and include the current 8K request options. The launcher manages the existing binary with cloud disabled, a single runner slot, an authenticated loopback backend, a private data directory, and the built Tauri app. The local native session uses the owner file through Rust IPC, shows its actual provider and tag, and suppresses remote setup controls. Existing round and test approval checks remain authoritative.
+
+On the 16 GiB Apple M3, `qwen3.5:9b` (local ID `d63f830f28d5`, MLX NVFP4) scored 8/10 at 5.06 median tokens/sec and peaked at 9.00 GB of Ollama-reported residency. `qwen2.5-coder:14b` scored 4/10 at 2.80 tokens/sec and peaked at 10.29 GB. Selected 9B and retained 14B as a manual alternate. Tested 8K. System swap growth warranted leaving 12K untested.
+
+Verified real code, Stop and next-turn recovery in the native UI. Wi-Fi-off checkpoints covered cold startup and a real streamed Python response, cancellation and recovery, persistence after restart, a native Ollama function call, and an approved local unit test. Wi-Fi came back during a longer attempt, so the remaining milestones used separate timed windows. The original Wi-Fi state was verified after the last window. A separate real-model code round applied a reviewed patch, ran its test in the task worktree and persisted the evidence-backed result.
+
+Regression totals were 289 Python tests (284 passed, 5 skipped), 7 frontend tests and 3 Rust tests. Built the optimized Tauri app from cached dependencies and verified the locally signed bundle. The installed ML packages passed a synthetic fit, prediction and plot.
+
 ## Mission 1C.1 production policy engineering
 
 Refreshed authorised SSH/device/model metadata privately; daemon socket still denied, existing operator/current policy pending. Added worker-only registration/stored discovery/chat/round/invocation gates, additive Linux x86_64 synchronised no-connect filter and status/acceptance checks. Initial data admission24GB within25GB total target; no hard quota. Filter also blocks Fast Open/sendmsg/sendmmsg, unsafe socket creation, io_uring and cross-process FD/memory routes; startup tests fail closed. Kernel runtime proof pending separately approved transient probe, no host firewall/daemon mutation.

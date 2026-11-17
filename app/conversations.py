@@ -211,6 +211,8 @@ def resolve_provider(store, conversation: dict, provider_id: str | None) -> dict
         raise ValueError("provider is disabled")
     requested = conversation.get("model") or provider["model"]
     if requested != provider["model"]:
+        if network_policy.offline_only():
+            raise ValueError("Switch models by selecting the corresponding offline Ollama provider")
         if provider["kind"] == "mac-worker":
             try:
                 from . import inference
@@ -376,7 +378,7 @@ def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt
 
     try:
         adapter = transport_for(provider)
-        result = adapter({"provider_id":provider["id"],"endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt,
+        result = adapter({"provider_id":provider["id"],"kind":provider["kind"],"endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt,
                           "cloud_allowed": bool(provider["cloud_allowed"]), "secret_ref": provider.get("secret_ref") or "",
                           "stop_check": cancel.is_set, "on_text": on_text, "on_chunk": lambda count: None})
         if cancel.is_set():

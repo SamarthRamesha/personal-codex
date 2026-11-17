@@ -50,6 +50,54 @@ class WorkerOnlyTests(unittest.TestCase):
             install.assert_called_once()
 
 
+
+class OfflineProviderTests(unittest.TestCase):
+    def setUp(self):
+        env = patch.dict(os.environ, {"PERSONAL_CODEX_INFERENCE_POLICY": "offline"})
+        env.start()
+        self.addCleanup(env.stop)
+        self.row = {"kind": "ollama", "endpoint": policy.OLLAMA_ENDPOINT, "model": policy.OFFLINE_MODELS[0]}
+
+    def test_offline_policy_requires_exact_endpoint_and_configured_tag_before_transport(self):
+        for alternate in (
+            {"endpoint": "http://localhost:11434"},
+            {"endpoint": policy.OLLAMA_ENDPOINT + "/api/generate"},
+            {"cloud_allowed": True},
+            {"secret_ref": "SECRET"},
+            {"kind": "mac-worker"},
+            {"kind": "respan-gateway"},
+            {"model": "cloud-model:cloud"},
+        ):
+            with self.subTest(alternate=alternate), patch.object(server.providers, "post_json") as post:
+                row = {**self.row, **alternate}
+                for resolver in (server.active_provider_transport, server.round_transport,
+                                 conversations.transport_for, server.provider_approval_kind):
+                    with self.assertRaisesRegex(ValueError, "Offline mode"):
+                        resolver(row)
+                with self.assertRaisesRegex(ValueError, "Offline mode"):
+                    server.providers.OllamaTransport()(row)
+                post.assert_not_called()
+
+    def test_upstream_model_disallowed_and_local_generation_bounded(self):
+        with patch.object(server.providers, "post_json") as post:
+            post.return_value = {"remote_model": "synthetic-upstream"}
+            with self.assertRaisesRegex(ValueError, "remote model"):
+                server.providers.OllamaStreamTransport()({**self.row, "prompt": "hello"})
+            post.assert_called_once_with(policy.OLLAMA_ENDPOINT, "/api/show", {"model": self.row["model"]}, timeout=5)
+        with patch.object(server.providers, "post_json", side_effect=[{}, {"message": {"content": "hello"}}]) as post:
+            server.providers.OllamaTransport()({**self.row, "prompt": "hello", "json_output": True})
+            payload = post.call_args.args[2]
+            self.assertEqual(payload["options"], {"num_ctx": 8192, "num_predict": 768, "temperature": 0.2})
+            self.assertEqual(payload["format"], "json")
+            self.assertIs(payload["think"], False)
+
+    def test_offline_requires_loopback_and_preserves_worker_production_gate(self):
+        with self.assertRaisesRegex(ValueError, "127.0.0.1"):
+            policy.configure("0.0.0.0", "development")
+        with self.assertRaisesRegex(ValueError, "Private Serve"):
+            policy.configure("127.0.0.1", "disabled", production=True)
+        policy.configure("127.0.0.1", "development")
+
 def decision(nr,args=(),arch=0xc000003e):
     # Interpret standard classic-BPF instructions against syscall metadata. These
     # adversarial vectors are portable policy checks, not kernel enforcement proof.

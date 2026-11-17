@@ -1,5 +1,25 @@
 # Personal Codex: current implementation handoff
 
+## Current Mac offline workstation — 2026-11-17
+
+Continue this checkout on branch `personal-codex/stabilization`. Use the following startup for the ML hackathon on November 18:
+
+```sh
+cd '/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex'
+python3 scripts/offline_workstation.py
+```
+
+If a separate Ollama GUI already owns port 11434, quit it first. Click **Connect backend**. Confirm the window says **Offline mode · owner authenticated** and **ollama · qwen3.5:9b**. Optional startup choices are `--model qwen2.5-coder:14b` and `--project-root '/absolute/path/to/a/dedicated/team-directory'`. Inside the app use **Provider** to switch exact tags. Quitting the app shuts down its managed local services. The one-time default profile smoke passed and left the startup ports free.
+
+- Bundle is `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex/data/offline-app/Personal Codex.app`. Strict deep ad hoc signature check passed. App runtime is the installed bundle, Ollama 0.40.16, Git and Python 3.13. Node/npm and cached Rust crates are used for rebuilds.
+- The private profile is `/Users/macbramesha/Documents/Codex/2026-11-01/files-pasted-by-the-user-personal/outputs/personal-codex/data/offline`. Its owner-only token file and SQLite history stay local. The default project root is the `projects` subdirectory. The existing `data/personal_codex.db` remains a separate profile. Keep the existing working branch and untracked diagnostic file intact.
+- Ollama uses its existing cache and launches on `127.0.0.1:11434` with `OLLAMA_NO_CLOUD=1`, one runner and one request slot. Backend listens on `127.0.0.1:8787` and requires owner auth. Primary `qwen3.5:9b` is MLX NVFP4 ID `d63f830f28d5`; fallback `qwen2.5-coder:14b` is GGUF Q4_K_M ID `9ec8897f747e`. Current configuration is 8192 context, 768 output tokens, temperature 0.2, thinking off and three-minute residency. Keep proposed changes small and use the existing exact approval checks and test evidence.
+- Native UI verified real code generation, Stop and recovery. Physical Wi-Fi-off checks verified cold launch, real inference, cancellation, recovery, persisted chat after a fresh launch, a native function call and an approved test across independent windows. Wi-Fi was restored. The synthetic coding fixture proved the real proposal, patch, test, and evidence-checked completion. Both benchmark models missed the repository trace and planning case.
+- Full regression 289 discovered, 284 passed and 5 skipped. Frontend 7 passed and Rust 3 passed. Current native bundle built offline from the cached dependencies. Local ML fit, predict and plotting validated.
+- Report `/Users/macbramesha/Documents/Codex/2026-11-17/files-mentioned-by-the-user-screenshot/outputs/Offline_Workstation_Report.md`. Guide `/Users/macbramesha/Documents/Codex/2026-11-17/files-mentioned-by-the-user-screenshot/outputs/Hackathon_Operating_Guide.md`. Raw receipts `/Users/macbramesha/Documents/Codex/2026-11-17/files-mentioned-by-the-user-screenshot/outputs/acceptance-evidence.json` and `/Users/macbramesha/Documents/Codex/2026-11-17/files-mentioned-by-the-user-screenshot/outputs/benchmark-evidence`. Consult `git log -1` for the local implementation tip.
+
+The hackathon profile is a Mac-local mode. The sections below retain the earlier private deployment handoff.
+
 ## Current private policy proposal checkpoint
 
 The complete user-supplied HuJSON policy has now been received and parsed; do not ask for it again or retry browser inspection. Private tailnet-review/POLICY_REVIEW.md, proposed-policy.json, raw/semantic diffs, rollback copy, read-only evidence and artifact hashes are outside Git. No policy/server change or declined probe ran. Private IPs, node metadata and the actual policy remain outside this repository.

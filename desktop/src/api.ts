@@ -37,9 +37,12 @@ function unpack<T>(reply:Reply):T {
   return result as T;
 }
 export const native=isTauri();
+export const OFFLINE_BACKEND='http://127.0.0.1:8787';
+export async function offlineSession(){return native && await invoke<boolean>('offline_session');}
+type ConnectionReport = {authenticated:boolean;server_name:string;inference_policy?:string;execution_mode?:string;capabilities?:{repository_execution:boolean;mac_worker:boolean}};
 export async function connect(baseUrl:string,token:string){
-  if(!native) return unpack<{authenticated:boolean;server_name:string;execution_mode?:string;capabilities?:{repository_execution:boolean;mac_worker:boolean}}>(await browserRequest('GET','/api/connection'));
-  return unpack<{authenticated:boolean;server_name:string;execution_mode?:string;capabilities?:{repository_execution:boolean;mac_worker:boolean}}>(await invoke<Reply>('connect_backend',{baseUrl,token}));
+  if(!native) return unpack<ConnectionReport>(await browserRequest('GET','/api/connection'));
+  return unpack<ConnectionReport>(await invoke<Reply>('connect_backend',{baseUrl,token}));
 }
 export async function disconnect(){if(native) await invoke('disconnect_backend');}
 async function browserRequest(method:string,path:string,body?:unknown):Promise<Reply>{

@@ -1,4 +1,4 @@
-"""Worker-only deployment and additive Linux x86_64 no-connect seccomp filter.
+"""Inference policies and the additive Linux x86_64 no-connect seccomp filter.
 
 No daemon/firewall change. Install before starting the HTTP server. This reduces
 network authority of this process/descendants; it is not a coding sandbox.
@@ -17,20 +17,54 @@ DENY=0x00050000|errno.EPERM
 KILL=0x80000000
 
 
+OLLAMA_ENDPOINT = "http://127.0.0.1:11434"
+OFFLINE_MODELS = ("qwen3.5:9b", "qwen2.5-coder:14b")
+
+
+def inference_policy():
+    value = os.getenv("PERSONAL_CODEX_INFERENCE_POLICY", "development")
+    if value not in {"development", "worker-only", "offline"}:
+        raise ValueError("Invalid inference policy")
+    return value
+
+
 def worker_only():
-    value=os.getenv('PERSONAL_CODEX_INFERENCE_POLICY','development')
-    if value not in {'development','worker-only'}:raise ValueError('Invalid inference policy')
-    return value=='worker-only'
+    return inference_policy() == "worker-only"
+
+
+def offline_only():
+    return inference_policy() == "offline"
+
+
+def offline_models():
+    preferred = os.getenv("PERSONAL_CODEX_OFFLINE_MODEL", OFFLINE_MODELS[0])
+    if preferred not in OFFLINE_MODELS:
+        raise ValueError("Offline default must be one of the two configured Qwen tags")
+    return (preferred, *(model for model in OFFLINE_MODELS if model != preferred))
+
+
+def provider_allowed(provider):
+    policy = inference_policy()
+    if policy == "worker-only":
+        return (provider.get("kind") == "mac-worker"
+                and not any(provider.get(key) for key in ("endpoint", "secret_ref", "cloud_allowed")))
+    if policy == "offline":
+        return (provider.get("kind") == "ollama" and provider.get("endpoint") == OLLAMA_ENDPOINT
+                and provider.get("model") in OFFLINE_MODELS
+                and not provider.get("secret_ref") and not provider.get("cloud_allowed"))
+    return True
 
 
 def require_provider(provider):
-    if worker_only() and (provider.get('kind')!='mac-worker' or any(provider.get(key) for key in ('endpoint','secret_ref','cloud_allowed'))):
-        raise ValueError('This deployment permits only endpoint-free Mac worker providers')
+    if not provider_allowed(provider):
+        if worker_only():
+            raise ValueError("This deployment permits only endpoint-free Mac worker providers")
+        raise ValueError("Offline mode permits only the configured local Qwen models at 127.0.0.1:11434")
 
 
 def status():
-    return {'inference_policy':'worker-only' if worker_only() else 'development',
-            'outbound_connections_denied':_INSTALLED,'scope':'backend process and descendants; independent fixed Docker health check excluded'}
+    return {"inference_policy": inference_policy(), "outbound_connections_denied": _INSTALLED,
+            "scope": "backend process and descendants; independent fixed Docker health check excluded"}
 
 
 def filter_program():
@@ -103,6 +137,8 @@ def install():
 def configure(host,mode,production=False):
     value=os.getenv('PERSONAL_CODEX_DENY_CONNECT','0')
     only=worker_only()
+    if offline_only() and host != "127.0.0.1":
+        raise ValueError("Offline mode requires the 127.0.0.1 listener")
     if value not in {'0','1'}:raise ValueError('Invalid outbound restriction setting')
     if production and (not only or value!='1'):
         raise ValueError('Private Serve requires worker-only inference and outbound connection restriction')

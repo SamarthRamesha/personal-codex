@@ -1,5 +1,19 @@
 # Personal Codex
 
+## Offline hackathon workstation
+
+From this checkout on the prepared Mac, quit the Ollama menu-bar app if it already owns port 11434, then run:
+
+```sh
+python3 scripts/offline_workstation.py
+```
+
+Choose **Connect backend**. The window shows **Offline mode · owner authenticated** and **ollama · qwen3.5:9b**. The launcher starts the installed Ollama with cloud features disabled at `127.0.0.1:11434`, the authenticated backend at `127.0.0.1:8787`, and the prebuilt app at `data/offline-app/Personal Codex.app`. Quit the window to shut down its services. The app needs the compiled bundle, the installed Ollama model cache, Python and Git for normal use.
+
+Select **ollama · qwen2.5-coder:14b** in the provider selector for the fallback, or restart with `python3 scripts/offline_workstation.py --model qwen2.5-coder:14b` to make it the default for that launch. Both tags use an 8192-token context and share one model slot. The controller uses a separate private profile in `data/offline`; its Git project root is `data/offline/projects` unless you supply a dedicated `--project-root`. Register a local Git repository within that root. File changes and test commands still require exact approvals.
+
+The Mac passed real model generation, cancellation and recovery, persisted history and a local approved test across verified Wi-Fi-off windows. The desktop UI and actual model-produced patch/test workflow were also exercised. See [the current handoff](NEXT_SESSION_PROMPT.md) for local reports and exact verification details.
+
 ## Mission 1B local engineering update
 
 Worker replay/rotation and protocol hardening, encrypted offline recovery, storage write admission/DB page cap, an operator-only isolated executor prototype and read-only deployment acceptance tooling are implemented. Real Qwen worker proof passed **19/19 in 46.418 seconds**. [Isolation](docs/ISOLATION.md), [recovery](docs/RECOVERY.md), [threat model](docs/THREAT_MODEL.md) and [handoff](NEXT_SESSION_PROMPT.md) distinguish implemented controls from unverified Linux/JARVIS enforcement. No server/container/Serve/ACL/service installation or publication occurred. Production coding remains disabled; full encrypted recovery currently limited to 64 MiB.
@@ -12,7 +26,7 @@ Nothing is autonomous by default. A model may *propose* file edits and test comm
 
 Updated 2026-11-07: native Mac app, persistent streaming chat, exact coding approvals/diffs/tests, private authentication, restart recovery and verified SQLite snapshots are implemented. The AFK update adds a durable outbound Mac inference worker, strict Tailscale Serve proxy compatibility, readiness, graceful shutdown, bounded private logging and browser login/logout. The initial server profile disables repository execution until OS containment is approved. **Mission 1 is PARTIAL:** JARVIS deployment, Serve/ACL/service changes and remote acceptance are pending approval; this unattended session's SSH authentication was rejected.
 
-The installed Mac `qwen2.5-coder:14b` passed the real outbound-worker synthetic coding workflow: 17 checks in 82.764 seconds, including actual patch/test execution, evidence-checked completion and restart persistence. The rebuilt native app also streamed a real Gemma answer and cancelled a second worker generation. These are local fixture observations, not JARVIS or model-quality certification. No models were downloaded.
+The installed Mac `qwen2.5-coder:14b` passed the real outbound-worker synthetic coding workflow: 17 checks in 82.764 seconds, including actual patch/test execution, evidence-checked completion and restart persistence. The rebuilt native app also streamed a real Gemma answer and cancelled a second worker generation. Those results describe the earlier worker fixture using then-installed models.
 
 See [API contract](docs/API.md), [deployment proposal](DEPLOYMENT.md), [implementation matrix](docs/IMPLEMENTATION_MATRIX.md) and [current handoff](NEXT_SESSION_PROMPT.md). Prepared deployment files have not been installed or exercised in Docker.
 
@@ -201,7 +215,7 @@ Project memory is a foundation, not an authority: `GET/POST /api/projects/{id}/m
 
 ## Live Ollama test
 
-Everything above is verified with a deterministic injected transport. A live model run has **not** been performed here; Ollama is not installed in the development environment and the owner's Mac is not reachable from it. The reproducible procedure is:
+For the prepared Mac, follow the offline workstation instructions above. The following manual procedure documents the older development profile with a separately started local Ollama service:
 
 1. On the owner's Mac (Apple Silicon, 16 GB): `ollama serve`, then `ollama pull qwen2.5-coder:7b` (or any installed model — do not assume one is present; `ollama list` first).
 2. Start Personal Codex: `python3 app/server.py`, open `http://127.0.0.1:8787`.

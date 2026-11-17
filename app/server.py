@@ -233,7 +233,7 @@ def safe_workspace_path(workspace: dict) -> Path:
 
 def validate_provider_config(kind: str, endpoint: str, model: str, secret_ref: str, cloud_allowed: bool) -> dict:
     """Validate metadata only; this function never reads an environment secret or contacts a provider."""
-    network_policy.require_provider({'kind':kind,'endpoint':endpoint,'secret_ref':secret_ref,'cloud_allowed':cloud_allowed})
+    network_policy.require_provider({'kind':kind,'endpoint':endpoint,'model':model,'secret_ref':secret_ref,'cloud_allowed':cloud_allowed})
     if kind not in PROVIDER_KINDS: raise ValueError("Unsupported provider kind")
     if not model: raise ValueError("model is required")
     if kind == inference.KIND:
@@ -272,6 +272,7 @@ def provider_invocation_detail(task_id: str, provider: dict, prompt: str) -> str
 
 def provider_approval_kind(provider: dict) -> str:
     """A cloud transmission needs its own network consent; a loopback call needs invocation approval only."""
+    network_policy.require_provider(provider)
     return "network" if provider["cloud_allowed"] or provider.get("kind") == gateway.GATEWAY_KIND else "provider-invoke"
 
 def unavailable_provider_transport(request: dict) -> dict:
@@ -314,7 +315,8 @@ def round_transport(provider: dict, stop_check=None, on_chunk=None):
             streamer = None
         if streamer is not None:
             def transport(request):
-                return streamer({**request, "stop_check": stop_check or (lambda: False), "on_chunk": on_chunk or (lambda count: None)})
+                return streamer({**request, "stop_check": stop_check or (lambda: False),
+                                 "on_chunk": on_chunk or (lambda count: None), "json_output": True})
             return transport
     return providers.transport_for(provider, provider.get("secret_ref") or "")
 
@@ -341,6 +343,24 @@ def provider_health(provider: dict) -> dict:
             "status": "ready" if not issues else "needs-attention", "issues": issues,
             "inference_location":"mac-local" if provider.get('kind')==inference.KIND else "external" if provider.get('cloud_allowed') else "backend-loopback",
             "discovery": "run scripts/live_provider_check.py --discover-models for an explicit, local-only model list"}
+
+def configured_providers():
+    rows = STORE.rows("SELECT * FROM providers ORDER BY created_at DESC")
+    if network_policy.offline_only():
+        selection = network_policy.offline_models()
+        rows = sorted((row for row in rows if network_policy.provider_allowed(row)),
+                      key=lambda row: selection.index(row["model"]))
+    return [{key: value for key, value in row.items() if key != "secret_ref"} for row in rows]
+
+
+def seed_offline_providers():
+    for model in network_policy.offline_models():
+        STORE.write(
+            "INSERT OR IGNORE INTO providers (id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at)"
+            " VALUES (?,?,?,?,?,0,1,?)",
+            ("offline-ollama-" + model, "ollama", network_policy.OLLAMA_ENDPOINT, model, "", now()),
+        )
+
 
 def provider_row(provider_id):
     return STORE.one("SELECT id,kind,endpoint,model,cloud_allowed,enabled,secret_ref FROM providers WHERE id=?",(provider_id,))
@@ -968,7 +988,7 @@ class App(SimpleHTTPRequestHandler):
                               "execution_mode":os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development"),
                               "capabilities":{"repository_execution":os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")!='disabled',
                                               "mac_worker":WORKER_AUTH.enabled,"trusted_proxy":bool(os.getenv("PERSONAL_CODEX_PUBLIC_ORIGIN"))},
-                              "inference":"explicit-provider-only","cloud_fallback":False})
+                              "inference":"explicit-provider-only","inference_policy":network_policy.inference_policy(),"cloud_fallback":False})
         if route == "/api/projects": return self.json(STORE.rows("SELECT * FROM projects ORDER BY created_at DESC"))
         if route == "/api/tasks": return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/events"):
@@ -988,7 +1008,8 @@ class App(SimpleHTTPRequestHandler):
             try: return self.json({"query":(params.get("q") or [""])[0],"results":conversations.search_messages(STORE,(params.get("q") or [""])[0],limit)})
             except ValueError as error: return self.json({"error":str(error)},400)
         if route == "/api/models":
-            return self.json({"providers":STORE.rows("SELECT id,kind,endpoint,model,cloud_allowed,enabled FROM providers ORDER BY created_at DESC"),
+            return self.json({"providers":[{key: row[key] for key in ("id","kind","endpoint","model","cloud_allowed","enabled")}
+                                          for row in configured_providers()],
                               "note":"Per-provider installed models: GET /api/providers/{id}/models (read-only loopback discovery)."})
         if route.startswith("/api/providers/") and route.endswith("/models"):
             pid=route.split("/")[3]; provider=STORE.one("SELECT * FROM providers WHERE id=?",(pid,))
@@ -1004,6 +1025,8 @@ class App(SimpleHTTPRequestHandler):
             except providers.ProviderTransportError as error:
                 return self.json({"provider_id":pid,"models":[],"live":False,"failure_class":providers.classify_provider_error(error),
                                   "error":providers.redact_provider_text(str(error))},502)
+            if network_policy.offline_only():
+                models = [model for model in network_policy.offline_models() if model in models]
             return self.json({"provider_id":pid,"models":models,"live":True})
         if route.startswith("/api/conversations/"):
             parts=route.split("/")
@@ -1014,8 +1037,7 @@ class App(SimpleHTTPRequestHandler):
                 return self.stream_message(parts[3],parts[5],self.last_event_id())
             return self.json({"error":"not found"},404)
         if route == "/api/providers":
-            rows=STORE.rows("SELECT id,kind,endpoint,model,cloud_allowed,enabled,created_at,last_latency_ms,last_checked_at FROM providers ORDER BY created_at DESC")
-            return self.json([{**row,"health":provider_health(row)} for row in rows])
+            return self.json([{**row,"health":provider_health(row)} for row in configured_providers()])
         if route.startswith("/api/providers/") and route.endswith("/health"):
             pid=route.split("/")[3]; provider=STORE.one("SELECT * FROM providers WHERE id=?",(pid,))
             return self.json(provider_health(provider)) if provider else self.json({"error":"provider not found"},404)
@@ -1786,9 +1808,16 @@ def main():
     if cert:
         tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.minimum_version=ssl.TLSVersion.TLSv1_2;tls.load_cert_chain(cert,key)
     network_policy.configure(host,mode,production=bool(origin))
+    offline = network_policy.offline_only()
+    if offline:
+        if not AUTH.enabled or WORKER_AUTH.enabled or tls or origin:
+            raise ValueError("Offline mode requires owner authentication and direct HTTP loopback without a worker")
+        network_policy.offline_models()
     with runtime.InstanceLock(DATA):
         maintenance.admit_writes(DATA)
         if isinstance(STORE,LazyStore):STORE=Store()
+        if offline:
+            seed_offline_providers()
         STOPPING.clear()
         http=runtime.ControlServer((host,port),App,tls_context=tls)
         def stop(*_):

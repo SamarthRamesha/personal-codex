@@ -25,7 +25,13 @@ import time
 from http.client import HTTPConnection, HTTPSConnection, HTTPException
 from urllib.parse import urlsplit
 
+try:
+    import network_policy
+except ImportError:
+    from app import network_policy
+
 DEFAULT_TIMEOUT_SECONDS = 60.0
+OFFLINE_TIMEOUT_SECONDS = 180.0
 MAX_PROVIDER_RESPONSE_BYTES = 1_000_000
 MAX_ERROR_TEXT = 240
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
@@ -116,6 +122,25 @@ def _assistant_text(value) -> str:
     return ""
 
 
+def _ollama_payload(request: dict, *, stream: bool) -> dict:
+    model = request.get("model")
+    endpoint = request.get("endpoint")
+    prompt = request.get("prompt")
+    if urlsplit(endpoint).path.rstrip("/").endswith("/api/generate"):
+        payload = {"model": model, "prompt": prompt, "stream": stream}
+    else:
+        payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": stream}
+    if network_policy.offline_only():
+        network_policy.require_provider(request)
+        metadata = post_json(endpoint, "/api/show", {"model": model}, timeout=5)
+        if metadata.get("remote_model") or metadata.get("remote_host"):
+            raise ProviderTransportError("The selected Ollama tag points to a remote model")
+        payload.update(think=False, keep_alive="3m", options={"num_ctx": 8192, "num_predict": 768, "temperature": 0.2})
+        if request.get("json_output"):
+            payload["format"] = "json"
+    return payload
+
+
 class OllamaTransport:
     """Ollama ``/api/chat`` adapter (falls back to the ``/api/generate`` reply shape)."""
 
@@ -130,14 +155,15 @@ class OllamaTransport:
 
     def __call__(self, request: dict) -> dict:
         endpoint = request.get("endpoint")
-        parts, _, _ = _endpoint(endpoint)
-        payload = {"model": request.get("model"), "messages": [{"role": "user", "content": request.get("prompt")}], "stream": False}
-        if parts.path.rstrip("/").endswith("/api/generate"):
-            payload = {"model": request.get("model"), "prompt": request.get("prompt"), "stream": False}
-        reply = post_json(endpoint, self.path(endpoint), payload, timeout=self.timeout,
+        _endpoint(endpoint)
+        payload = _ollama_payload(request, stream=False)
+        timeout = OFFLINE_TIMEOUT_SECONDS if network_policy.offline_only() else self.timeout
+        reply = post_json(endpoint, self.path(endpoint), payload, timeout=timeout,
                           max_bytes=self.max_bytes, cloud_allowed=bool(request.get("cloud_allowed")))
         if reply.get("error"):
             raise ProviderTransportError("Ollama reported an error for this model or request")
+        if network_policy.offline_only() and (reply.get("remote_model") or reply.get("remote_host")):
+            raise ProviderTransportError("Ollama returned an upstream model response")
         message = reply.get("message")
         text = _assistant_text(message.get("content") if isinstance(message, dict) else reply.get("response"))
         if not text.strip():
@@ -297,15 +323,13 @@ class OllamaStreamTransport:
         on_chunk = request.get("on_chunk") or (lambda count: None)
         on_text = request.get("on_text") or (lambda text: None)
         path = OllamaTransport(timeout=self.timeout).path(endpoint)
-        payload = {"model": request.get("model"), "messages": [{"role": "user", "content": request.get("prompt")}],
-                   "stream": True}
-        if parts.path.rstrip("/").endswith("/api/generate"):
-            payload = {"model": request.get("model"), "prompt": request.get("prompt"), "stream": True}
+        payload = _ollama_payload(request, stream=True)
+        timeout = OFFLINE_TIMEOUT_SECONDS if network_policy.offline_only() else self.timeout
         body = json.dumps(payload).encode("utf-8")
         connection_class = HTTPSConnection if parts.scheme == "https" else HTTPConnection
-        connection = connection_class(host, port, timeout=self.timeout)
+        connection = connection_class(host, port, timeout=timeout)
         pieces, total, chunks, done = [], 0, 0, False
-        guard=_StreamGuard(connection,stop_check,self.timeout)
+        guard=_StreamGuard(connection,stop_check,timeout)
         response=None
         try:
             connection.request("POST", path, body=body,
@@ -338,6 +362,8 @@ class OllamaStreamTransport:
                     raise ProviderTransportError("Provider returned an unexpected streaming chunk")
                 if entry.get("error"):
                     raise ProviderTransportError("Ollama reported an error during streaming")
+                if network_policy.offline_only() and (entry.get("remote_model") or entry.get("remote_host")):
+                    raise ProviderTransportError("Ollama returned an upstream model response")
                 if entry.get("done") is True:
                     done = True
                 message = entry.get("message")
