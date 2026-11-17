@@ -2,14 +2,17 @@
 
 use serde::Serialize;
 use std::{net::IpAddr, path::PathBuf, sync::{Arc, Mutex}, time::Duration};
-use tauri::{ipc::Channel, State};
+use tauri::{ipc::Channel, Emitter, Manager, State};
 use tokio::sync::watch;
 use url::Url;
+
+mod native_project;
+use native_project::{attach_project_file, choose_project_folder, create_selected_project};
 
 #[derive(Clone)]
 struct Connection { base: Url, token: String, client: reqwest::Client, generation: u64 }
 #[derive(Default)]
-struct Bridge { offline_token_file: Option<PathBuf>, connection: Mutex<Option<Connection>>, generation: Mutex<u64>, cancel: Mutex<Option<(String, watch::Sender<bool>)>> }
+struct Bridge { offline_base: Option<String>, dropped_file: Mutex<Option<(PathBuf, std::time::Instant)>>, native_grant: Option<String>, project_selection: Mutex<Option<native_project::Selection>>, offline_token_file: Option<PathBuf>, connection: Mutex<Option<Connection>>, generation: Mutex<u64>, cancel: Mutex<Option<(String, watch::Sender<bool>)>> }
 #[derive(Serialize, Clone)]
 struct Reply { status: u16, body: String }
 #[derive(Serialize, Clone)]
@@ -74,15 +77,15 @@ fn read_offline_token(_: &std::path::Path) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn offline_session(state: State<'_, Arc<Bridge>>) -> bool {
-    state.offline_token_file.is_some()
+fn offline_session(state: State<'_, Arc<Bridge>>) -> Option<String> {
+    state.offline_base.clone()
 }
 
 #[tauri::command]
 async fn connect_backend(base_url: String, token: String, state: State<'_, Arc<Bridge>>) -> Result<Reply, String> {
     let offline = state.offline_token_file.as_deref();
     let token = if let Some(path) = offline {
-        if base_url != OFFLINE_BACKEND || !token.is_empty() {
+        if state.offline_base.as_deref() != Some(base_url.as_str()) || !token.is_empty() {
             return Err("Offline mode uses only the fixed local backend and its owner token file".into());
         }
         read_offline_token(path)?
@@ -187,12 +190,33 @@ fn cancel_stream(stream_id: String, state: State<'_, Arc<Bridge>>) -> Result<(),
 }
 
 fn main() {
+    let token_file = std::env::var_os("PERSONAL_CODEX_OFFLINE_TOKEN_FILE").map(PathBuf::from);
+    let offline_base = token_file.as_ref().map(|_| {
+        let port = std::env::var("PERSONAL_CODEX_OFFLINE_PORT").ok().and_then(|port| port.parse::<u16>().ok());
+        match port.filter(|port| *port >= 1024) {
+            Some(port) => format!("http://127.0.0.1:{port}"),
+            None => OFFLINE_BACKEND.to_owned(),
+        }
+    });
     let bridge = Bridge {
-        offline_token_file: std::env::var_os("PERSONAL_CODEX_OFFLINE_TOKEN_FILE").map(PathBuf::from),
+        offline_base,
+        native_grant: std::env::var("PERSONAL_CODEX_NATIVE_GRANT").ok(),
+        offline_token_file: token_file,
         ..Bridge::default()
     };
     tauri::Builder::default().manage(Arc::new(bridge))
-        .invoke_handler(tauri::generate_handler![offline_session, connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                let state = webview.state::<Arc<Bridge>>();
+                if state.native_grant.is_some() && paths.len() == 1 {
+                    if let Ok(mut pending) = state.dropped_file.lock() {
+                        *pending = Some((paths[0].clone(), std::time::Instant::now()));
+                    }
+                    let _ = webview.emit("personal-codex-attachment-drop", ());
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![attach_project_file, choose_project_folder, create_selected_project, offline_session, connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
         .run(tauri::generate_context!()).expect("Personal Codex could not start");
 }
 

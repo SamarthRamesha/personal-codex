@@ -17,7 +17,12 @@ import re
 from fnmatch import fnmatch
 from pathlib import Path
 
-IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "dist", "build", "target", "__pycache__",
+try:
+    import project_files
+except ImportError:
+    from app import project_files
+
+IGNORED_DIRS = {".git", "node_modules", ".codex-runtime", ".venv", "venv", "dist", "build", "target", "__pycache__",
                 ".pytest_cache", ".mypy_cache", ".ruff_cache", "coverage", ".next", ".idea", ".vscode"}
 SECRET_NAMES = {".env", ".env.local", ".env.production", ".env.development", "id_rsa", "id_ed25519",
                 "id_ecdsa", "credentials.json", ".netrc", ".npmrc", ".pypirc"}
@@ -28,7 +33,7 @@ CONFIG_NAMES = {"package.json", "pyproject.toml", "setup.py", "setup.cfg", "requ
                 "vite.config.ts", "pytest.ini", "tox.ini", ".gitignore"}
 TEST_MARKERS = ("test_", "_test.", "/tests/", "/test/", ".test.", ".spec.")
 TEXT_SUFFIXES = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json", ".toml", ".yaml",
-                 ".yml", ".css", ".html", ".sh", ".cfg", ".ini"}
+                 ".yml", ".css", ".html", ".sh", ".cfg", ".ini", ".sql", ".csv"}
 MAX_FILE_BYTES = 60_000
 MAX_WALK_FILES = 600
 SNIPPET_CHARS = 4_000
@@ -46,16 +51,15 @@ def gitignore_patterns(root: Path) -> list[str]:
     """Read the root `.gitignore` conservatively; unsupported lines are skipped, not guessed."""
     patterns: list[str] = []
     for name in (".gitignore", ".git/info/exclude"):
-        target = root / name
         try:
-            if not target.is_file() or target.is_symlink():
-                continue
-            for line in target.read_text(encoding="utf-8", errors="replace").splitlines():
+            with project_files.parent_directory(root, name) as (parent, filename):
+                raw, _ = project_files.snapshot(parent, filename)
+            for line in raw[:128_000].decode("utf-8", errors="replace").splitlines():
                 line = line.strip()
                 if not line or line.startswith(("#", "!")) or line.startswith("/"):
                     continue
                 patterns.append(line.rstrip("/"))
-        except OSError:
+        except (OSError, ValueError):
             continue
     return patterns[:200]
 
@@ -65,7 +69,7 @@ def is_ignored(relative: str, patterns: list[str]) -> bool:
     if any(part in IGNORED_DIRS for part in parts[:-1]):
         return True
     name = parts[-1].lower()
-    if name in SECRET_NAMES or name.startswith(".env") or name == ".git":
+    if name in SECRET_NAMES or name.startswith(".env") or name in {".git", "personal-codex-diagnostic.txt"}:
         return True
     for pattern in patterns:
         if fnmatch(relative, pattern) or fnmatch(name, pattern) or fnmatch(parts[0], pattern):
@@ -142,14 +146,14 @@ def search(root, query: str, limit: int = MAX_SEARCH_MATCHES) -> dict:
 def read_text(root, relative: str, max_bytes: int = MAX_FILE_BYTES) -> str | None:
     """Read a contained, non-secret file; return None instead of escaping the root."""
     base = _root(root)
-    target = (base / relative).resolve()
+    if is_ignored(relative, []):
+        return None
     try:
-        if not target.is_relative_to(base) or not target.is_file() or target.is_symlink():
+        with project_files.parent_directory(base, relative) as (parent, filename):
+            data, _ = project_files.snapshot(parent, filename)
+        if b"\x00" in data:
             return None
-        if target.name.lower() in SECRET_NAMES or target.name.lower().startswith(".env"):
-            return None
-        with target.open('rb') as source:
-            return source.read(max_bytes).decode("utf-8", errors="replace")
+        return data[:max_bytes].decode("utf-8", errors="replace")
     except (OSError, ValueError):
         return None
 

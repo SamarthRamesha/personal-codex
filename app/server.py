@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy  # script execution puts app/ on sys.path
+    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy
+    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -51,6 +51,7 @@ ENV_REF_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS native_project_roots (path TEXT PRIMARY KEY, device INTEGER NOT NULL, inode INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL, plan TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, agent TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -74,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_message ON message_chunks(message_id, seq)
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at);
 CREATE TABLE IF NOT EXISTS conversation_tasks (conversation_id TEXT NOT NULL, task_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (conversation_id, task_id));
 """
-SCHEMA += inference.SCHEMA
+SCHEMA += inference.SCHEMA + project_agent.SCHEMA + attachments.SCHEMA
 MIGRATIONS = {
     "providers": {"last_latency_ms": "INTEGER", "last_checked_at": "INTEGER"},
     "memory": {"source_task_id": "TEXT", "source_round_id": "TEXT", "evidence": "TEXT", "digest": "TEXT"},
@@ -121,6 +122,8 @@ class Store:
         treat it as finished instead of waiting for a worker thread that no longer exists.
         """
         stamp = now()
+        self.conn.execute("UPDATE autonomous_runs SET status='interrupted', summary=?, updated_at=? WHERE status='running'",
+                          ("Service restarted. Review the workspace before explicitly resuming.", stamp))
         recovered_messages = self.conn.execute(
             "UPDATE messages SET status='stopped', error=?, updated_at=? WHERE status IN ('queued','streaming')",
             ("service restarted before this answer finished; the partial text is display-only and will not be resumed",
@@ -216,9 +219,26 @@ def safe_project_path(value: str) -> Path:
     roots=os.getenv("PERSONAL_CODEX_PROJECT_ROOTS", "")
     if roots:
         permitted=[Path(root).expanduser().resolve() for root in roots.split(os.pathsep) if root]
-        if not any(p==root or root in p.parents for root in permitted):raise ValueError("Project is outside configured repository roots")
+        if not any(p == root or root in p.parents for root in permitted):
+            if not network_policy.offline_only() or not native_projects.authorized(STORE, p):
+                raise ValueError("Project is outside configured repository roots")
     if not p.exists() or not p.is_dir(): raise ValueError("Project path must be an existing directory")
     return p
+
+def conversation_project_context(project_id, request):
+    project = STORE.one("SELECT path FROM projects WHERE id=?", (project_id,))
+    if not project:
+        return ""
+    try:
+        root = safe_project_path(project["path"])
+        selection = context.select(root, request, max_bytes=4500, max_files=6)
+    except (OSError, ValueError):
+        return "The selected project could not be read under the current workspace authorization."
+    return context.prompt_block(selection)
+
+
+conversations.PROJECT_CONTEXT = conversation_project_context
+
 
 def safe_workspace_path(workspace: dict) -> Path:
     root=Path(workspace['path']).resolve()
@@ -343,6 +363,22 @@ def provider_health(provider: dict) -> dict:
             "status": "ready" if not issues else "needs-attention", "issues": issues,
             "inference_location":"mac-local" if provider.get('kind')==inference.KIND else "external" if provider.get('cloud_allowed') else "backend-loopback",
             "discovery": "run scripts/live_provider_check.py --discover-models for an explicit, local-only model list"}
+
+def review_autonomous_changes(task_id):
+    task = STORE.one("SELECT * FROM tasks WHERE id=?", (task_id,))
+    run = project_agent.report(STORE, task_id)
+    workspace = STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'", (task_id,))
+    if not task or not workspace or run["status"] != "complete":
+        raise ValueError("A completed, validated coding task is required")
+    project = STORE.one("SELECT path FROM projects WHERE id=?", (task["project_id"],))
+    source = safe_project_path(project["path"])
+    root = safe_workspace_path(workspace)
+    enrolled = native_projects.authorized(STORE, source)
+    if enrolled:
+        head = project_review.git_read(source, None, ["ls-tree", "-r", "-z", "HEAD"])
+        enrolled = head.returncode == 0 and not head.stdout
+    return source, *project_review.review(run, source, root, enrolled)
+
 
 def configured_providers():
     rows = STORE.rows("SELECT * FROM providers ORDER BY created_at DESC")
@@ -638,7 +674,7 @@ def record_operation(task_id: str, round_row: dict, index: int, operation: dict,
                      round_row["proposal_digest"], status, stamp if status == "running" else None,
                      None if status == "running" else stamp, None, None, 0, None))
         return op_id
-    applied = 1 if operation["tool"] == "apply_patch" and status == "ok" else 0
+    applied = 1 if operation["tool"] in {"apply_patch", "create_file"} and status == "ok" else 0
     hashes = {key: result[key] for key in ("sha256_before", "sha256_after") if result and key in result}
     STORE.write("UPDATE operations SET status=?, finished_at=?, summary=?, error=?, applied=?, file_hashes=? WHERE id=?",
                 (status, stamp, op_summary(result or {}), (result or {}).get("error"), applied,
@@ -736,10 +772,13 @@ def create_task_workspace(task_id: str, project_path: str) -> dict:
     root = Path(project_path).resolve(); target = workspace_path(task_id)
     if not (root / ".git").exists(): raise ValueError("A Git repository is required for isolated execution")
     if target.exists(): raise ValueError("Task workspace already exists")
-    target.parent.mkdir(parents=True, exist_ok=True)
     branch = f"personal-codex/task-{task_id[:8]}"
-    result = subprocess.run(["git", "-C", str(root), "worktree", "add", "-b", branch, str(target)], text=True, capture_output=True, timeout=45, check=False)
-    if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "worktree creation failed"))
+    if network_policy.offline_only() and os.getenv("PERSONAL_CODEX_NATIVE_GRANT"):
+        local_runner.create_worktree(root, target, branch)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(["git", "-C", str(root), "worktree", "add", "-b", branch, str(target)], text=True, capture_output=True, timeout=45, check=False)
+        if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "worktree creation failed"))
     return {"path":str(target), "branch":branch}
 
 def workspace_clean(path: str) -> bool:
@@ -799,7 +838,7 @@ def delete_merged_branch(root: str, branch: str, branch_oid: str) -> None:
     result=git_output(root,["branch","-d",branch])
     if result.returncode != 0: raise ValueError(redacted(result.stderr or result.stdout or "Branch deletion failed"))
 
-def child_limits(timeout: int):
+def child_limits(timeout: int, *, address_space=True):
     """Apply limits that the host OS accepts; unsupported limits remain documented."""
     def cap(limit, wanted):
         try:
@@ -811,7 +850,7 @@ def child_limits(timeout: int):
     cap(resource.RLIMIT_CPU, min(timeout + 5, MAX_TIMEOUT_SECONDS + 5))
     cap(resource.RLIMIT_FSIZE, MAX_FILE_BYTES)
     cap(resource.RLIMIT_NOFILE, 64)
-    if hasattr(resource, "RLIMIT_AS"): cap(resource.RLIMIT_AS, MAX_MEMORY_BYTES)
+    if address_space and hasattr(resource, "RLIMIT_AS"): cap(resource.RLIMIT_AS, MAX_MEMORY_BYTES)
 
 CANCEL_EXIT_CODE = 130
 CANCEL_GRACE_SECONDS = 1.5
@@ -831,7 +870,7 @@ def terminate_process_group(process, grace: float = CANCEL_GRACE_SECONDS) -> Non
             continue
 
 
-def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None) -> dict:
+def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None, *, contained=False) -> dict:
     """Run an allowlisted command, honouring cancellation while it is still running.
 
     Cancellation is polled every 200 ms so a long test command stops promptly instead of waiting
@@ -850,9 +889,34 @@ def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None) 
     with tempfile.NamedTemporaryFile(mode="w+b", dir=runtime, delete=False) as output_file:
         output_path=Path(output_file.name)
     cancelled=False
+    started = time.monotonic()
+    process = None
+    scratch_folder = None
+    contained = contained or bool(network_policy.offline_only() and os.getenv("PERSONAL_CODEX_NATIVE_GRANT"))
     try:
         with output_path.open("ab") as output_file:
-            process=subprocess.Popen(argv, cwd=root, env=env, stdout=output_file, stderr=subprocess.STDOUT, preexec_fn=lambda: child_limits(timeout), start_new_session=True)
+            launch = argv
+            if contained:
+                if argv[0] == "npm" and not tools.resolve_in_workspace(root, "package.json").is_file():
+                    return {"argv": argv, "exit_code": 125, "output": "Create package.json in this workspace before running npm. Define the approved script there.",
+                            "cancelled": False, "duration_ms": 0}
+                scratch_folder = tempfile.TemporaryDirectory(prefix="command-", dir=runtime)
+                scratch = Path(scratch_folder.name).resolve()
+                env = {**local_runner.base_env(root), "TMPDIR": str(scratch),
+                       "npm_config_cache": str(scratch), "npm_config_prefix": str(root),
+                       "npm_config_offline": "true", "NODE_OPTIONS": "--max-old-space-size=768"}
+                programs = (local_runner.trusted_program("node"),) if argv[0] == "npm" else ()
+                writable = [scratch]
+                if argv == ["npm", "run", "build"]:
+                    dist = root / "dist"
+                    dist.mkdir(mode=0o700, exist_ok=True)
+                    if dist.is_symlink() or not dist.is_dir():
+                        raise ValueError("The build output directory is unsafe")
+                    writable.append(dist)
+                launch = local_runner.sandboxed(argv, reads=(root, scratch), writes=writable, programs=programs)
+            process=subprocess.Popen(launch, cwd=root, env=env, stdout=output_file, stderr=subprocess.STDOUT,
+                                     preexec_fn=lambda: child_limits(timeout, address_space=not (contained and argv[0] == "npm")),
+                                     start_new_session=True)
             deadline=time.time()+timeout
             while True:
                 remaining=deadline-time.time()
@@ -869,12 +933,21 @@ def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None) 
                 if time.time() >= deadline:
                     os.killpg(process.pid, signal.SIGKILL); process.wait(); exit_code=124
                     break
-        output=output_path.read_bytes()[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
+        with output_path.open("rb") as file:
+            output=file.read(MAX_OUTPUT_BYTES).decode("utf-8", errors="replace")
         if exit_code == 124: output += "\nTimed out."
         if cancelled: output += "\nCancelled by the operator; partial output preserved."
-        return {"argv":argv,"exit_code":exit_code,"output":redacted(output),"cancelled":cancelled}
+        return {"argv":argv,"exit_code":exit_code,"output":redacted(output),"cancelled":cancelled,
+                "duration_ms": int((time.monotonic() - started) * 1000)}
     finally:
+        if contained and process is not None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         output_path.unlink(missing_ok=True)
+        if scratch_folder is not None:
+            scratch_folder.cleanup()
 
 class App(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -989,7 +1062,39 @@ class App(SimpleHTTPRequestHandler):
                               "capabilities":{"repository_execution":os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")!='disabled',
                                               "mac_worker":WORKER_AUTH.enabled,"trusted_proxy":bool(os.getenv("PERSONAL_CODEX_PUBLIC_ORIGIN"))},
                               "inference":"explicit-provider-only","inference_policy":network_policy.inference_policy(),"cloud_fallback":False})
+        attachment_route = re.fullmatch(r"/api/projects/([a-f0-9-]{36})/attachments", route)
+        if attachment_route and network_policy.offline_only() and AUTH.enabled:
+            project = STORE.one("SELECT path FROM projects WHERE id=?", (attachment_route[1],))
+            if not project:
+                return self.json({"error": "Project not found"}, 404)
+            safe_project_path(project["path"])
+            return self.json(STORE.rows("SELECT id, name, mechanism, excerpt FROM project_attachments "
+                                        "WHERE project_id=? ORDER BY created_at DESC, rowid DESC LIMIT 12", (attachment_route[1],)))
         if route == "/api/projects": return self.json(STORE.rows("SELECT * FROM projects ORDER BY created_at DESC"))
+        review_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous/changes", route)
+        if review_route and network_policy.offline_only() and AUTH.enabled:
+            _, review, _ = review_autonomous_changes(review_route[1])
+            return self.json(review)
+        file_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous/file", route)
+        if file_route and network_policy.offline_only() and AUTH.enabled:
+            workspace = STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'", (file_route[1],))
+            if not workspace:
+                return self.json({"error": "No task workspace is available"}, 404)
+            relative = parse_qs(urlparse(self.path).query).get("path", [""])[0]
+            return self.json(tools.read_file(safe_workspace_path(workspace), relative, tools.MAX_READ_BYTES))
+        agent_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous", route)
+        if agent_route and network_policy.offline_only():
+            task_id = agent_route[1]
+            task = STORE.one("SELECT * FROM tasks WHERE id=?", (task_id,))
+            if not task:
+                return self.json({"error": "Task not found"}, 404)
+            run = project_agent.report(STORE, task_id)
+            workspace = STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'", (task_id,))
+            if workspace:
+                root = safe_workspace_path(workspace)
+                run["workspace"] = str(root)
+                run["files"] = [entry["path"] for entry in tools.list_files(root, ".", 3, 100)["entries"]]
+            return self.json(run)
         if route == "/api/tasks": return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/events"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
@@ -1055,7 +1160,7 @@ class App(SimpleHTTPRequestHandler):
         if route.startswith("/api/tasks/") and route.endswith("/merge-preview"):
             tid=route.split("/")[3]; workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='released'",(tid,))
             if not workspace: return self.json({"error":"released workspace not found"},404)
-            project=STORE.one("SELECT * FROM projects WHERE id=?",(workspace["project_id"],)); return self.json(merge_preview(project["path"],workspace["branch"]))
+            project=STORE.one("SELECT * FROM projects WHERE id=?",(workspace["project_id"],)); return self.json(merge_preview(str(safe_project_path(project["path"])),workspace["branch"]))
         if route.startswith("/api/tasks/") and route.endswith("/executions"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM executions WHERE task_id=? ORDER BY created_at DESC",(tid,)))
         if route.startswith("/api/tasks/") and route.endswith("/invocations"):
@@ -1221,6 +1326,47 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            publish_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous/apply", route)
+            if publish_route and network_policy.offline_only() and AUTH.enabled:
+                require_execution()
+                if set(data) != {"digest", "confirm"} or data["confirm"] is not True:
+                    raise ValueError("Authorize the exact reviewed file changes")
+                source, review, contents = review_autonomous_changes(publish_route[1])
+                if not review["can_apply"] or review["digest"] != data["digest"]:
+                    raise ValueError("Only this exact reviewed changeset can be applied to the new project")
+                count = project_review.apply_new(source, contents)
+                task_event(publish_route[1], "review", "info", f"Applied {count} reviewed files to the selected project.")
+                return self.json({"path": str(source), "files": count})
+            agent_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous/(start|stop)", route)
+            if agent_route:
+                if not network_policy.offline_only() or not AUTH.enabled:
+                    return self.json({"error": "The autonomous runner requires authenticated offline mode"}, 403)
+                require_execution()
+                task_id, operation = agent_route.groups()
+                task = STORE.one("SELECT * FROM tasks WHERE id=?", (task_id,))
+                if not task:
+                    return self.json({"error": "Task not found"}, 404)
+                if operation == "stop":
+                    return self.json({"stopping": project_agent.stop(task_id)})
+                if set(data) != {"provider_id", "command", "rounds", "confirm"} or data["confirm"] is not True:
+                    raise ValueError("Confirm the workspace and exact validation command explicitly")
+                if not isinstance(data["command"], str) or len(data["command"]) > 240:
+                    raise ValueError("Enter the exact local validation command")
+                command = data["command"].strip()
+                local_runner.validate_command(parse_command(command))
+                if type(data["rounds"]) is not int or not 1 <= data["rounds"] <= 6:
+                    raise ValueError("Choose between one and six coding rounds")
+                provider = provider_row(data["provider_id"])
+                if not provider or not provider["enabled"]:
+                    raise ValueError("Select an installed local provider")
+                network_policy.require_provider(provider)
+                project = STORE.one("SELECT path FROM projects WHERE id=?", (task["project_id"],))
+                safe_project_path(project["path"])
+                return self.json(project_agent.start(sys.modules[__name__], task, provider, command, data["rounds"]), 202)
+            if route.startswith("/api/tasks/") and project_agent.running(route.split("/")[3]):
+                if route.endswith("/cancel"):
+                    return self.json({"stopping": project_agent.stop(route.split("/")[3])}, 202)
+                return self.json({"error": "Stop the autonomous run before making a manual workspace change"}, 409)
             if (os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")=='disabled' and route.startswith('/api/tasks/')
                     and route.endswith(('/workspace-request','/workspace','/workspace-release-request','/workspace-release',
                                         '/execution-request','/execute','/agent/request','/agent/plan','/agent/execute',
@@ -1355,12 +1501,47 @@ class App(SimpleHTTPRequestHandler):
                     last=STORE.one("SELECT content FROM messages WHERE conversation_id=? AND role='user' ORDER BY created_at DESC, rowid DESC LIMIT 1",(cid,))
                     prompt=str((last or {}).get("content") or "").strip()
                 if not prompt: return self.json({"error":"task prompt is required"},400)
-                plan=plan_for(prompt,repository_summary(Path(project["path"]))); tid=uid(); at=now()
+                plan=plan_for(prompt,repository_summary(safe_project_path(project["path"]))); tid=uid(); at=now()
                 STORE.write("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",(tid,project["id"],prompt,"planned",json.dumps(plan),at,at))
                 STORE.write("INSERT INTO conversation_tasks VALUES (?,?,?)",(cid,tid,at))
                 task_event(tid,"planner","info",f"Task created from conversation {cid}; repository summary completed.")
                 task_event(tid,"security","info","File changes still require an approved workspace and an approved round.")
                 return self.json({"id":tid,"status":"planned","plan":plan,"conversation_id":cid,"approval_required":True},201)
+            if route == "/api/native/attachments":
+                if not (network_policy.offline_only() and AUTH.enabled and self.client_address[0] == "127.0.0.1"
+                        and len(self.headers.get_all("X-Personal-Codex-Native", [])) == 1
+                        and native_projects.allowed(self.headers.get("X-Personal-Codex-Native"))):
+                    return self.json({"error": "An authenticated native file selection is required"}, 403)
+                project = STORE.one("SELECT path FROM projects WHERE id=?", (data.get("project_id"),))
+                if not project:
+                    return self.json({"error": "Select a project before attaching files"}, 404)
+                safe_project_path(project["path"])
+                if STORE.one("SELECT COUNT(*) AS count FROM project_attachments WHERE project_id=?", (data["project_id"],))["count"] >= 24:
+                    raise ValueError("This project has reached its attachment limit")
+                name, mechanism, excerpt = attachments.import_selected(data, DATA)
+                item = {"id": uid(), "name": name, "mechanism": mechanism, "excerpt": excerpt}
+                STORE.write("INSERT INTO project_attachments VALUES (?,?,?,?,?,?)",
+                            (item["id"], data["project_id"], name, mechanism, excerpt, now()))
+                return self.json(item, 201)
+            if route == "/api/native/projects":
+                if not (network_policy.offline_only() and AUTH.enabled and
+                        self.client_address[0] == "127.0.0.1" and
+                        len(self.headers.get_all("X-Personal-Codex-Native", [])) == 1 and
+                        native_projects.allowed(self.headers.get("X-Personal-Codex-Native"))):
+                    return self.json({"error": "An authenticated native Finder selection is required"}, 403)
+                require_execution()
+                existing = data.pop("existing", False)
+                if type(existing) is not bool:
+                    raise ValueError("Invalid project selection mode")
+                enroll = native_projects.register if existing else native_projects.create
+                path, info = enroll(data, data=DATA, source=ROOT)
+                project = {"id": uid(), "name": path.name, "path": str(path)}
+                with STORE.lock, STORE.conn:
+                    STORE.conn.execute("INSERT INTO native_project_roots VALUES (?,?,?)",
+                                       (str(path), info.st_dev, info.st_ino))
+                    STORE.conn.execute("INSERT INTO projects VALUES (?,?,?,?)",
+                                       (project["id"], project["name"], project["path"], now()))
+                return self.json(project, 201)
             if route == "/api/projects":
                 path=safe_project_path(data.get("path","")); pid=uid(); name=data.get("name") or path.name
                 STORE.write("INSERT INTO projects VALUES (?,?,?,?)",(pid,name,str(path),now())); return self.json({"id":pid,"name":name,"path":str(path)},201)
@@ -1369,7 +1550,7 @@ class App(SimpleHTTPRequestHandler):
                 if not project: return self.json({"error":"project not found"},404)
                 prompt=str(data.get("prompt","")).strip()
                 if not prompt: return self.json({"error":"task prompt is required"},400)
-                plan=plan_for(prompt, repository_summary(Path(project["path"]))); tid=uid(); t=now()
+                plan=plan_for(prompt, repository_summary(safe_project_path(project["path"]))); tid=uid(); t=now()
                 STORE.write("INSERT INTO tasks (id,project_id,prompt,status,plan,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",(tid,project["id"],prompt,"planned",json.dumps(plan),t,t))
                 task_event(tid,"planner","info","Repository summary completed; implementation plan created.")
                 task_event(tid,"security","info","Secret-named files excluded from task context by default.")
@@ -1397,7 +1578,7 @@ class App(SimpleHTTPRequestHandler):
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],f"workspace:{tid}"))
                 if not permitted: return self.json({"error":"approved workspace request required"},403)
                 project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],))
-                workspace=create_task_workspace(tid,project["path"])
+                workspace=create_task_workspace(tid,str(safe_project_path(project["path"])))
                 STORE.write("INSERT INTO workspaces VALUES (?,?,?,?,?,?)",(tid,task["project_id"],workspace["path"],workspace["branch"],"ready",now()))
                 task_event(tid,"orchestrator","info",f"Isolated workspace created on branch {workspace['branch']}.")
                 return self.json(workspace,201)
@@ -1413,13 +1594,13 @@ class App(SimpleHTTPRequestHandler):
                 if not task or not workspace: return self.json({"error":"ready workspace not found"},404)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],f"release:{tid}"))
                 if not permitted: return self.json({"error":"approved workspace release request required"},403)
-                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); release_task_workspace(project["path"],workspace["path"])
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); release_task_workspace(str(safe_project_path(project["path"])),workspace["path"])
                 STORE.write("UPDATE workspaces SET status='released' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info",f"Clean workspace released; recovery branch {workspace['branch']} was retained.")
                 return self.json({"task_id":tid,"status":"released","branch":workspace["branch"],"branch_preserved":True})
             if route.startswith("/api/tasks/") and route.endswith("/merge-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='released'",(tid,))
                 if not task or not workspace: return self.json({"error":"released workspace not found"},404)
-                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); preview=merge_preview(project["path"],workspace["branch"])
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); preview=merge_preview(str(safe_project_path(project["path"])),workspace["branch"])
                 if not preview["can_merge"]:
                     task_event(tid, "security", "warning", f"Merge preview reported a conflict for {workspace['branch']} into {preview['target']}: {preview['detail']}")
                     return self.json(preview,409)
@@ -1430,17 +1611,17 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/tasks/") and route.endswith("/merge"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='released'",(tid,))
                 if not task or not workspace: return self.json({"error":"released workspace not found"},404)
-                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); preview=merge_preview(project["path"],workspace["branch"])
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); preview=merge_preview(str(safe_project_path(project["path"])),workspace["branch"])
                 detail=approval_detail("merge", tid, target=preview["target"], target_oid=preview["target_oid"], branch=workspace["branch"], branch_oid=preview["branch_oid"])
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],detail))
                 if not permitted: return self.json({"error":"approved merge request for the current target required"},403)
-                merge_recovery_branch(project["path"],workspace["branch"],preview["target"],preview["branch_oid"],preview["target_oid"])
+                merge_recovery_branch(str(safe_project_path(project["path"])),workspace["branch"],preview["target"],preview["branch_oid"],preview["target_oid"])
                 STORE.write("UPDATE workspaces SET status='merged' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info",f"Recovery branch {workspace['branch']} merged into {preview['target']}; branch retained.")
                 return self.json({"task_id":tid,"status":"merged","target":preview["target"],"branch":workspace["branch"],"branch_preserved":True})
             if route.startswith("/api/tasks/") and route.endswith("/branch-delete-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='merged'",(tid,))
                 if not task or not workspace: return self.json({"error":"merged recovery branch not found"},404)
-                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); branch_oid=ref_oid(project["path"],workspace["branch"])
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); branch_oid=ref_oid(str(safe_project_path(project["path"])),workspace["branch"])
                 aid=uid(); detail=approval_detail("branch-delete", tid, branch=workspace["branch"], branch_oid=branch_oid)
                 STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
                 task_event(tid,"security","warning",f"Deleting recovery branch {workspace['branch']} requires critical-operation approval.")
@@ -1448,11 +1629,11 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/tasks/") and route.endswith("/branch-delete"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='merged'",(tid,))
                 if not task or not workspace: return self.json({"error":"merged recovery branch not found"},404)
-                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); branch_oid=ref_oid(project["path"],workspace["branch"])
+                project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); branch_oid=ref_oid(str(safe_project_path(project["path"])),workspace["branch"])
                 detail=approval_detail("branch-delete", tid, branch=workspace["branch"], branch_oid=branch_oid)
                 permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],detail))
                 if not permitted: return self.json({"error":"approved recovery-branch deletion request required"},403)
-                delete_merged_branch(project["path"],workspace["branch"],branch_oid)
+                delete_merged_branch(str(safe_project_path(project["path"])),workspace["branch"],branch_oid)
                 STORE.write("UPDATE workspaces SET status='complete' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info","Merged recovery branch deleted after critical approval.")
                 return self.json({"task_id":tid,"status":"complete","branch_deleted":True})
             if route.startswith("/api/tasks/") and route.endswith("/agent/round/request"):
@@ -1836,7 +2017,8 @@ def main():
             stop();http.server_close()
             drained=http.drain()
             chat_drained=conversations.drain(5)
-            if drained and chat_drained:STORE.conn.close()
+            agent_drained=project_agent.stop_all()
+            if drained and chat_drained and agent_drained:STORE.conn.close()
             else:print('Some requests interrupted; startup recovery will reconcile them',file=sys.stderr)
             for sig,handler in previous.items():signal.signal(sig,handler)
 

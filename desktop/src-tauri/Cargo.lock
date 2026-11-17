@@ -2219,6 +2219,9 @@ name = "personal-codex"
 version = "0.2.0"
 dependencies = [
  "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

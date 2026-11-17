@@ -23,9 +23,11 @@ import time
 import uuid
 
 try:
-    import providers, network_policy  # script execution puts app/ on sys.path
+    import providers, network_policy, attachments  # script execution puts app/ on sys.path
 except ImportError:  # imported as app.conversations
-    from app import providers, network_policy
+    from app import providers, network_policy, attachments
+
+PROJECT_CONTEXT = None
 
 MAX_TITLE = 120
 MAX_MESSAGE_CHARS = 20_000
@@ -349,6 +351,11 @@ def _start_turn(store, conversation: dict, content: str, *, provider: dict | Non
 
     history = message_history(store, conversation["id"])
     prompt = build_prompt(history)
+    if network_policy.offline_only() and conversation.get("project_id"):
+        project_id = conversation["project_id"]
+        if PROJECT_CONTEXT is not None:
+            prompt = PROJECT_CONTEXT(project_id, text) + "\n" + prompt
+        prompt = attachments.prompt_block(store, project_id, budget=2200) + "\n" + prompt
     assistant = new_message(store, conversation["id"], "assistant", "", status="queued",
                             provider_id=provider["id"], model=provider["model"])
     event = threading.Event()

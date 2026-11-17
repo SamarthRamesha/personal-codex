@@ -1,5 +1,15 @@
 # Development log
 
+## Native local coding agent — 2026-11-17
+
+Created explicit Finder authorization for new folders and existing repositories. The app shows the resolved destination and authenticates the native selection through a scoped loopback request. Git initialization and registration happen inside the app, and stored native scope is tied to directory identity.
+
+Added a bounded resumable coding loop, atomic UTF-8 file creation with nested directories, hash-bound patching, local attachment extraction, exact validation, Git diff review and application of approved additions into a previously empty project. The Mac process runner denies network access and restricts file access for autonomous validation. Existing manual offline commands also use the contained runner in the native profile.
+
+Verified project creation, real generation, approved validation, a reviewed diff and applied files through the native desktop. Real model runs also repaired a failing existing Python repository and implemented synthetic requirements from a selected PDF and screenshot OCR. A physical Wi-Fi-off run completed real file creation, validation and review/apply. The installed primary remains `qwen3.5:9b`; the existing 14B model also passed the creation task with longer latency.
+
+The release has bounded capabilities. Its command runner covers exact local validation and its image pipeline extracts text. The release report records remaining tool, workflow and verification gaps.
+
 ## Offline hackathon workstation — 2026-11-17
 
 Added an opt-in inference policy for the two installed Qwen tags at the exact Ollama loopback origin. Existing local provider transports enforce the offline model boundary and include the current 8K request options. The launcher manages the existing binary with cloud disabled, a single runner slot, an authenticated loopback backend, a private data directory, and the built Tauri app. The local native session uses the owner file through Rust IPC, shows its actual provider and tag, and suppresses remote setup controls. Existing round and test approval checks remain authoritative.

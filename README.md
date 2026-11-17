@@ -1,5 +1,17 @@
 # Personal Codex
 
+## Local coding agent on macOS
+
+Use `python3 scripts/offline_workstation.py` and select **Connect backend**. On the prepared Mac the launcher uses `data/autonomous-app/Personal Codex.app` when installed. The earlier bundle is available with `--app 'data/offline-app/Personal Codex.app'`.
+
+Type a request such as “Create a new Python project with a CSV validator and unit tests,” or click **New project**. Set the project name, select its parent in Finder, confirm the displayed destination, and create the project. **Open project** enrolls an already existing Git repository after a separate Finder selection and confirmation.
+
+In the coding task, select **Run local agent**, read the scope, and confirm the exact validation command. The agent works in a local Git worktree. It reads bounded project context, creates or patches real files, runs the approved command through the Mac process sandbox, and uses the returned output on subsequent rounds. **Stop local run** preserves progress. **Resume local run** starts a new bounded attempt with the same command and model.
+
+Use **Review changes** after validation. **Apply reviewed files to project** is available for exact new files against an empty Git baseline. Existing repository edits stay in the task worktree for Git review. The project conversation supports Finder attachments and explicit import after a single-file drop. Image attachments provide local OCR text. The current extractor reads text PDFs and bounded Office, CSV and text excerpts.
+
+Run `scripts/agent_acceptance.py --output <new-directory>` with Python to repeat the synthetic failure/repair proof on macOS. Use `--live` for an installed Ollama model. The previous and current verification receipts are referenced in [the handoff](NEXT_SESSION_PROMPT.md).
+
 ## Offline hackathon workstation
 
 From this checkout on the prepared Mac, quit the Ollama menu-bar app if it already owns port 11434, then run:

@@ -13,8 +13,12 @@ import difflib
 import hashlib
 import json
 import os
-import tempfile
 from pathlib import Path
+
+try:
+    import project_files
+except ImportError:
+    from app import project_files
 
 MAX_OPERATIONS = 8
 MAX_READ_BYTES = 20_000
@@ -24,12 +28,13 @@ MAX_PATCH_TEXT = 60_000
 MAX_SUMMARY = 2_000
 MAX_DIFF_LINES = 400
 MAX_DIFF_CHARS = 60_000
-IGNORED_PARTS = {".git", "node_modules", ".venv", "venv", "dist", "build", "target", "__pycache__"}
+IGNORED_PARTS = {".git", "node_modules", ".venv", "venv", ".codex-runtime", "dist", "build", "target", "__pycache__"}
 SECRET_NAMES = {".env", ".env.local", ".env.production", ".env.development", "id_rsa", "id_ed25519", "credentials.json"}
 
 TOOL_SPECS = {
     "list_files": ({"path"}, {"depth", "limit"}),
     "read_file": ({"path"}, {"max_bytes"}),
+    "create_file": ({"path", "content"}, set()),
     "apply_patch": ({"path", "old_text", "new_text"}, {"expected_sha256"}),
     "run_tests": ({"command"}, {"timeout"}),
 }
@@ -40,7 +45,8 @@ class ToolCallError(ValueError):
 
 
 def _is_secret(name: str) -> bool:
-    return name in SECRET_NAMES or name.startswith(".env.")
+    return (name.casefold() in SECRET_NAMES or name.casefold().startswith(".env.")
+            or name.casefold() == "personal-codex-diagnostic.txt")
 
 
 def resolve_in_workspace(root: Path, relative) -> Path:
@@ -52,14 +58,16 @@ def resolve_in_workspace(root: Path, relative) -> Path:
     parts = Path(relative).parts
     if ".." in parts:
         raise ToolCallError("Tool paths must not contain '..'")
-    if any(part in IGNORED_PARTS for part in parts):
+    if any(part.casefold() in IGNORED_PARTS for part in parts):
         raise ToolCallError("Tool path targets an excluded directory")
     if any(_is_secret(part) for part in parts):
         raise ToolCallError("Tool path targets a secret-named file")
     root = Path(root).resolve()
-    candidate = (root / relative).resolve()
-    if candidate != root and root not in candidate.parents:
-        raise ToolCallError("Tool path escapes the task workspace")
+    candidate = root / relative
+    for part in parts:
+        root = root / part
+        if root.is_symlink():
+            raise ToolCallError("Tool path escapes the task workspace or uses a symlink")
     return candidate
 
 
@@ -123,6 +131,12 @@ def validate_operations(operations) -> list[dict]:
         elif tool == "read_file":
             entry["path"] = _require_str(operation, "path", 400)
             entry["max_bytes"] = _require_int(operation, "max_bytes", 1, MAX_READ_BYTES, MAX_READ_BYTES)
+        elif tool == "create_file":
+            entry["path"] = _require_str(operation, "path", 400)
+            content = operation.get("content")
+            if not isinstance(content, str) or len(content) > MAX_PATCH_TEXT or "\x00" in content:
+                raise ToolCallError("create_file requires bounded UTF-8 text")
+            entry["content"] = content
         elif tool == "apply_patch":
             entry["path"] = _require_str(operation, "path", 400)
             entry["old_text"] = _require_str(operation, "old_text", MAX_PATCH_TEXT)
@@ -152,7 +166,12 @@ def bind_hashes(root: Path, operations: list[dict]) -> list[dict]:
             target = resolve_in_workspace(root, operation["path"])
             if not target.is_file():
                 raise ToolCallError(f"apply_patch target does not exist: {operation['path']}")
-            operation = {**operation, "expected_sha256": file_sha256(target)}
+            data, _ = project_files.text_file(root, operation["path"])
+            operation = {**operation, "expected_sha256": project_files.digest(data)}
+        elif operation["tool"] == "create_file":
+            target = resolve_in_workspace(root, operation["path"])
+            if target.exists():
+                raise ToolCallError(f"create_file refuses to overwrite {operation['path']}")
         bound.append(operation)
     return bound
 
@@ -169,7 +188,7 @@ def list_files(root: Path, path: str, depth: int, limit: int) -> dict:
         if depth_here >= depth:
             directories[:] = []
         for name in sorted(files):
-            if _is_secret(name):
+            if _is_secret(name) or name.casefold() in IGNORED_PARTS:
                 continue
             target = current_path / name
             if not target.is_file() or target.is_symlink():
@@ -187,35 +206,30 @@ def read_file(root: Path, path: str, max_bytes: int) -> dict:
     target = resolve_in_workspace(root, path)
     if not target.is_file():
         raise ToolCallError(f"read_file target does not exist: {path}")
-    size = target.stat().st_size
-    with target.open('rb') as source:
-        data = source.read(max_bytes)
-    return {"path": path, "bytes": size, "truncated": size > len(data), "sha256": file_sha256(target),
-            "text": data.decode("utf-8", errors="replace")}
+    with project_files.parent_directory(root, path) as (parent, name):
+        data, _ = project_files.snapshot(parent, name)
+    shown = data[:max_bytes]
+    return {"path": path, "bytes": len(data), "truncated": len(data) > len(shown),
+            "sha256": project_files.digest(data), "binary": b"\x00" in data,
+            "text": "" if b"\x00" in data else shown.decode("utf-8", errors="replace")}
+
+
+def create_file(root: Path, path: str, content: str) -> dict:
+    resolve_in_workspace(root, path)
+    return project_files.write_file(root, path, content.encode("utf-8"), make_parents=True)
 
 
 def apply_patch(root: Path, path: str, old_text: str, new_text: str, expected_sha256: str) -> dict:
-    target = resolve_in_workspace(root, path)
-    if not target.is_file():
-        raise ToolCallError(f"apply_patch target does not exist: {path}")
-    before = file_sha256(target)
+    resolve_in_workspace(root, path)
+    data, original = project_files.text_file(root, path)
+    before = project_files.digest(data)
     if expected_sha256 and before != expected_sha256:
         raise ToolCallError("File changed after review; request a new proposal and approval")
-    original = target.read_bytes().decode("utf-8", errors="replace")
     occurrences = original.count(old_text)
     if occurrences != 1:
         raise ToolCallError(f"apply_patch expected exactly one match in {path}, found {occurrences}")
-    updated = original.replace(old_text, new_text, 1)
-    directory = target.parent
-    handle, temporary = tempfile.mkstemp(dir=str(directory), prefix=".codex-patch-")
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(updated)
-        os.replace(temporary, target)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
-    return {"path": path, "sha256_before": before, "sha256_after": file_sha256(target),
-            "bytes_before": len(original.encode("utf-8")), "bytes_after": len(updated.encode("utf-8"))}
+    updated = original.replace(old_text, new_text, 1).encode("utf-8")
+    return {**project_files.write_file(root, path, updated, expected=before), "bytes_before": len(data)}
 
 
 def review_operations(root: Path, operations: list[dict]) -> dict:
@@ -229,27 +243,30 @@ def review_operations(root: Path, operations: list[dict]) -> dict:
     stale = False
     budget = MAX_DIFF_CHARS
     for operation in operations:
-        if operation.get("tool") != "apply_patch":
+        if operation.get("tool") not in {"apply_patch", "create_file"}:
             continue
         entry = {"path": operation["path"], "expected_sha256": operation.get("expected_sha256"),
                  "sha256_current": None, "stale": False, "occurrences": None, "diff": [],
                  "truncated": False, "error": None, "patch_preview_only": False}
         try:
             target = resolve_in_workspace(root, operation["path"])
-            if not target.is_file():
-                raise ToolCallError("review target no longer exists")
-            current = target.read_bytes().decode("utf-8", errors="replace")
-            entry["sha256_current"] = file_sha256(target)
-            entry["stale"] = bool(operation.get("expected_sha256")) and entry["sha256_current"] != operation["expected_sha256"]
-            occurrences = current.count(operation["old_text"])
-            entry["occurrences"] = occurrences
-            if occurrences == 1:
-                before, after = current, current.replace(operation["old_text"], operation["new_text"], 1)
+            if operation["tool"] == "create_file":
+                if target.exists():
+                    raise ToolCallError("A file already exists at the proposed destination")
+                before, after = "", operation["content"]
             else:
-                before, after = operation["old_text"], operation["new_text"]
-                entry["patch_preview_only"] = True
-                entry["stale"] = True
-                entry["error"] = f"Reviewed patch must match exactly once; found {occurrences} matches"
+                data, current = project_files.text_file(root, operation["path"])
+                entry["sha256_current"] = project_files.digest(data)
+                entry["stale"] = bool(operation.get("expected_sha256")) and entry["sha256_current"] != operation["expected_sha256"]
+                occurrences = current.count(operation["old_text"])
+                entry["occurrences"] = occurrences
+                if occurrences == 1:
+                    before, after = current, current.replace(operation["old_text"], operation["new_text"], 1)
+                else:
+                    before, after = operation["old_text"], operation["new_text"]
+                    entry["patch_preview_only"] = True
+                    entry["stale"] = True
+                    entry["error"] = f"Reviewed patch must match exactly once; found {occurrences} matches"
             delta = list(difflib.unified_diff(before.splitlines(), after.splitlines(),
                                               fromfile=f"a/{operation['path']}", tofile=f"b/{operation['path']}",
                                               lineterm="", n=3))
@@ -315,6 +332,8 @@ def execute_operations(root: Path, operations: list[dict], runner=None, stop_che
                 detail = list_files(root, operation["path"], operation["depth"], operation["limit"])
             elif tool == "read_file":
                 detail = read_file(root, operation["path"], operation["max_bytes"])
+            elif tool == "create_file":
+                detail = create_file(root, operation["path"], operation["content"])
             elif tool == "apply_patch":
                 detail = apply_patch(root, operation["path"], operation["old_text"], operation["new_text"],
                                      operation.get("expected_sha256", ""))
@@ -378,10 +397,12 @@ def agent_instruction(workspace_files: list[str]) -> str:
         "Reply with JSON only, no prose, in this exact shape:\n"
         '{"summary":"one or two sentences","operations":[{"tool":"list_files","path":"."},'
         '{"tool":"read_file","path":"relative/path"},'
+        '{"tool":"create_file","path":"relative/new.py","content":"complete UTF-8 file"},'
         '{"tool":"apply_patch","path":"relative/path","old_text":"exact existing text",'
         '"new_text":"replacement text"},{"tool":"run_tests","command":"python3 -m unittest discover -s tests"}]}\n'
-        f"Allowed tools only: list_files, read_file, apply_patch, run_tests. At most {MAX_OPERATIONS} operations.\n"
+        f"Allowed tools only: list_files, read_file, create_file, apply_patch, run_tests. At most {MAX_OPERATIONS} operations.\n"
         "Paths are relative to the task workspace. Never use absolute paths, '..', .git, .env, or secrets.\n"
+        "create_file makes missing parent directories and refuses overwrite.\n"
         "apply_patch must match exactly once in the current file and must state the exact existing text.\n"
         "run_tests must use an allowlisted development command and will only run after human approval.\n"
         f"Visible workspace files: {listing}"
@@ -435,7 +456,7 @@ def round_feedback(root: Path, operations: list, results: list, redact=None) -> 
         if result["tool"] == "run_tests":
             tests.append({"command": operation.get("command", ""), "exit_code": result.get("exit_code"),
                           "output": redact(str(result.get("output", "")))[-FEEDBACK_TAIL:]})
-        if result["tool"] == "apply_patch" and result["status"] == "ok":
+        if result["tool"] in {"apply_patch", "create_file"} and result["status"] == "ok":
             changed.append(operation.get("path", ""))
         if result["status"] != "ok":
             errors.append(f"{result['tool']}: {str(result.get('error') or 'exit ' + str(result.get('exit_code')))[:200]}")

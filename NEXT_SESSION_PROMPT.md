@@ -1,5 +1,17 @@
 # Personal Codex: current implementation handoff
 
+## Current Mac coding-agent release — 2026-11-17
+
+Continue the existing `personal-codex/stabilization` branch from `git log -1`. Normal startup from this checkout is `python3 scripts/offline_workstation.py`. Quit an earlier running Personal Codex session before restarting on its normal loopback port. The launcher selects the new signed bundle at `data/autonomous-app/Personal Codex.app`. Launch the previous bundle for recovery with `python3 scripts/offline_workstation.py --app 'data/offline-app/Personal Codex.app'`. The previous bundle remains separately installed.
+
+- New and existing Git projects can be approved through native Finder. Directory-identity registration and the native capability are local. Generated code remains in a task worktree until the exact new-file changes are reviewed and applied to an empty project. Review existing-project changes in the task worktree.
+- Authorize up to four rounds in the UI with an exact unittest, pytest, or supported npm validation command. One run at a time. The model can list, read, patch and create files. The contained command runner provides return codes, output and deadlines. Restart marks an ambiguous active run interrupted and requires explicit resume. Preexisting validation files require a separate reviewed manual proposal.
+- Attachment extraction handles PDF text, Office document/slide/sheet excerpts, CSV, TXT, Markdown, and image OCR from a selected file. This Mac has PyMuPDF, Pillow and Tesseract installed. Treat excerpts as untrusted data. Add comprehensive visual layout understanding only with separately verified image inference and memory evidence.
+- Default model remains `qwen3.5:9b` at 8K with a manual 14B fallback. Reproduce tests with `python3 scripts/agent_acceptance.py --output /path/to/new/disposable-directory`. Use `--cancel-resume`, `--scenario`, `--live`, and `--model` for focused checks. `python3 scripts/agent_attachment_check.py --output /path/to/new/disposable-directory` exercises local file formats and denial cases.
+- Release report is `/Users/macbramesha/Documents/Codex/2026-11-17/files-mentioned-by-the-user-screenshot/outputs/Personal_Codex_Agent_Release_Report.md`. Startup, review and recovery instructions are `/Users/macbramesha/Documents/Codex/2026-11-17/files-mentioned-by-the-user-screenshot/outputs/Personal_Codex_Agent_Quickstart.md`. Automated receipts are `/Users/macbramesha/Documents/Codex/2026-11-17/files-mentioned-by-the-user-screenshot/outputs/Personal_Codex_Agent_Evidence.json`.
+
+Remaining work includes a broader scope of filesystem mutation and explicit undo after application, a richer editor and interactive terminal, guided offline dependency installation and dev-server lifecycle, visual layout inference beyond OCR, repeated attachment drop UI tests, and an approved online GitHub flow. Keep the existing branch, user profile and diagnostic file intact. Other sections below are historical handoffs.
+
 ## Current Mac offline workstation — 2026-11-17
 
 Continue this checkout on branch `personal-codex/stabilization`. Use the following startup for the ML hackathon on November 18:

@@ -3,6 +3,7 @@ export type Reply = {status:number;body:string};
 export type Conversation = {id:string;title:string;project_id:string|null;provider_id:string|null;model:string;pinned:boolean;updated_at:number;last_message?:{preview:string}|null};
 export type Message = {id:string;role:string;content:string;status:string;model?:string;error?:string|null;latency_ms?:number;last_seq?:number};
 export type Provider = {id:string;kind:string;endpoint:string;model:string;cloud_allowed:boolean;enabled:boolean;health?:{status:string;issues?:string[];inference_location?:string}};
+export type Attachment = {id:string;name:string;mechanism:string;excerpt:string};
 export type Project = {id:string;name:string;path:string};
 export type Task = {id:string;project_id:string;prompt:string;status:string;updated_at:number};
 export type Approval = {id:string;project_id:string;kind:string;detail:string;status:string};
@@ -38,7 +39,17 @@ function unpack<T>(reply:Reply):T {
 }
 export const native=isTauri();
 export const OFFLINE_BACKEND='http://127.0.0.1:8787';
-export async function offlineSession(){return native && await invoke<boolean>('offline_session');}
+export async function offlineSession(){return native ? await invoke<string | null>('offline_session') : null;}
+export async function chooseProjectFolder(name: string, existing = false) {
+  return invoke<string | null>('choose_project_folder', {name, existing});
+}
+export async function createSelectedProject(destination: string) {
+  return unpack<Project>(await invoke<Reply>('create_selected_project', {destination}));
+}
+export async function attachProjectFile(projectId: string, fromDrop: boolean) {
+  const reply = await invoke<Reply | null>('attach_project_file', {projectId, fromDrop});
+  return reply ? unpack<Attachment>(reply) : null;
+}
 type ConnectionReport = {authenticated:boolean;server_name:string;inference_policy?:string;execution_mode?:string;capabilities?:{repository_execution:boolean;mac_worker:boolean}};
 export async function connect(baseUrl:string,token:string){
   if(!native) return unpack<ConnectionReport>(await browserRequest('GET','/api/connection'));

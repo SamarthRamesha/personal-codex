@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import secrets
 import signal
 import socket
 import stat
@@ -24,7 +25,9 @@ from app import network_policy
 BACKEND_PORT = 8787
 OLLAMA_PORT = 11434
 APP_BINARY = Path("Contents/MacOS/personal-codex")
-DEFAULT_APP = ROOT / "data/offline-app/Personal Codex.app"
+PREVIOUS_APP = ROOT / "data/offline-app/Personal Codex.app"
+AUTONOMOUS_APP = ROOT / "data/autonomous-app/Personal Codex.app"
+DEFAULT_APP = AUTONOMOUS_APP if (AUTONOMOUS_APP / APP_BINARY).is_file() else PREVIOUS_APP
 
 
 def private_dir(path: Path):
@@ -120,6 +123,7 @@ def main():
     # Keep the normal user cache and project toolchain. Drop inherited provider, proxy and
     # deployment environment settings for these managed processes.
     env = {key: os.environ[key] for key in ("HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "LANG") if key in os.environ}
+    native_grant = secrets.token_urlsafe(32)
     processes = []
     try:
         with (session / "ollama.log").open("xb") as log:
@@ -140,7 +144,7 @@ def main():
                 env={**env, "PERSONAL_CODEX_INFERENCE_POLICY": "offline", "PERSONAL_CODEX_HOST": "127.0.0.1",
                      "PERSONAL_CODEX_DATA": str(data), "PERSONAL_CODEX_TOKEN_FILE": str(token),
                      "PERSONAL_CODEX_PROJECT_ROOTS": str(projects), "PERSONAL_CODEX_OFFLINE_MODEL": args.model,
-                     "PERSONAL_CODEX_MAX_CONTEXT_BYTES": "12000"},
+                     "PERSONAL_CODEX_MAX_CONTEXT_BYTES": "12000", "PERSONAL_CODEX_NATIVE_GRANT": native_grant},
             )
         processes.append(backend)
         wait_ready(backend, BACKEND_PORT, "/api/health")
@@ -151,7 +155,8 @@ def main():
             while daemon.poll() is None and backend.poll() is None:
                 time.sleep(0.5)
             raise RuntimeError("A managed offline service exited")
-        gui = subprocess.Popen([str(app)], cwd=app.parent, env={**env, "PERSONAL_CODEX_OFFLINE_TOKEN_FILE": str(token)})
+        gui = subprocess.Popen([str(app)], cwd=app.parent, env={**env, "PERSONAL_CODEX_OFFLINE_TOKEN_FILE": str(token),
+                                                          "PERSONAL_CODEX_NATIVE_GRANT": native_grant})
         processes.append(gui)
         while gui.poll() is None:
             if daemon.poll() is not None or backend.poll() is not None:
