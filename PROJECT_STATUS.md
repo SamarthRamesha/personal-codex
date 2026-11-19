@@ -1,5 +1,9 @@
 # Project status
 
+## Paused by user — 2026-11-19
+
+Do not resume this mission until the user explicitly says “it's back.” Last verified implementation95ed914 retains all previous functionality and adds the shared native task lifecycle.319Python discovered/314passed/5skipped; four actual deterministic HTTP/sandbox scenarios passed. Unverified observability edits are archived privately and removed from the active runtime; the new draft module remains untracked and unused. Temporary local VM is snapshotted/stopped; no JARVIS deployment/change occurred. Read current NEXT_SESSION_PROMPT.md and docs/PAUSED_CHECKPOINT.md before any work.
+
 ## Current master mission — 2026-11-19
 
 **Partial; JARVIS undeployed.** Source9e3f6fd audits the newer Mac offline/coding/full-task runtime and OpenJarvis427c2dd, retaining Personal Codex identity and no new mandatory dependency. Corrected memory credential/provenance/atomic-decision/capacity defects; fresh303Python discovered/298pass/5skip, frontend7/build and Rust3passed. Full-task synthetic acceptance passed before this repair; no fresh live-model/native UI/remote proof.

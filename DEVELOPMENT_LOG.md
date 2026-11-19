@@ -1,5 +1,9 @@
 # Development log
 
+## Safe pause requested — 2026-11-19
+
+User takes JARVIS offline and requests no continuation until a future “it's back.” Saved unverified observability diffs/full files/hash-verified archive outside Git, restored only our three runtime edits to verified95ed914, retained the untracked draft module and protected diagnostic. No functionality/data reset or publication. Paused/snapshotted the disposable Linux guest and exited QEMU; disk/snapshot verified, loopback listener removed and bootstrap controller stopped. No JARVIS command/change or credential reset. Read NEXT_SESSION_PROMPT/docs/PAUSED_CHECKPOINT before resumption; no background availability polling or automation.
+
 ## Shared native task lifecycle — 2026-11-19
 
 The actual full-task/command-runner routes now use one versioned plan/execute/inspect/resume interface. Metadata planning is read-only and detached from mutable caller dictionaries. Execution rechecks destination/provider/baseline, and the existing engine refuses resubmission of a consumed full-task plan under its run lock. Full-task resume retains persisted scope and new scopes bind provider metadata. No second engine, plugin dependency or production execution mode was added. See `docs/TASK_BACKEND.md`.

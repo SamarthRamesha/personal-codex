@@ -1,5 +1,9 @@
 # Handoff
 
+## Paused by user — 2026-11-19
+
+Do not continue project work, services/VM startup or server polling until a future user message says **“it's back.”** Verified source95ed914 and all earlier functionality are preserved;319Python discovered/314passed/5skipped and four native lifecycle fixture scenarios passed. Unverified observability edits are hash-archived privately and removed from active runtime; untracked draft module and protected diagnostic remain untouched. Temporary verification VM is snapshotted/stopped and its controller terminated; no JARVIS deployment/change. Read the current top of NEXT_SESSION_PROMPT.md and docs/PAUSED_CHECKPOINT.md before any resumption. This pause supersedes every older next action below.
+
 ## Current master mission checkpoint — 2026-11-19
 
 Implementation9e3f6fd preserves the current Mac runtime and records a pinned OpenJarvis source comparison/roadmap. Memory admission/provenance/transaction/capacity repairs are verified by303Python tests(298pass/5skip),7frontend/build,3Rust; deterministic full-task fixture passed. No live model/native UI or remote deployment proof. Read the current top of NEXT_SESSION_PROMPT.md and new master-mission test report before older sections. User data/diagnostic remain untouched; no push.
