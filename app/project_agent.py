@@ -127,7 +127,11 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
     def ask(prompt):
         if stopped():
             raise ValueError("Task stopped before the model step.")
-        return server.invoke_provider(provider, prompt, server.round_transport(provider, stop_check=stopped))["text"]
+        result = server.invoke_provider(provider, prompt, server.round_transport(provider, stop_check=stopped))
+        evidence.append({"attempt": attempt, "type": "inference", "model": provider["model"],
+                         "metrics": result["metrics"]})
+        write("running", "Model step returned; validating the result")
+        return result["text"]
 
     final, summary = "failed", "Local coding run ended unexpectedly"
     try:
@@ -151,7 +155,7 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
             store.write("INSERT INTO workspaces VALUES (?,?,?,?,?,?)",
                         (task_id, project["id"], str(root), branch, "ready", server.now()))
         event("workspace", "Local task workspace is ready.")
-        previous_feedback = evidence[-1].get("feedback", "") if evidence else ""
+        previous_feedback = next((item["feedback"] for item in reversed(evidence) if "feedback" in item), "")
         changed = {path for record in evidence for path in record.get("changed", [])}
         seen = {record["digest"] for record in evidence if record.get("digest")}
         if spec:

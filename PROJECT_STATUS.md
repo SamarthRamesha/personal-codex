@@ -1,5 +1,9 @@
 # Project status
 
+## Active resumed milestone — 2026-11-19
+
+Pause fulfilled by the user's “it's back”. Model metadata and content-minimal inference observations now pass335Python cases (330passed/5skipped),10frontend tests, native build/signature and four deterministic task scenarios. Native settings displayed real installed model metadata in a separate authenticated offline profile. Thirteen actual Linux network-policy tests passed in a disposable Debian guest; Docker/base image available there. Container/live-model acceptance remains pending. Default launcher prefers the new observability bundle, retaining older bundles. JARVIS authentication unresolved; no target change or publication. Current NEXT_SESSION_PROMPT.md and private resumed-mission receipts supersede historical paused sections below.
+
 ## Paused by user — 2026-11-19
 
 Do not resume this mission until the user explicitly says “it's back.” Last verified implementation95ed914 retains all previous functionality and adds the shared native task lifecycle.319Python discovered/314passed/5skipped; four actual deterministic HTTP/sandbox scenarios passed. Unverified observability edits are archived privately and removed from the active runtime; the new draft module remains untracked and unused. Temporary local VM is snapshotted/stopped; no JARVIS deployment/change occurred. Read current NEXT_SESSION_PROMPT.md and docs/PAUSED_CHECKPOINT.md before any work.

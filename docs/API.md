@@ -1,5 +1,7 @@
 # API v1 integration contract
 
+`GET /api/providers/{id}/models` optionally adds `catalog`, `selection_policy` and `configured_context_length`; existing `models` remains compatible. Native coding evidence now includes `type: inference` records with closed numeric observations. Fields are optional for older clients/backends; absent usage is unknown. See [model observations](MODEL_OBSERVATIONS.md) for source, scope and privacy guarantees. No new model selection, tool, network or execution authority is granted.
+
 The native full-task and command-runner routes use the version1 [task backend lifecycle](TASK_BACKEND.md). Wire shapes remain compatible; the common interface adds current-scope/provider rechecks and one-use full-task submission without granting new execution authority. Metadata planning does not invoke a model or persist a runnable task. Explicit resume remains required after interruption.
 
 ## Memory integrity update — 2026-11-19

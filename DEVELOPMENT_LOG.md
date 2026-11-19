@@ -1,5 +1,11 @@
 # Development log
 
+## Resumed model observations — 2026-11-19
+
+User's explicit “it's back” resumed the paused mission. Verified saved hashes, preserved the diagnostic/branch and restored only the saved draft after comparing runtime files with95ed914. Added bounded attributed model metadata, monotonic/first-text timings, explicitly provider-reported usage, content-minimal native task evidence and visible native settings/evidence components. No dependency, automatic routing/cloud fallback or prompt upload.16new backend cases/full335(330pass/5skip),10frontend tests/build, four HTTP/sandbox lifecycle scenarios and optimized/signature-verified native build passed. Native authentication and real installed-model settings were manually verified in a separate disposable profile; UI automation initially expired and recovered after reset. A frontend command initially ran from the wrong directory and failed before tests; logs retained, rerun from desktop passed. See MODEL_OBSERVATIONS.md.
+
+Separate project-only Debian VM cold overlay resolved the saved firmware stall. Actual x86_64 Linux network-policy13tests passed, including real filter installation/inheritance/accepted HTTP; kernel6.12.117/Python3.13.5. Docker26.1.5 and AppArmor/seccomp/cgroupns metadata observed; pinned official Python base pulled inside that disposable guest only. No JARVIS authentication/command/configuration or denied probe; existing agent remains empty. Original VM snapshot/key retained, no host mounts. Further image/native/live/ML acceptance remains separate.
+
 ## Safe pause requested — 2026-11-19
 
 User takes JARVIS offline and requests no continuation until a future “it's back.” Saved unverified observability diffs/full files/hash-verified archive outside Git, restored only our three runtime edits to verified95ed914, retained the untracked draft module and protected diagnostic. No functionality/data reset or publication. Paused/snapshotted the disposable Linux guest and exited QEMU; disk/snapshot verified, loopback listener removed and bootstrap controller stopped. No JARVIS command/change or credential reset. Read NEXT_SESSION_PROMPT/docs/PAUSED_CHECKPOINT before resumption; no background availability polling or automation.

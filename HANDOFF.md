@@ -1,5 +1,9 @@
 # Handoff
 
+## Active resumed milestone — 2026-11-19
+
+Pause fulfilled by the user's “it's back”. Model metadata and content-minimal inference observations now pass335Python cases (330passed/5skipped),10frontend tests, native build/signature and four deterministic task scenarios. Native settings displayed real installed model metadata in a separate authenticated offline profile. Thirteen actual Linux network-policy tests passed in a disposable Debian guest; Docker/base image available there. Container/live-model acceptance remains pending. Default launcher prefers the new observability bundle, retaining older bundles. JARVIS authentication unresolved; no target change or publication. Current NEXT_SESSION_PROMPT.md and private resumed-mission receipts supersede historical paused sections below.
+
 ## Paused by user — 2026-11-19
 
 Do not continue project work, services/VM startup or server polling until a future user message says **“it's back.”** Verified source95ed914 and all earlier functionality are preserved;319Python discovered/314passed/5skipped and four native lifecycle fixture scenarios passed. Unverified observability edits are hash-archived privately and removed from active runtime; untracked draft module and protected diagnostic remain untouched. Temporary verification VM is snapshotted/stopped and its controller terminated; no JARVIS deployment/change. Read the current top of NEXT_SESSION_PROMPT.md and docs/PAUSED_CHECKPOINT.md before any resumption. This pause supersedes every older next action below.

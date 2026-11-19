@@ -26,9 +26,9 @@ from http.client import HTTPConnection, HTTPSConnection, HTTPException
 from urllib.parse import urlsplit
 
 try:
-    import network_policy
+    import network_policy, model_observations
 except ImportError:
-    from app import network_policy
+    from app import network_policy, model_observations
 
 DEFAULT_TIMEOUT_SECONDS = 60.0
 OFFLINE_TIMEOUT_SECONDS = 180.0
@@ -154,6 +154,7 @@ class OllamaTransport:
         return f"{path}/api/chat"
 
     def __call__(self, request: dict) -> dict:
+        started = time.monotonic()
         endpoint = request.get("endpoint")
         _endpoint(endpoint)
         payload = _ollama_payload(request, stream=False)
@@ -168,7 +169,8 @@ class OllamaTransport:
         text = _assistant_text(message.get("content") if isinstance(message, dict) else reply.get("response"))
         if not text.strip():
             raise ProviderTransportError("Ollama response did not contain assistant text")
-        return {"text": text, "model": request.get("model")}
+        return {"text": text, "model": request.get("model"),
+                "metrics": model_observations.completed(started, reported=model_observations.reported_usage(reply))}
 
 
 def openai_transport(secret_ref: str = "", *, secret_reader=None, timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -181,6 +183,7 @@ def openai_transport(secret_ref: str = "", *, secret_reader=None, timeout: float
     reader = secret_reader or (lambda name: os.environ.get(name))
 
     def transport(request: dict) -> dict:
+        started = time.monotonic()
         endpoint = request.get("endpoint")
         parts, _, _ = _endpoint(endpoint)
         cloud_allowed = bool(request.get("cloud_allowed"))
@@ -205,7 +208,8 @@ def openai_transport(secret_ref: str = "", *, secret_reader=None, timeout: float
         text = _assistant_text(message.get("content") if isinstance(message, dict) else None)
         if not text.strip():
             raise ProviderTransportError("Provider response did not contain assistant text")
-        return {"text": text, "model": request.get("model")}
+        return {"text": text, "model": request.get("model"),
+                "metrics": model_observations.completed(started, reported=model_observations.reported_usage(reply.get("usage"), kind="openai"))}
 
     return transport
 
@@ -261,18 +265,21 @@ def get_json(endpoint: str, path: str, *, headers=None, timeout: float = DEFAULT
     return parsed
 
 
-def discover_models(endpoint: str, *, timeout: float = 5.0, cloud_allowed: bool = False) -> list[str]:
-    """List locally installed Ollama models. Reads no credential and never runs after registration."""
+def discover_model_catalog(endpoint: str, *, timeout: float = 5.0, cloud_allowed: bool = False) -> list[dict]:
+    """Explicit bounded metadata read; no inference, downloads or capability guesses."""
     parts, _, _ = _endpoint(endpoint)
     base = parts.path.rstrip("/")
     if base.endswith("/api/chat") or base.endswith("/api/generate"):
         base = base.rsplit("/api/", 1)[0]
     reply = get_json(endpoint, f"{base}/api/tags", timeout=timeout, cloud_allowed=cloud_allowed)
-    models = []
-    for entry in reply.get("models") or []:
-        if isinstance(entry, dict) and isinstance(entry.get("name"), str) and entry["name"]:
-            models.append(entry["name"][:120])
-    return models[:200]
+    if not isinstance(reply.get("models"), list):
+        raise ProviderTransportError("Provider returned an unexpected response for model catalogue")
+    return model_observations.model_catalog(reply.get("models"))
+
+
+def discover_models(endpoint: str, *, timeout: float = 5.0, cloud_allowed: bool = False) -> list[str]:
+    """Compatibility view used by discovery, chats and the existing worker allowlist."""
+    return [row["name"] for row in discover_model_catalog(endpoint, timeout=timeout, cloud_allowed=cloud_allowed)]
 
 
 class _StreamGuard:
@@ -315,6 +322,7 @@ class OllamaStreamTransport:
         self.timeout, self.max_bytes, self.max_chunks = timeout, max_bytes, max_chunks
 
     def __call__(self, request: dict) -> dict:
+        started, first_text, terminal = time.monotonic(), None, {}
         endpoint = request.get("endpoint")
         parts, host, port = _endpoint(endpoint)
         if host not in LOOPBACK_HOSTS and not request.get("cloud_allowed"):
@@ -366,9 +374,12 @@ class OllamaStreamTransport:
                     raise ProviderTransportError("Ollama returned an upstream model response")
                 if entry.get("done") is True:
                     done = True
+                    terminal = entry
                 message = entry.get("message")
                 text = _assistant_text(message.get("content") if isinstance(message, dict) else entry.get("response"))
                 if text:
+                    if first_text is None:
+                        first_text = time.monotonic()
                     pieces.append(text)
                     on_text(text)
                 on_chunk(total)
@@ -385,7 +396,8 @@ class OllamaStreamTransport:
         text = "".join(pieces)
         if not text.strip():
             raise ProviderTransportError("Provider stream did not contain assistant text")
-        return {"text": text, "model": request.get("model"), "streamed": True}
+        return {"text": text, "model": request.get("model"), "streamed": True,
+                "metrics": model_observations.completed(started, first_text, model_observations.reported_usage(terminal))}
 
 
 class OpenAIStreamTransport:
@@ -401,6 +413,7 @@ class OpenAIStreamTransport:
         self.max_bytes, self.max_chunks = max_bytes, max_chunks
 
     def __call__(self, request: dict) -> dict:
+        started, first_text, usage = time.monotonic(), None, {}
         endpoint = request.get("endpoint")
         parts, host, port = _endpoint(endpoint)
         if host not in LOOPBACK_HOSTS and not request.get("cloud_allowed"):
@@ -459,12 +472,16 @@ class OpenAIStreamTransport:
                     raise ProviderTransportError("Provider returned an unexpected streaming frame")
                 if entry.get("error"):
                     raise ProviderTransportError("Provider reported an error during streaming")
+                if isinstance(entry.get("usage"), dict):
+                    usage = model_observations.reported_usage(entry["usage"], kind="openai")
                 text = ""
                 for choice in entry.get("choices") or []:
                     delta = choice.get("delta") if isinstance(choice, dict) else None
                     if isinstance(delta, dict) and isinstance(delta.get("content"), str):
                         text += delta["content"]
                 if text:
+                    if first_text is None:
+                        first_text = time.monotonic()
                     pieces.append(text)
                     on_text(text)
                 on_chunk(total)
@@ -481,7 +498,8 @@ class OpenAIStreamTransport:
         text = "".join(pieces)
         if not text.strip():
             raise ProviderTransportError("Provider stream did not contain assistant text")
-        return {"text": text, "model": request.get("model"), "streamed": True}
+        return {"text": text, "model": request.get("model"), "streamed": True,
+                "metrics": model_observations.completed(started, first_text, usage)}
 
     def _secret(self) -> str:
         if not self.secret_ref:

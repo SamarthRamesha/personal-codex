@@ -154,6 +154,14 @@ def main():
                 break
             time.sleep(.5)
         ev["run"] = run
+        observations = [item for item in run["evidence"] if item["type"] == "inference"]
+        assert observations, "Native task did not retain inference measurements"
+        for item in observations:
+            assert set(item) == {"attempt", "type", "model", "metrics"}
+            assert set(item["metrics"]) == {"client_duration_ms", "first_text_ms", "provider_reported"}
+            assert item["metrics"]["client_duration_ms"] >= 0
+        ev["inference_calls"] = len(observations)
+        ev["checks"].append("content-minimal inference measurements survive task inspection")
         delivery = run["delivery"]
         assert delivery, run
         if args.conflict:

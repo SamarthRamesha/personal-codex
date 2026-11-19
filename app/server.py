@@ -782,9 +782,11 @@ def invoke_provider(provider: dict, prompt: str, transport) -> dict:
     """Adapter seam for approved callers; transport is injected so tests perform no I/O."""
     validate_provider_prompt(prompt)
     request = {"provider_id":provider["id"],"kind": provider["kind"], "endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt, "cloud_allowed": bool(provider.get("cloud_allowed"))}
+    started = time.monotonic()
     response = transport(request)
     if not isinstance(response, dict) or not isinstance(response.get("text"), str): raise ValueError("Provider transport returned an invalid response")
-    return {"text": response["text"][:MAX_OUTPUT_BYTES], "model": provider["model"], "provider_id": provider["id"]}
+    return {"text": response["text"][:MAX_OUTPUT_BYTES], "model": provider["model"], "provider_id": provider["id"],
+            "metrics": providers.model_observations.invocation_metrics(response.get("metrics"), started)}
 
 def visible_files(root: Path, cap=160):
     return context.walk(root)[:max(1,min(600,cap))]
@@ -1195,13 +1197,17 @@ class App(SimpleHTTPRequestHandler):
             if provider["kind"] != "ollama":
                 return self.json({"provider_id":pid,"models":[provider["model"]],"live":False,
                                   "note":"Only Ollama exposes a local model list; this provider's configured model is shown."})
-            try: models=providers.discover_models(provider["endpoint"],timeout=5.0,cloud_allowed=bool(provider["cloud_allowed"]))
+            try:
+                catalog=providers.discover_model_catalog(provider["endpoint"],timeout=5.0,cloud_allowed=bool(provider["cloud_allowed"]))
+                models=[entry["name"] for entry in catalog]
             except providers.ProviderTransportError as error:
                 return self.json({"provider_id":pid,"models":[],"live":False,"failure_class":providers.classify_provider_error(error),
                                   "error":providers.redact_provider_text(str(error))},502)
             if network_policy.offline_only():
                 models = [model for model in network_policy.offline_models() if model in models]
-            return self.json({"provider_id":pid,"models":models,"live":True})
+                catalog = [entry for entry in catalog if entry["name"] in models]
+            return self.json({"provider_id":pid,"models":models,"catalog":catalog,"live":True,
+                              "selection_policy":"explicit-only","configured_context_length":8192 if network_policy.offline_only() else None})
         if route.startswith("/api/conversations/"):
             parts=route.split("/")
             if len(parts)==4:

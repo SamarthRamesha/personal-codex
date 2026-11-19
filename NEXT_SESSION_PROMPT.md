@@ -1,5 +1,14 @@
 # Personal Codex: current implementation handoff
 
+## Active resumed checkpoint — 2026-11-19
+
+The user's “it's back” fulfilled the pause below. Model metadata/inference observations are implemented and verified; read docs/MODEL_OBSERVATIONS.md. Full335Python discovered/330passed/5skipped,16new cases; frontend10passed; TypeScript/Vite and optimized signed native build passed. Four deterministic HTTP/macOS-sandbox task scenarios passed with persisted content-minimal metrics. The separate native profile authenticated offline and displayed actual model metadata; real-model metrics/task visual acceptance remains pending. Default launcher prefers data/observability-app/Personal Codex.app; older bundles and profiles remain available.
+
+A separate disposable Debian guest actually passed13Linux network-policy tests with real seccomp installation, accepted HTTP and descendant denial. This is not JARVIS proof. Dedicated guest Docker26.1.5 and the pinned Python base are available; current API image/container acceptance is next. Guest has1CPU/1536MiBRAM/8GiB disk, no host mounts and loopback-only SSH22291. Its original firmware snapshot is retained; working guest uses a separate PC overlay. Private resumed-mission-2026-11-19 receipts and vm_control.py record exact state. Native verification launcher owns loopback8787/11434; stop/snapshot guest before heavy9B inference. All artifacts/credentials stay outside Git.
+
+Tailscale Running/JARVIS visible at resume, SSH agent empty and no usable saved passphrase/session. Do not retry unchanged credentials, repeatedly ask for the unknown passphrase, guess/extract/reset credentials or use privileged workarounds. No target command, declined probe, deployment, family data access, networking/Serve/policy change or publication occurred. Use separate browser windows or in-app browser. Preserve the unread/unstaged diagnostic and all history. Current private RESUMED_STATE.json supersedes historical SAFE_STOP records and paused sections below. Continue the full master mission; it remains partial.
+
+
 ## PAUSED BY USER — 2026-11-19
 
 **Do not continue this project, start its services/VM, contact JARVIS, run development tasks or poll for availability until a future user message explicitly says “it's back.”** The user is taking the server offline and requests a safe stop. Other messages/questions do not resume this mission. Preserve this pause across accounts/context compaction. No automation or polling is scheduled.
