@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -306,10 +307,12 @@ def markdown(status, source, root, plan, checks, files, detail, scope, blocker):
 
 
 IMPLEMENTATION_SCHEMA = (
-    'JSON only. For edits return {"status":"continue","summary":"change","operations":['
-    '{"tool":"create_file","path":"relative/new.py","content":"complete file"}]}. '
-    'To edit existing text use {"tool":"apply_patch","path":"relative/file.py","old_text":"exact old text","new_text":"replacement"}. '
-    'For a read use {"tool":"read_file","path":"relative/file.py"}. '
+    'Return one JSON object with exactly status, summary, operations. Every tool belongs inside operations. '
+    'To EDIT an EXISTING file return {"status":"continue","summary":"edit existing source","operations":['
+    '{"tool":"apply_patch","path":"EXACT_EXISTING_PATH","old_text":"exact unique text copied from that file","new_text":"replacement text"}]}. '
+    'Replace EXACT_EXISTING_PATH with the real workspace path listed below. Never add a "relative/" prefix. '
+    'create_file with path and content is ONLY for a path which does not exist. It cannot replace existing files. '
+    'To inspect source, return read_file with path inside the same operations array. '
     'Once the app has verified the complete requested implementation, return '
     '{"status":"complete","summary":"what is implemented","operations":[]}. '
     'Do not return an empty continue round. Preserve existing tests and security configuration. '
@@ -317,13 +320,33 @@ IMPLEMENTATION_SCHEMA = (
 )
 
 
-def implementation_prompt(request, plan, prior, selected, *, verified=False):
+def proposal_fingerprint(text):
+    """Content-free canonical identity, including proposals rejected before hash binding."""
+    try:
+        value = json.loads(text)
+        if isinstance(value, dict) and isinstance(value.get("operations"), list):
+            value = value["operations"]
+        canonical = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    except (ValueError, TypeError):
+        canonical = text
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def repeated_proposal(evidence, fingerprint):
+    previous = next((item["proposal_fingerprint"] for item in reversed(evidence)
+                     if item.get("proposal_fingerprint")), None)
+    return previous == fingerprint
+
+
+def implementation_prompt(request, plan, prior, selected, *, verified=False, existing=()):
     gate = ("All planned checks passed. Review these actual results against the full request. "
             "If satisfied, return status complete with operations []. If something is missing, continue with actual tool operations."
             if verified else "Implement or repair a coherent set of files. Use the latest tool output to guide the next edit. "
             "If a test failed, locate the named failure in the supplied workspace files and return a targeted patch. "
             "Only edit a new test to correct a mistaken expectation or test harness. Preserve coverage of the required behavior.")
     prompt = (IMPLEMENTATION_SCHEMA + gate + "\nUser request:\n" + request
+              + "\nExisting workspace files (edit using apply_patch; inspect with read_file): "
+              + json.dumps(list(existing)[:80])
               + "\nRequired files: " + json.dumps(plan["files"]) + "\nPlan: " + plan["summary"]
               + "\nLatest verification and tool evidence:\n" + prior[-2800:])
     if plan["references"]:

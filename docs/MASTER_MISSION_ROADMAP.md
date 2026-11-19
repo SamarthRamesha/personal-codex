@@ -1,5 +1,7 @@
 # Master mission roadmap — 2026-11-19
 
+Current checkpoint: memory integrity and the shared native lifecycle are implemented; bounded model metadata/metrics, actual local native measurements and separate Linux/container proof now exist. Exact consecutive invalid-proposal repetition and short-context omission were repaired. A synthetic ML scaffold passes independent/sandbox tests and bounded stress cases, but its first real-agent repair failed safely; full realistic ML/native frontend acceptance and target operations remain open. Read NEXT_SESSION_PROMPT.md for exact source/tests and limitations.
+
 Overall mission remains **partial**. Current Mac coding workflows do not establish JARVIS deployment or realistic ML-project acceptance. Work in dependency order; infrastructure approval gates do not prevent independent local tests/design.
 
 1. **Memory integrity (current increment):** unified credential/length/kind admission, provenance bound to content/project, edits become manual, atomic one-use promotion and shared 200-entry limit. Acceptance: before/after failure reproduction, transaction rollback, competing decisions and final-slot race, legacy prompt exclusion, existing full regression.

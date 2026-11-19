@@ -217,11 +217,19 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
             if spec:
                 prompt = full_task.implementation_prompt(task["prompt"], plan, previous_feedback,
                     context.prompt_block(context.select(root, task["prompt"], changed_files=changed, max_bytes=3500)),
-                    verified=verified)
+                    verified=verified, existing=context.walk(root)[:80])
                 write("running", f"Reviewing verification in round {attempt}" if verified else f"Implementing round {attempt}")
+            fingerprint = None
             try:
                 model_text = ask(prompt)
                 if stopped():
+                    break
+                fingerprint = full_task.proposal_fingerprint(model_text)
+                if full_task.repeated_proposal(evidence, fingerprint):
+                    final, summary = "blocked", "Repeated identical tool proposal without progress. Saved work remains available for review."
+                    evidence.append({"attempt": attempt, "type": "rejected", "feedback": summary,
+                                     "proposal_fingerprint": fingerprint})
+                    write("running", summary)
                     break
                 proposal = tools.parse_round_proposal(model_text)
                 if proposal["status"] != "continue":
@@ -264,7 +272,7 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
                 hashes = {item["path"]: item["sha256_after"] for item in result["operations"]
                           if item.get("path") in edited and item.get("sha256_after")}
                 record = {"attempt": attempt, "type": "tools", "digest": digest, "changed": edited,
-                          "hashes": hashes, "feedback": previous_feedback}
+                          "hashes": hashes, "feedback": previous_feedback, "proposal_fingerprint": fingerprint}
                 evidence.append(record)
                 write("running", proposal["summary"])
                 if stopped():
@@ -308,7 +316,8 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
                         previous_feedback += "\n" + outstanding
                     if latest_validation:
                         previous_feedback += "\nLatest check results:\n" + latest_validation[-2200:]
-                evidence.append({"attempt": attempt, "type": "rejected", "feedback": previous_feedback})
+                evidence.append({"attempt": attempt, "type": "rejected", "feedback": previous_feedback,
+                                 "proposal_fingerprint": fingerprint})
                 write("running", previous_feedback)
                 summary = previous_feedback
             event("validation", f"Round {attempt} requires another iteration.")

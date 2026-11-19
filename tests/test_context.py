@@ -76,6 +76,24 @@ class ContextSelectionTests(unittest.TestCase):
         entry = next(snippet for snippet in selection["files"] if snippet["path"] == "src/web.js")
         self.assertIn("changed in an earlier round", entry["reason"])
 
+    def test_large_explicit_source_is_not_silently_omitted_under_small_budget(self):
+        source = "def inference():\n    return 1\n" + "# bounded source line\n" * 300
+        (self.repo / "pipeline.py").write_text(source)
+        selection = context.select(self.repo, "repair pipeline.py inference", max_bytes=3500)
+        first = selection["files"][0]
+        self.assertEqual(first["path"], "pipeline.py")
+        self.assertTrue(first["truncated"])
+        self.assertIn("def inference", first["text"])
+        self.assertLessEqual(selection["bytes"], 3500)
+
+    def test_multibyte_context_truncation_keeps_utf8_and_line_provenance(self):
+        (self.repo / "unicode.py").write_text("# αβγ\n" * 300)
+        selection = context.select(self.repo, "unicode.py", max_bytes=101)
+        first = selection["files"][0]
+        self.assertLessEqual(len(first["text"].encode("utf-8")), 101)
+        self.assertEqual(first["end_line"], first["start_line"] + first["text"].count("\n"))
+        self.assertTrue(first["truncated"])
+
     def test_symbol_outline_extracts_python_and_javascript(self):
         python = context.outline("src/auth.py", (self.repo / "src" / "auth.py").read_text())
         self.assertEqual([(item["kind"], item["name"]) for item in python],

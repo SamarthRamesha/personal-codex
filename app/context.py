@@ -243,6 +243,9 @@ def _score(relative: str, tokens: list[str], symbols: list[dict], text: str, cha
         score += 3
         reasons.append("test location")
     hits = [token for token in tokens if token in lowered or token in stem]
+    if lowered in tokens:
+        score += 20
+        reasons.append("exact task path")
     if hits:
         score += 4 * min(4, len(hits))
         reasons.append(f"path matches {', '.join(hits[:3])}")
@@ -292,9 +295,17 @@ def select(root, task: str, extra: str = "", changed_files=(), failed_tests=(), 
     for score, relative, reason, text, symbols in candidates:
         if len(files) >= max_files:
             break
-        snippet = _snippet(relative, text, tokens)
+        remaining = max_bytes - total
+        if remaining <= 0:
+            break
+        snippet = _snippet(relative, text, tokens, limit=min(SNIPPET_CHARS, remaining))
         size = len(snippet["text"].encode("utf-8"))
-        if total + size > max_bytes:
+        if size > remaining:
+            snippet["text"] = snippet["text"].encode("utf-8")[:remaining].decode("utf-8", errors="ignore")
+            snippet["end_line"] = snippet["start_line"] + snippet["text"].count("\n")
+            snippet["truncated"] = True
+            size = len(snippet["text"].encode("utf-8"))
+        if not size:
             continue
         total += size
         snippet.update({"reason": reason, "score": score, "symbols": symbols[:20]})

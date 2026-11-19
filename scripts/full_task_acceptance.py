@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--existing", action="store_true")
     parser.add_argument("--conflict", action="store_true")
     parser.add_argument("--cancel", action="store_true")
+    parser.add_argument("--repeat-proposal", action="store_true", help="prove identical invalid proposals stop without writes")
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(mode=0o700)
@@ -74,6 +75,9 @@ def main():
                                        "files":["calculator.py", "tests/test_calculator.py"], "test":"unittest",
                                        "build":None, "smoke":{"argv":["python3","calculator.py","2","+","3"],"expect":"5"}})}
         calls += 1
+        if args.repeat_proposal:
+            return {"text": json.dumps({"status": "continue", "summary": f"Rejected round {calls}",
+                    "operations": [{"tool": "apply_patch", "path": "missing.py", "old_text": "old", "new_text": "new"}]})}
         if args.cancel and calls == 1:
             entered.set()
             release.wait(10)
@@ -164,7 +168,12 @@ def main():
         ev["checks"].append("content-minimal inference measurements survive task inspection")
         delivery = run["delivery"]
         assert delivery, run
-        if args.conflict:
+        if args.repeat_proposal:
+            assert run["status"] == "blocked" and "Repeated identical tool proposal" in run["summary"], run["summary"]
+            assert calls == 2 and not list(destination.glob("*.py"))
+            assert not (destination / "README.md").exists()
+            ev["checks"].append("identical rejected proposal stops after two calls despite changing summaries, without delivery")
+        elif args.conflict:
             assert run["status"] == "failed" and "conflicting edits" in run["summary"], run["summary"]
             assert (destination/"calculator.py").read_text() == "# User's concurrent edit\n"
             assert not (destination/"README.md").exists()
