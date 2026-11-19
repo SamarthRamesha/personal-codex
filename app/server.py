@@ -522,12 +522,59 @@ def reset_budget(task_id: str) -> dict:
 
 MEMORY_KINDS = {"convention", "decision", "issue", "solved", "relationship", "test-command", "summary"}
 
+def validate_memory_content(kind: str, content: str) -> str:
+    """Apply one admission policy to manual edits, internal proposals and promotion."""
+    if kind not in MEMORY_KINDS:
+        raise ValueError(f"memory kind must be one of: {', '.join(sorted(MEMORY_KINDS))}")
+    if not isinstance(content, str) or not content.strip() or len(content.strip()) > 2000:
+        raise ValueError("memory content must contain 1-2000 characters")
+    if re.search(r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*\S+", content):
+        raise ValueError("memory must not contain credential-like values")
+    return content.strip()
+
+
+def memory_digest(kind: str, content: str, evidence: dict) -> str:
+    return hashlib.sha256(json.dumps({"kind": kind, "content": content, "evidence": evidence},
+                                     sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def require_memory_capacity(project_id: str) -> None:
+    # Call inside the same locked transaction as the eventual insertion.
+    if STORE.one("SELECT COUNT(*) AS count FROM memory WHERE project_id=?", (project_id,))["count"] >= 200:
+        raise ValueError("project memory limit reached (200 entries)")
+
+
+def record_manual_memory(project_id: str, kind: str, content: str, source: str) -> str:
+    content = validate_memory_content(kind, content)
+    mid, stamp = uid(), now()
+    with STORE.lock, STORE.conn:
+        STORE.conn.execute("BEGIN IMMEDIATE")
+        require_memory_capacity(project_id)
+        STORE.conn.execute("INSERT INTO memory (id,project_id,kind,content,source,created_at,updated_at) "
+                           "VALUES (?,?,?,?,?,?,?)", (mid, project_id, kind, content, source[:200], stamp, stamp))
+    return mid
+
+
 def memory_rows(project_id: str, limit: int = 50) -> list:
     """Memory with computed provenance and staleness; stored text is never treated as authority."""
     rows = STORE.rows("SELECT * FROM memory WHERE project_id=? ORDER BY updated_at DESC LIMIT ?", (project_id, limit))
     for row in rows:
-        task = STORE.one("SELECT status FROM tasks WHERE id=?", (row.get("source_task_id"),)) if row.get("source_task_id") else None
-        row["stale"] = bool(row.get("source_task_id") and (not task or task["status"] not in {"completed", "ready-to-complete"}))
+        has_proof = any(row.get(key) is not None for key in ("source_task_id", "source_round_id", "evidence", "digest"))
+        valid = False
+        if has_proof:
+            task = STORE.one("SELECT status,project_id FROM tasks WHERE id=?", (row.get("source_task_id"),))
+            try:
+                proof = json.loads(row.get("evidence") or "null")
+                valid = bool(task and task["project_id"] == project_id
+                             and task["status"] in {"completed", "ready-to-complete"}
+                             and row.get("source_round_id") and isinstance(proof, dict)
+                             and proof.get("task_id") == row.get("source_task_id")
+                             and type(proof.get("exit_code")) is int and proof["exit_code"] == 0
+                             and row.get("digest") == memory_digest(row["kind"], row["content"], proof))
+            except (ValueError, TypeError):
+                valid = False
+        row["stale"] = has_proof and not valid
+        row["verification"] = "passing-round" if valid else "stale" if has_proof else "manual"
     return rows
 
 def normalized_memory(content: str) -> str:
@@ -551,6 +598,7 @@ def memory_proposal_rows(project_id: str, limit: int = 50) -> list:
 
 def propose_memory(task: dict, kind: str, content: str, evidence: str = "") -> dict:
     """Queue a model-proposed memory entry. Nothing is trusted until a user approves it."""
+    content = validate_memory_content(kind, content)
     rounds = decoded_rounds(task["id"])
     passing = [row for row in rounds if row["status"] == "passed"]
     if not passing:
@@ -560,7 +608,7 @@ def propose_memory(task: dict, kind: str, content: str, evidence: str = "") -> d
     proof = {"task_id": task["id"], "round": latest["round_number"], "tests": tests.get("test_command"),
             "exit_code": tests.get("test_exit_code"), "changed_files": tests.get("changed_files") or [],
             "note": str(evidence or "")[:600]}
-    digest = hashlib.sha256(json.dumps({"kind": kind, "content": content, "evidence": proof}, sort_keys=True).encode("utf-8")).hexdigest()
+    digest = memory_digest(kind, content, proof)
     duplicate = memory_duplicate(task["project_id"], content)
     if duplicate:
         raise ValueError(f"an equivalent memory entry already exists ({duplicate['where']} {duplicate['id'][:8]})")
@@ -587,22 +635,30 @@ def auto_summary_proposal(task: dict) -> dict | None:
         return None
 
 def decide_memory(proposal_id: str, approve: bool, reason: str = "") -> dict:
-    row = STORE.one("SELECT * FROM memory_proposals WHERE id=?", (proposal_id,))
-    if not row: raise LookupError("memory proposal not found")
-    if row["status"] != "pending": raise ValueError(f"memory proposal is already {row['status']}")
-    stamp = now()
-    if not approve:
-        STORE.write("UPDATE memory_proposals SET status='rejected', reason=?, decided_at=? WHERE id=? AND status='pending'",
-                    (str(reason or "rejected by user")[:300], stamp, proposal_id))
-        return {"id": proposal_id, "status": "rejected"}
-    if memory_duplicate(row["project_id"], row["content"], include_proposals=False):
-        raise ValueError("an equivalent memory entry appeared after this proposal was queued")
-    evidence = json.loads(row["evidence"]) if row["evidence"] else {}
-    mid = uid()
-    STORE.write("INSERT INTO memory VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (mid, row["project_id"], row["kind"], row["content"], "round-promotion", stamp, stamp,
-                 row["task_id"], row["round_id"], row["evidence"], row["digest"]))
-    STORE.write("UPDATE memory_proposals SET status='approved', decided_at=? WHERE id=? AND status='pending'", (stamp, proposal_id))
+    # The decision, capacity/duplicate checks and insert commit together. A failed
+    # decision write must not leave approved memory or permit a second promotion.
+    with STORE.lock, STORE.conn:
+        STORE.conn.execute("BEGIN IMMEDIATE")
+        row = STORE.one("SELECT * FROM memory_proposals WHERE id=?", (proposal_id,))
+        if not row: raise LookupError("memory proposal not found")
+        if row["status"] != "pending": raise ValueError(f"memory proposal is already {row['status']}")
+        stamp = now()
+        if not approve:
+            STORE.conn.execute("UPDATE memory_proposals SET status='rejected', reason=?, decided_at=? WHERE id=?",
+                               (str(reason or "rejected by user")[:300], stamp, proposal_id))
+            return {"id": proposal_id, "status": "rejected"}
+        validate_memory_content(row["kind"], row["content"])
+        require_memory_capacity(row["project_id"])
+        if memory_duplicate(row["project_id"], row["content"], include_proposals=False):
+            raise ValueError("an equivalent memory entry appeared after this proposal was queued")
+        evidence = json.loads(row["evidence"]) if row["evidence"] else {}
+        if row["digest"] != memory_digest(row["kind"], row["content"], evidence):
+            raise ValueError("memory proposal changed after review")
+        mid = uid()
+        STORE.conn.execute("INSERT INTO memory VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                           (mid, row["project_id"], row["kind"], row["content"], "round-promotion", stamp, stamp,
+                            row["task_id"], row["round_id"], row["evidence"], row["digest"]))
+        STORE.conn.execute("UPDATE memory_proposals SET status='approved', decided_at=? WHERE id=?", (stamp, proposal_id))
     return {"id": mid, "proposal_id": proposal_id, "status": "approved", "source_task_id": row["task_id"],
             "source_round_id": row["round_id"], "evidence": evidence}
 
@@ -611,6 +667,12 @@ def memory_lines(project_id: str, task: str = "", paths=(), limit: int = 6, max_
     tokens = context.task_tokens(task or "", " ".join(list(paths)[:6]))
     scored = []
     for row in memory_rows(project_id, 200):
+        try:
+            validate_memory_content(row["kind"], row["content"])
+        except ValueError:
+            # Old records can predate the unified write policy. Never copy their
+            # credential-like content into an inference prompt or alter them here.
+            continue
         haystack = f"{row['kind']} {row['content']}".lower()
         score = sum(2 for token in tokens if token in haystack)
         if row.get("source_task_id") and row["source_task_id"] in tuple(paths):
@@ -621,7 +683,9 @@ def memory_lines(project_id: str, task: str = "", paths=(), limit: int = 6, max_
     for score, row in scored:
         if len(lines) >= limit: break
         if score == 0 and len(scored) > limit: continue
-        label = "possibly stale, verify against the files" if row["stale"] else "verified against a passing round"
+        label = {"stale": "possibly stale, verify against the files",
+                 "manual": "user-provided, verify against the files",
+                 "passing-round": "verified against a passing round"}[row["verification"]]
         line = f"[{row['kind']}; {label}] {row['content'][:300]}"
         size = len(line.encode("utf-8"))
         if total + size > max_bytes: break
@@ -1503,13 +1567,10 @@ class App(SimpleHTTPRequestHandler):
                 pid=route.split("/")[3]
                 if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
                 kind=str(data.get("kind") or ""); content=str(data.get("content") or "").strip()
-                if kind not in MEMORY_KINDS: return self.json({"error":f"memory kind must be one of: {', '.join(sorted(MEMORY_KINDS))}"},400)
-                if not content or len(content) > 2000: return self.json({"error":"memory content must contain 1-2000 characters"},400)
-                if re.search(r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*\S+", content):
-                    return self.json({"error":"memory must not contain credential-like values"},400)
-                if len(memory_rows(pid, 500)) >= 200: return self.json({"error":"project memory limit reached (200 entries)"},409)
-                mid=uid(); stamp=now()
-                STORE.write("INSERT INTO memory (id,project_id,kind,content,source,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",(mid,pid,kind,content,str(data.get("source") or "manual")[:200],stamp,stamp))
+                try: content=validate_memory_content(kind, content)
+                except ValueError as error: return self.json({"error":str(error)},400)
+                try: mid=record_manual_memory(pid, kind, content, str(data.get("source") or "manual"))
+                except ValueError as error: return self.json({"error":str(error)},409)
                 return self.json({"id":mid,"kind":kind,"content":content,"status":"recorded"},201)
             if route.startswith("/api/projects/") and (route.endswith("/memory/delete") or route.endswith("/memory/update")):
                 pid=route.split("/")[3]; mid=str(data.get("id") or ""); row=STORE.one("SELECT * FROM memory WHERE id=? AND project_id=?",(mid,pid))
@@ -1518,8 +1579,13 @@ class App(SimpleHTTPRequestHandler):
                     STORE.write("DELETE FROM memory WHERE id=? AND project_id=?",(mid,pid))
                     return self.json({"id":mid,"status":"deleted"})
                 content=str(data.get("content") or "").strip()
-                if not content or len(content) > 2000: return self.json({"error":"memory content must contain 1-2000 characters"},400)
-                STORE.write("UPDATE memory SET content=?, updated_at=? WHERE id=? AND project_id=?",(content,now(),mid,pid))
+                try: content=validate_memory_content(row["kind"], content)
+                except ValueError as error: return self.json({"error":str(error)},400)
+                # The old round only verified the original bytes. Keep its proposal
+                # audit intact, but edited content now has manual provenance.
+                STORE.write("UPDATE memory SET content=?, updated_at=?, source='manual-edit', "
+                            "source_task_id=NULL, source_round_id=NULL, evidence=NULL, digest=NULL "
+                            "WHERE id=? AND project_id=?",(content,now(),mid,pid))
                 return self.json({"id":mid,"status":"updated"})
             if route == "/api/conversations":
                 try:

@@ -1,5 +1,11 @@
 # Security model
 
+## Memory integrity review — 2026-11-19
+
+Memory edits now use the same bounded credential-pattern admission as creation, internal proposals and promotion. Editing content clears its old round evidence/digest and makes provenance manual; the original proposal audit is retained. Prompt labels distinguish user-provided content, intact project-matched passing-round evidence and stale/incomplete evidence. Digest checks detect inconsistent stored bytes; they are not signatures or protection from a compromised database administrator. All retrieved memory remains untrusted data.
+
+Promotion rechecks its stored review digest and admission policy. Insertion, capacity checks and decision commit in one locked SQLite transaction; a failed decision rolls back insertion. Manual insertion and promotion share the200-entry project cap. Legacy credential-pattern records are omitted from inference prompts without silently deleting them. Pattern screening is a heuristic, not comprehensive secret detection. No migration of user data or production deployment occurred. Fourteen new regressions and the complete303-test suite passed with the five documented skips; see `docs/MASTER_MISSION_TEST_REPORT.md`.
+
 ## Full task execution boundary
 
 The owner-authorized offline workflow binds a task to one repository directory identity, an exact Git baseline, selected reference files, an installed loopback model and run budgets. The native bridge keeps the owner token and Finder capability in process memory. Attachment text is treated as reference material. Execution uses the existing macOS process sandbox with the network denied and the task worktree as the writable project root. Validation commands are selected from the Python and Node allowlists and a constrained interpreter smoke command.

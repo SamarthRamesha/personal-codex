@@ -1,5 +1,13 @@
 # Development log
 
+## Master mission audit and memory integrity — 2026-11-19
+
+Recovered the complete current handoff and branch at24014bf, preserving the diagnostic and all later Mac-agent work. Inspected OpenJarvis427c2dd as separate source-only reference; no dependency or upstream runtime was imported. Added source comparison, dependency-ordered roadmap and an architecture decision retaining the native Personal Codex runtime. Remote deployment remains explicitly approval-gated.
+
+Reproduced nine existing memory defects, then repaired shared admission, truthful provenance on edit/retrieval, reviewed-digest validation, transactional promotion and the shared project cap. Added fourteen regressions including SQL rollback, competing decisions and the last-slot race. Existing user records are not migrated or silently deleted. A test-fixture token-length mistake produced nine setup errors before correction; that failed log remains separate from the nine reproduced product failures.
+
+Fresh final backend303discovered/298passed/5skipped,64.053s; frontend7passed/build passed; cached Rust3passed. Deterministic full-task acceptance passed in1.84s before the memory edit. No live model, native UI, Docker, Linux filter or remote acceptance claim. Tool-visible agent/Tailscale state still reported empty/Stopped after owner confirmation; Terminal-state clarification requested, no SSH authentication attempted. No server/Serve/policy mutation or publication. Full details in `docs/MASTER_MISSION_TEST_REPORT.md`; private metadata/evidence stays outside Git.
+
 ## Full task execution — 2026-11-17
 
 A single scoped authorization now covers planning, implementation, contained tests and build checks, repair, final review, and delivery. The desktop reports real progress and exposes Finder destination selection, multiple attachments, cancellation, recovery, and exact commands. Scope is persisted with the approved directory identity and baseline revision. No validation succeeds on test-only edits or a test run with zero passing tests.

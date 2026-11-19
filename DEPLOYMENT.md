@@ -1,5 +1,11 @@
 # Deployment
 
+## Master mission checkpoint — 2026-11-19
+
+JARVIS remains undeployed and read-only. This source now includes the November17 Mac agent and November19 memory repair; the November7 source/context is historical and must not be deployed as the current release. Read `docs/MASTER_MISSION_ROADMAP.md` and the current private audit report before following older commands below. No separate Docker operator is identified, both old filter probes were declined, and no privilege workaround is allowed. Current tool-visible agent/Tailscale state must be resolved before fresh target inspection.
+
+Retain the protected-parent review candidate, strict25GB initial total/24GB data admission,200GB free reserve and75GB maximum overall allocation. No hard quota is established. Existing policy candidate is not ready to apply because family HTTPS, routes/shares/services and emergency preservation remain unverified. Current Serve documentation also distinguishes node status from Services inventory; inspect installed-version help and all relevant read-only configuration before proposing a scoped change. Image/build/mapped identity/storage/service/Serve/policy/credentials/persistent worker/recovery and production coding each retain separate approval and actual-runtime acceptance gates. No current native-to-JARVIS acceptance has passed.
+
 ## Policy candidate is review-only
 
 The complete supplied policy now has a private proposed replacement, exact diffs and rollback copy. Preserve the existing SSH rule and validate both IP families. Local model checks do not establish vendor compilation, live enforcement or full family-service preservation.
