@@ -1,5 +1,39 @@
 # Personal Codex: current implementation handoff
 
+## Master mission audit and memory repair — 2026-11-19
+
+Branch `personal-codex/stabilization`; verified implementation commit **`9e3f6fd8f40a1a55e2bf59e7ddd5636391d9b3ca`**, audit baseline `24014bf12097fb38c9908bac97f8fb120542b4b5`. A documentation receipt follows this implementation; inspect `git log -1` for actual checkout HEAD. Tracked tree was clean at audit entry; final source milestone committed explicitly, with the protected untracked diagnostic left unread/unstaged. No push or deployment occurred. Preserve all November17 offline/native/full-task work. Use the actual checkout, not a recreated project.
+
+Read `docs/OPENJARVIS_REVIEW.md`, `docs/MASTER_MISSION_ROADMAP.md`, `docs/MASTER_MISSION_TEST_REPORT.md` and `docs/decisions/0001-openjarvis-reference.md`. OpenJarvis was inspected as source-only at `427c2dd11d180ac254a03e92c5fb01189fb4b23b`, in a separate private reference location. No upstream code/package/test/analytics ran. Retain the native Personal Codex runtime; typed engines/model metadata, bounded loop detection, attributed FTS5 and content-minimal traces are future evaluated increments, not implemented claims.
+
+### Completed and verified
+
+Memory create/edit/internal-proposal/promotion share content admission. Manual edits clear old proof and become user-provided; original proposal audit remains. Prompt verification checks project/content digest/task evidence; stale/manual facts do not claim passing-round verification. Unsafe legacy credential-pattern content is omitted from inference context without modifying stored records. Promotion and decision are one SQLite transaction; manual/promotion writes share the200-entry cap. No data migration or new dependency.
+
+Fresh full HTTP suite: **303discovered,298passed,5skipped,0failures/errors,64.053s**. Fourteen new tests cover invalid edits, proof labels/project binding, old-proposal checks, SQL rollback, competing decisions, shared last-slot capacity and legacy prompt exclusion. Nine original defect assertions first failed, then passed after repair. An earlier fixture attempt had9setup errors from a too-short synthetic owner token; corrected fixture only, failed log retained. Frontend7passed/build passed, Rust3passed from cached dependencies. Existing deterministic full-task acceptance passed1.84s before memory repair. No live-model, native UI, Docker/Linux/JARVIS acceptance rerun.
+
+Commands: disposable `PERSONAL_CODEX_DATA` plus `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v`; focused `python3 -m unittest discover -s tests -p test_memory_policy.py -v`; `python3 scripts/full_task_acceptance.py --output NEW_DISPOSABLE_DIRECTORY`; desktop `npm test`, `npm run build`, cached isolated `cargo test --offline --locked --manifest-path src-tauri/Cargo.toml -j2`; `python3 -m py_compile app/server.py tests/test_memory_policy.py`; `git diff --check`. Exact logs, receipt paths, private devices and commands are in the current private master-mission audit package outside Git.
+
+### Infrastructure and approval state
+
+JARVIS is read-only and undeployed. Initial and post-owner-confirmation tool checks report an empty existing SSH agent and stopped Mac Tailscale; MagicDNS lookup failed. Owner reported unlocking/reconnecting, so a question requests Terminal public-fingerprint/status output to diagnose the mismatch. No SSH authentication or remote command ran in this audit. Do not change agents/keys/networking or retry unchanged authentication. Cached peer metadata is not current reachability. Fresh hardware/storage/daemon/Serve facts remain unavailable; November7 receipts are historical.
+
+No separate Docker operator is identified. Supported owner-operated ZimaOS Custom App dashboard remains a possible broad-admin route, not verified app-only delegation; field preservation/build/load/numeric ownership still need read-only review. No sudo, Docker-group expansion, indirect privileged API or existing-service changes. Both previous transient Linux probes were declined: do not run or ask again.
+
+Retain protected-parent path proposal and25GB initial total/24GB data admission,200GB free reserve/75GB maximum overall. Admission/DB cap are not hard quota. Recovery64MiB envelope is not full-capacity backup. Coding remains disabled in production until actual OS containment/broker acceptance and separate approval. The older deployment context is not current source.
+
+Full user-supplied November7 policy is already available privately; do not ask for it again as if absent. It needs current-baseline confirmation before any change. Existing exact candidate remains **not ready to apply** because family443/routes/shares/services/emergency dependencies are unresolved. Current Serve docs note node status and Services inventory may differ; inspect installed-version help/read-only configs before proposing changes. No live policy/Serve edit/save/apply, directory, token, image/service, persistent worker or backup schedule is authorized. Request precise phase approvals only after concrete commands/identities/images/diff/rollback are reviewable.
+
+### Outstanding and exact next action
+
+Common plan/execute/inspect/resume interface, model descriptors/usage metrics, unified privacy-controlled traces, bounded cycle detection, attributed FTS5, independent realistic ML/frontend and difficult-ML acceptance remain open. Local Mac functionality is materially ahead of the JARVIS deployment. Do not claim the full master mission complete.
+
+Resolve Terminal-versus-tool connectivity/agent state from the pending status reply; then use only authorized read-only JARVIS metadata preflight. In parallel, implement roadmap step2 through the existing routes, keeping all scope/approval/idempotency/cancel/restart semantics and meaningful failure regressions. Do not build a disconnected second engine or make OpenJarvis mandatory. Preserve every user file, profile, model/service and commit.
+
+## PERMANENT CROSS-ACCOUNT CONTINUATION PROTOCOL
+
+After each meaningful verified milestone and before context/budget exhaustion, refresh this handoff from actual branch/HEAD/tree, implemented behavior, commands, successes/failures/skips, limitations, current infrastructure evidence, pending approvals and exact next action. Require the next account to repeat the same process. Read this file completely and distinguish newer checkpoints from historical appendices. Preserve untracked diagnostic without reading/staging/deleting it. Local commits are authorized; publication/push requires explicit user permission despite older contradictory handoff text. No secrets/private deployment metadata in Git. Reinspect current state before claiming prior tests or server facts are still current.
+
 ## Full task execution — 2026-11-17
 
 Continue `personal-codex/stabilization` from the latest local commit. Start from this checkout with `python3 scripts/offline_workstation.py`. The preferred local bundle is `data/full-task-app/Personal Codex.app`. Quit the earlier session before reusing its ports. Run with `--app 'data/autonomous-app/Personal Codex.app'` for the preceding manual workflow.

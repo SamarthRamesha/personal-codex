@@ -1,5 +1,11 @@
 # Project status
 
+## Current master mission — 2026-11-19
+
+**Partial; JARVIS undeployed.** Source9e3f6fd audits the newer Mac offline/coding/full-task runtime and OpenJarvis427c2dd, retaining Personal Codex identity and no new mandatory dependency. Corrected memory credential/provenance/atomic-decision/capacity defects; fresh303Python discovered/298pass/5skip, frontend7/build and Rust3passed. Full-task synthetic acceptance passed before this repair; no fresh live-model/native UI/remote proof.
+
+See `docs/MASTER_MISSION_ROADMAP.md` and test report for unimplemented shared backend lifecycle, model metadata/metrics, traces/FTS5, realistic ML/frontend acceptance and remote operations. Tool-visible SSH agent/Tailscale state still conflicts with owner confirmation; no target command ran. Existing source/context, infrastructure and policy receipts are historical until refreshed. No production coding, policy/Serve/Docker/service/data change or publication is authorized. Current NEXT_SESSION_PROMPT.md supersedes older access/operator claims below.
+
 ## Policy review prepared; application blocked by preservation checks
 
 Complete user policy received and parsed privately. Proposed full replacement, exact raw/active diffs, rollback and seven-part impact/validation review are outside Git. No live change. SSH rule is retained; a limited local model passed82endpoint assertions and six negative controls. Vendor tests and live enforcement remain unverified.
