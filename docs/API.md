@@ -1,5 +1,7 @@
 # API v1 integration contract
 
+The native full-task and command-runner routes use the version1 [task backend lifecycle](TASK_BACKEND.md). Wire shapes remain compatible; the common interface adds current-scope/provider rechecks and one-use full-task submission without granting new execution authority. Metadata planning does not invoke a model or persist a runnable task. Explicit resume remains required after interruption.
+
 ## Memory integrity update — 2026-11-19
 
 Memory listings retain `stale` and add `verification` (`manual`, `passing-round`, `stale`). Manual edits clear prior task/round evidence and digest; the original proposal audit remains. Create/edit/internal-proposal/promotion apply the same content policy; invalid edits return400 without replacing the record. Project capacity conflicts and already-decided/changed proposals return409. Promotion and its decision are atomic; manual insertion and promotion share the200-entry project limit. Old credential-pattern records are omitted from inference context without silently changing stored records. Provenance/digest checks do not establish semantic truth or protect a compromised database. Existing native/browser routes remain supported; no new engine or remote execution authority is introduced.

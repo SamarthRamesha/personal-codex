@@ -67,6 +67,8 @@ def start(server, task, provider, command, rounds, *, scope=None):
         if _ACTIVE:
             raise ValueError("One local coding run can be active at a time")
         previous = report(store, task_id)
+        if scope is not None and (previous["status"] != "idle" or store.one("SELECT id FROM tasks WHERE id=?", (task_id,))):
+            raise ValueError("This task plan was already submitted; use explicit resume")
         if previous["status"] == "complete":
             raise ValueError("This task is complete. Create a new task for additional changes.")
         if previous["status"] != "idle" and (previous["provider_id"] != provider["id"] or previous["command"] != command):

@@ -1,5 +1,11 @@
 # Development log
 
+## Shared native task lifecycle — 2026-11-19
+
+The actual full-task/command-runner routes now use one versioned plan/execute/inspect/resume interface. Metadata planning is read-only and detached from mutable caller dictionaries. Execution rechecks destination/provider/baseline, and the existing engine refuses resubmission of a consumed full-task plan under its run lock. Full-task resume retains persisted scope and new scopes bind provider metadata. No second engine, plugin dependency or production execution mode was added. See `docs/TASK_BACKEND.md`.
+
+Sixteen new scope/policy/confirmation/replay regressions passed. Full backend319discovered/314passed/5skipped,61.886s; all four actual HTTP/sandbox fixture scenarios passed (new/existing/conflict/cancel-resume). A first harness invocation lacked its local parent directory and failed before product startup; retained and corrected. Frontend source unchanged. Tailscale now Running and JARVIS reachable, but the SSH agent remains empty; ordinary automatic Keychain unlock found no usable saved passphrase. Existing Zen and standalone ZimaOS sessions both require sign-in; no credentials guessed/submitted. User says passphrase is unknown: stop asking repeatedly, continue independent engineering. Use separate browser windows/in-app browser; do not interrupt the user's active browser.
+
 ## Master mission audit and memory integrity — 2026-11-19
 
 Recovered the complete current handoff and branch at24014bf, preserving the diagnostic and all later Mac-agent work. Inspected OpenJarvis427c2dd as separate source-only reference; no dependency or upstream runtime was imported. Added source comparison, dependency-ordered roadmap and an architecture decision retaining the native Personal Codex runtime. Remote deployment remains explicitly approval-gated.

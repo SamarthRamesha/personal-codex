@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task  # script execution puts app/ on sys.path
+    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task
+    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -1015,6 +1015,11 @@ def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None, 
         if scratch_folder is not None:
             scratch_folder.cleanup()
 
+def task_service() -> task_backend.TaskBackend:
+    """Native lifecycle implementation; no dynamic plugins or new authority."""
+    return task_backend.NativeTaskBackend(sys.modules[__name__])
+
+
 class App(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         # Do not log paths/query strings, headers, credentials or request bodies.
@@ -1157,17 +1162,8 @@ class App(SimpleHTTPRequestHandler):
             return self.json({"path": str(safe_project_path(project["path"]))})
         agent_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous", route)
         if agent_route and network_policy.offline_only():
-            task_id = agent_route[1]
-            task = STORE.one("SELECT * FROM tasks WHERE id=?", (task_id,))
-            if not task:
-                return self.json({"error": "Task not found"}, 404)
-            run = project_agent.report(STORE, task_id)
-            workspace = STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'", (task_id,))
-            if workspace:
-                root = safe_workspace_path(workspace)
-                run["workspace"] = str(root)
-                run["files"] = [entry["path"] for entry in tools.list_files(root, ".", 3, 100)["entries"]]
-            return self.json(run)
+            try: return self.json(task_service().inspect_task(agent_route[1]))
+            except LookupError as error: return self.json({"error": str(error)}, 404)
         if route == "/api/tasks": return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/events"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
@@ -1400,61 +1396,15 @@ class App(SimpleHTTPRequestHandler):
         try:
             route=self.route(); data=self.body()
             if route == "/api/full-tasks":
-                if not network_policy.offline_only() or not AUTH.enabled:
-                    return self.json({"error": "Full task execution requires authenticated offline mode"}, 403)
-                require_execution()
-                required = {"project_id", "prompt", "attachments", "provider_id", "rounds", "confirm"}
-                if not required.issubset(data) or set(data)-required-{"seconds"} or data["confirm"] is not True:
-                    raise ValueError("Authorize one scoped full-task run and delivery to the selected repository")
-                if (not isinstance(data["prompt"], str) or not data["prompt"].strip()
-                        or len(data["prompt"]) > full_task.MAX_PROMPT):
-                    raise ValueError("Enter a complete task instruction of up to 8,000 characters")
-                if type(data["rounds"]) is not int or not 2 <= data["rounds"] <= 12:
-                    raise ValueError("Choose between two and twelve full-task rounds")
-                seconds = data.get("seconds", 540)
-                if type(seconds) is not int or not 120 <= seconds <= 900:
-                    raise ValueError("Choose a time budget between two and fifteen minutes")
-                project = STORE.one("SELECT * FROM projects WHERE id=?", (data["project_id"],))
-                if not project:
-                    return self.json({"error": "Select a project first"}, 404)
-                provider = provider_row(data["provider_id"])
-                if not provider or not provider["enabled"]:
-                    raise ValueError("Select an installed local provider")
-                network_policy.require_provider(provider)
-                source = safe_project_path(project["path"])
-                if not (source / ".git").is_dir() or (source / ".git").is_symlink():
-                    raise ValueError("Select a Git repository with a regular .git directory")
-                current = project_review.git_read(source, None, ["rev-parse", "HEAD"])
-                if current.returncode:
-                    raise ValueError("The project needs an initial Git revision")
-                baseline = current.stdout.decode("ascii").strip()
-                if not re.fullmatch(r"[a-f0-9]{40,64}", baseline):
-                    raise ValueError("Could not determine the current Git revision")
-                references = full_task.attachment_inputs(STORE, project["id"], data["attachments"])
-                info = source.stat()
-                scope = {"identity": [info.st_dev, info.st_ino], "baseline": baseline, "source":str(source),
-                         "seconds": seconds, "attachments": references,
-                         "attachment_names": [item["name"] for item in references]}
-                tid, stamp = uid(), now()
-                task = {"id": tid, "project_id": project["id"], "prompt": data["prompt"].strip(),
-                        "created_at": stamp, "updated_at": stamp}
-                run = project_agent.start(sys.modules[__name__], task, provider, "full-task", data["rounds"], scope=scope)
-                return self.json({"task_id": tid, "run": run}, 202)
+                backend = task_service()
+                try: plan = backend.plan_task(data)
+                except LookupError as error: return self.json({"error": str(error)}, 404)
+                return self.json(backend.execute_task(plan, confirm=data.get("confirm")), 202)
             resume_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/full-resume", route)
-            if resume_route and network_policy.offline_only() and AUTH.enabled:
-                require_execution()
-                task_id = resume_route[1]
-                if set(data) != {"confirm"} or data["confirm"] is not True:
-                    raise ValueError("Authorize another bounded attempt within the original scope")
-                previous = project_agent.report(STORE, task_id)
-                if not previous.get("full_task"):
-                    return self.json({"error": "Full task not found"}, 404)
-                task = STORE.one("SELECT * FROM tasks WHERE id=?", (task_id,))
-                provider = provider_row(previous["provider_id"])
-                network_policy.require_provider(provider or {})
-                if provider is None or not provider["enabled"]:
-                    raise ValueError("The authorized local provider is unavailable")
-                return self.json(project_agent.start(sys.modules[__name__], task, provider, "full-task", 4), 202)
+            if resume_route:
+                try: run = task_service().resume_task(resume_route[1], data)
+                except LookupError as error: return self.json({"error": str(error)}, 404)
+                return self.json(run, 202)
             publish_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous/apply", route)
             if publish_route and network_policy.offline_only() and AUTH.enabled:
                 require_execution()
@@ -1479,21 +1429,15 @@ class App(SimpleHTTPRequestHandler):
                     return self.json({"error": "Task not found"}, 404)
                 if operation == "stop":
                     return self.json({"stopping": project_agent.stop(task_id)})
-                if set(data) != {"provider_id", "command", "rounds", "confirm"} or data["confirm"] is not True:
-                    raise ValueError("Confirm the workspace and exact validation command explicitly")
-                if not isinstance(data["command"], str) or len(data["command"]) > 240:
-                    raise ValueError("Enter the exact local validation command")
-                command = data["command"].strip()
-                local_runner.validate_command(parse_command(command))
-                if type(data["rounds"]) is not int or not 1 <= data["rounds"] <= 6:
-                    raise ValueError("Choose between one and six coding rounds")
-                provider = provider_row(data["provider_id"])
-                if not provider or not provider["enabled"]:
-                    raise ValueError("Select an installed local provider")
-                network_policy.require_provider(provider)
-                project = STORE.one("SELECT path FROM projects WHERE id=?", (task["project_id"],))
-                safe_project_path(project["path"])
-                return self.json(project_agent.start(sys.modules[__name__], task, provider, command, data["rounds"]), 202)
+                backend = task_service()
+                try:
+                    if project_agent.report(STORE, task_id)["status"] != "idle":
+                        run = backend.resume_task(task_id, data)
+                    else:
+                        plan = backend.plan_task(data, task_id=task_id)
+                        run = backend.execute_task(plan, confirm=data.get("confirm"))["run"]
+                except LookupError as error: return self.json({"error": str(error)}, 404)
+                return self.json(run, 202)
             if route.startswith("/api/tasks/") and project_agent.running(route.split("/")[3]):
                 if route.endswith("/cancel"):
                     return self.json({"stopping": project_agent.stop(route.split("/")[3])}, 202)
