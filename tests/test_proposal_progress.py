@@ -31,6 +31,14 @@ class ProposalProgressTests(unittest.TestCase):
         self.assertIn('Every tool belongs inside operations', prompt)
         self.assertNotIn('"path":"relative/', prompt)
 
+    def test_successful_validation_enters_review_instead_of_replaying_edit_tutorial(self):
+        prompt = full_task.implementation_prompt('repair', {"files":["stats.py"],"summary":"repair","references":""},
+                                                'Verified', 'current source', verified=True, existing=['stats.py'])
+        self.assertTrue(prompt.startswith('FINAL REVIEW'))
+        self.assertIn('"status":"complete"', prompt)
+        self.assertIn('Further edits invalidate the passed checks', prompt)
+        self.assertNotIn('EXACT_EXISTING_PATH', prompt)
+
 
 if __name__ == '__main__':
     unittest.main()

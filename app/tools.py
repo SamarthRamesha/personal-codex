@@ -159,19 +159,23 @@ def validate_operations(operations) -> list[dict]:
 
 
 def bind_hashes(root: Path, operations: list[dict]) -> list[dict]:
-    """Attach the current digest of every file an apply_patch would modify."""
-    bound = []
+    """Bind each patch to the bytes left by earlier approved steps; never write here."""
+    bound, planned = [], {}
     for operation in operations:
         if operation["tool"] == "apply_patch":
             target = resolve_in_workspace(root, operation["path"])
-            if not target.is_file():
+            if operation["path"] not in planned and not target.is_file():
                 raise ToolCallError(f"apply_patch target does not exist: {operation['path']}")
-            data, _ = project_files.text_file(root, operation["path"])
-            operation = {**operation, "expected_sha256": project_files.digest(data)}
+            if operation["path"] not in planned:
+                _, planned[operation["path"]] = project_files.text_file(root, operation["path"])
+            current = planned[operation["path"]]
+            operation = {**operation, "expected_sha256": project_files.digest(current.encode("utf-8"))}
+            planned[operation["path"]] = current.replace(operation["old_text"], operation["new_text"], 1)
         elif operation["tool"] == "create_file":
             target = resolve_in_workspace(root, operation["path"])
-            if target.exists():
+            if target.exists() or operation["path"] in planned:
                 raise ToolCallError(f"create_file refuses to overwrite {operation['path']}")
+            planned[operation["path"]] = operation["content"]
         bound.append(operation)
     return bound
 
@@ -235,11 +239,13 @@ def apply_patch(root: Path, path: str, old_text: str, new_text: str, expected_sh
 def review_operations(root: Path, operations: list[dict]) -> dict:
     """Build the reviewer's view of a pending proposal without touching the workspace.
 
-    Each ``apply_patch`` entry reports the digest the proposal was bound to, the digest the file has
-    now, and a bounded unified diff. A file whose digest no longer matches is marked stale so the
+    Each ``apply_patch`` entry reports the bound digest, the incoming digest immediately before
+    that step (with earlier approved edits simulated), and a bounded unified diff. Stale initial
+    bytes or a mismatching projected step are marked stale so the
     dashboard can refuse to execute a review that no longer describes reality.
     """
     files, additions, deletions = [], 0, 0
+    planned = {}
     stale = False
     budget = MAX_DIFF_CHARS
     for operation in operations:
@@ -251,17 +257,21 @@ def review_operations(root: Path, operations: list[dict]) -> dict:
         try:
             target = resolve_in_workspace(root, operation["path"])
             if operation["tool"] == "create_file":
-                if target.exists():
+                if target.exists() or operation["path"] in planned:
                     raise ToolCallError("A file already exists at the proposed destination")
                 before, after = "", operation["content"]
+                planned[operation["path"]] = after
             else:
-                data, current = project_files.text_file(root, operation["path"])
-                entry["sha256_current"] = project_files.digest(data)
+                if operation["path"] not in planned:
+                    _, planned[operation["path"]] = project_files.text_file(root, operation["path"])
+                current = planned[operation["path"]]
+                entry["sha256_current"] = project_files.digest(current.encode("utf-8"))
                 entry["stale"] = bool(operation.get("expected_sha256")) and entry["sha256_current"] != operation["expected_sha256"]
                 occurrences = current.count(operation["old_text"])
                 entry["occurrences"] = occurrences
                 if occurrences == 1:
                     before, after = current, current.replace(operation["old_text"], operation["new_text"], 1)
+                    planned[operation["path"]] = after
                 else:
                     before, after = operation["old_text"], operation["new_text"]
                     entry["patch_preview_only"] = True

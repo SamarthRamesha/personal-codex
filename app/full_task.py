@@ -10,9 +10,9 @@ import shlex
 import shutil
 
 try:
-    import local_runner, project_files, project_review, tools
+    import context, local_runner, project_files, project_review, tools
 except ImportError:
-    from app import local_runner, project_files, project_review, tools
+    from app import context, local_runner, project_files, project_review, tools
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS full_tasks (
@@ -130,7 +130,17 @@ def parse_plan(text, request, root, env):
     if not isinstance(plan["summary"], str) or not plan["summary"].strip() or len(plan["summary"]) > 1000:
         raise ValueError("Include a concise implementation summary")
     files = path_list(plan["files"], root, minimum=1)
-    files = path_list(list(dict.fromkeys(files + FILE_REFERENCE.findall(request))), root, minimum=1)
+    # A diagnostic often names a test by basename. Preserve an explicit path,
+    # but do not invent a second root file when one existing/planned path is unique.
+    existing = context.walk(root)
+    references = []
+    for reference in FILE_REFERENCE.findall(request):
+        if "/" not in reference and not tools.resolve_in_workspace(root, reference).exists():
+            matches = sorted({path for path in files + existing if Path(path).name == reference})
+            if len(matches) == 1:
+                reference = matches[0]
+        references.append(reference)
+    files = path_list(list(dict.fromkeys(files + references)), root, minimum=1)
     if not any(production_file(path, stack) for path in files):
         raise ValueError("Include a separate production source file, in addition to the tests")
     test_keys = {"unittest", "pytest"} if stack == "python" else {"npm-test", "node-test"}
@@ -344,7 +354,14 @@ def implementation_prompt(request, plan, prior, selected, *, verified=False, exi
             if verified else "Implement or repair a coherent set of files. Use the latest tool output to guide the next edit. "
             "If a test failed, locate the named failure in the supplied workspace files and return a targeted patch. "
             "Only edit a new test to correct a mistaken expectation or test harness. Preserve coverage of the required behavior.")
-    prompt = (IMPLEMENTATION_SCHEMA + gate + "\nUser request:\n" + request
+    schema = ("FINAL REVIEW of the current implementation after successful validation. The original request describes "
+              "the starting problem; do not replay already applied edits. If the request is satisfied, return exactly "
+              '{"status":"complete","summary":"what the verified implementation provides","operations":[]}. '
+              "If required work is still missing, return status continue with actual read_file/apply_patch/create_file "
+              "operations in the operations array; paths must be the exact relative workspace paths. "
+              "Further edits invalidate the passed checks and must be verified again. "
+              if verified else IMPLEMENTATION_SCHEMA)
+    prompt = (schema + gate + "\nUser request:\n" + request
               + "\nExisting workspace files (edit using apply_patch; inspect with read_file): "
               + json.dumps(list(existing)[:80])
               + "\nRequired files: " + json.dumps(plan["files"]) + "\nPlan: " + plan["summary"]

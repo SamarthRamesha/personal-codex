@@ -61,3 +61,5 @@ Native `api_stream` carries a stream ID; scoped `cancel_stream` prevents stale c
 Production mutation admission may return **503** before creating state when measured headroom/reserve is insufficient or inventory incomplete. Reads/auth/cancel/stop/heartbeat/credential reload remain available. `/api/ready` adds write-admission state; diagnostics reports admission/cache/margin/DB cap and explicitly `hard_filesystem_quota: false`. This does not enforce a volume quota.
 
 Worker CLI requires a private durable state directory; every accepted UUID is claimed before inference and never replayed. Sequence is 1–4096, empty nonterminal chunks refused, future-dated presence offline until fresh report, consumer lifetime additionally uses monotonic time. Journal exhaustion is a fail-closed condition, never an automatic tombstone reset. No executor API or new production coding mode was introduced.
+
+Sequential tool proposals bind each patch to incoming bytes after earlier approved edits. Review `sha256_current` is the before-this-step digest with prior edits simulated; execution still checks actual bytes at every write. Planning/review never writes files.
