@@ -1,5 +1,17 @@
 # Development log
 
+## PAUSED BY USER — second safe stop, 2026-11-19
+
+**Do not continue this mission, start services/VM, contact JARVIS, run engineering tasks or poll until a future user message explicitly says “it's back”.** The latest user request quotes that phrase only as a future condition. No automation is scheduled. This pause supersedes every active/next-action section below.
+
+Verified implementation5ec6f4cd26a2cf21684eb776616dc8bc798781f5 on personal-codex/stabilization is preserved; this documentation-only pause commit follows.355backend discovered/350passed/5skipped(74.501s),10frontend tests/native build, real9BCLI and existing-project ML repair,12independent ML checks/artifacts/corrected frontend are saved. Read docs/ML_WORKFLOW_ACCEPTANCE.md for scaffold authorship, failed attempts and corrected weak fairness test; do not claim universal or blank-project full-generation success. No JARVIS deployment/change or publication.
+
+Private current-chat outputs/safe-stop-2026-11-19-2 contains SAFE_STOP.md/state, consistent SQLite backup(integrity_check passed), synthetic project/workspace archive, full Git bundle and artifact hashes. All profiles, bundles, delivered/uncommitted fixture files, tests, artifacts, histories and model cache are retained. Owner token stays in its original private file; protected user diagnostic remains unread/unstaged/unchanged and excluded from archives. No reset/clean/delete.
+
+Task-owned native app/backend/Ollama/test server and QEMU stopped; listeners8787/8799/11434/22291 absent. Hidden in-app test tab closed; user's browser untouched. Guest checkpoint/private restart metadata are saved; original and newer overlays remain. Final5ec6f4c source context was prepared, but automatic approval review rejected its pending container verification because this pause became active. It did not start and must not be retried during pause. Earlier13container assertions passed on a4276b4 in the disposable guest, not JARVIS.
+
+After the future trigger, first verify saved state/manifests/bundle, actual branch/HEAD/tree and concurrent user changes without accessing the diagnostic. Resume the same master mission from current source and saved evidence. Next work is final source-specific disposable-container acceptance, then remaining native/remote acceptance and authenticated/operator/family-preservation gates. Do not repeatedly request the unknown passphrase, guess/extract/reset credentials, retry unchanged keys, use JARVIS privilege workarounds or revive declined probes. Use separate windows or in-app browser. Do not apply policy/Serve changes from stale/gated candidates. Preserve all functionality and safe-stop instructions across context/account changes.
+
 ## Verified ML repair and runtime follow-through — 2026-11-19
 
 Latest backend regression355discovered/350passed/5skipped,74.501s;6new sequential-patch tests,6planner-reference tests and the final-review prompt test pass. Four deterministic delivery scenarios passed: new1.20s/existing1.22s/conflict1.74s/cancel-resume1.52s. Sequential patches are bound/reviewed against projected incoming bytes, retaining digest checks at every actual write, external-change refusal and exclusive creation. Web review labels those hashes as before-this-step. No permission or production execution gate was relaxed.
