@@ -185,8 +185,19 @@ pub(super) async fn execute_mac_action(id: String, confirmed: bool, state: State
 mod tests {
     use super::*;
     fn fixture() -> PathBuf {
-        let base = std::env::temp_dir().join(format!("pc-mac-actions-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        std::fs::create_dir(&base).unwrap(); base
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+        for _ in 0..100 {
+            let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let base = std::env::temp_dir().join(format!("pc-mac-actions-{}-{}-{}", std::process::id(),
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(), sequence));
+            match std::fs::create_dir(&base) {
+                Ok(()) => return base,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("Cannot create disposable native fixture: {error}"),
+            }
+        }
+        panic!("No unique disposable native fixture available")
     }
     #[test]
     fn credential_paths_and_control_characters_are_refused() {

@@ -14,6 +14,10 @@ Read-only JARVIS test resolved private DNS and connected dashboard80;443/8787ref
 
 The first published source9d2de2d passed GitHub's frontend and macOS native jobs. Its Linux backend job found a fixture assumption: the process-readiness test inherited the production200GBfree reserve. Only the disposable test subprocess now explicitly uses1GBreserve/5GBdata admission; production limits and dedicated low-space tests are unchanged. The six affected runtime tests passed locally after the fix. The follow-up f2ea8e7 source passed all three hosted jobs in run44749454322: Linux backend377discovered/363passed/14optional-or-platform skips(63.188s), frontend and macOS native. Both remote branches match that source. The repository description/topics were updated without changing access or visibility. Current operations/security/container guides now replace old untested-image and74GBinitial-allocation claims with actual scoped proof and the strict24GBdata/25GBtotal contract.
 
+## Native fixture concurrency correction
+
+The documentation-only follow-up5334804 passed all jobs on stabilization, but its parallel main run exposed a timestamp collision between native test fixture folders. The failure occurred during exclusive temporary-directory creation, before any opening action. Fixture allocation now includes a process-local atomic sequence and bounded exclusive-create collision retries; production action code is unchanged. All seven native tests passed again, then all20parallel repeats (seven cases each) passed. Fresh hosted verification follows the fixture-only correction. Both original failing runs remain visible; no assertion or action permission was removed.
+
 ## Earlier verified milestones
 
 The remaining entries are historical evidence. Current status and NEXT_SESSION_PROMPT supersede their older pause, source, deployment and publication claims. Full original content remains in Git history.
