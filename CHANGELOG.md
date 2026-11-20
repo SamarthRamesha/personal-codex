@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — 2026-11-20
+
+- Added local Mac app/document opening and Finder reveal through explicit, expiring one-use native review. No general system automation or remote control claim; visual acceptance remains blocked.
+- Integrated selected-excerpt document search across native workspace and task prompts, with source hashes, scoped FTS5, removal and bounded untrusted references.
+- Added exact proposal-cycle guards, real-content progress boundaries, sequential-patch and planner/reference repairs.
+- Preserved shared task lifecycle, existing-project ML repair evidence, original validation and independent artifact/fairness checks.
+- Verified current backend with372passes/5skips and17source-specific disposable-Linux container checks; latest frontend14and native7tests/build pass.
+- Replaced stale setup/status documentation, added contributor guidance and pinned read-only GitHub Actions checks. JARVIS deployment/remote acceptance remains incomplete.
+
+Older entries below are historical observations, not current deployment or publication state.
+
 ## Mission 1C.1 restricted deployment preparation
 
 - Lowered initial API data admission to24GB within a25GB initial total review target; no hard quota claimed.

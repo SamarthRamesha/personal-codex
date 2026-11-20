@@ -1,5 +1,19 @@
 # Development log
 
+## 20 November 2026 — Mac actions and repository polish
+
+Added a local native Mac actions capability with bounded installed-app metadata search, Finder selection, canonical identity revalidation and explicit expiring one-use confirmation. The opener uses fixed arguments, no shell/scripts/backend transport and a filtered environment. Credentials/scripts/symlinks/stale choices are refused. General cross-app automation remains unimplemented.
+
+Seven Rust tests, fourteen frontend tests, TypeScript/Vite and the optimized13.35MiB app build passed. Strict ad-hoc signature verification passed; no notarization. The native UI connector stalled for4404seconds despite a requested15second timeout and returned an expired continuation. Visual acceptance is blocked and was not claimed. Earlier frontend build caught a missing JSX brace; it was corrected before the successful build.
+
+Refreshed README, native/setup/Mac-action guides, documentation index, current implementation matrix, task list, contributor/PR guidance and pinned read-only GitHub Actions checks. Audited26unpushed commits/379unique blobs for private target literals and credential/private-key shapes: no matches; this is not a complete DLP guarantee. Protected diagnostic remained unread/unstaged.
+
+Read-only JARVIS test resolved private DNS and connected dashboard80;443/8787refused. No credentials, HTTP/inference requests, SSH commands or target changes. Remote integration remains unaccepted. Publication was authorized by the owner's new request; actual synchronization/CI status is recorded separately after execution.
+
+## Earlier verified milestones
+
+The remaining entries are historical evidence. Current status and NEXT_SESSION_PROMPT supersede their older pause, source, deployment and publication claims. Full original content remains in Git history.
+
 ## Bounded proposal cycles and owner-dashboard review — 2026-11-20
 
 The mission is active after the user's latest “it's back”; older pause sections are historical. Shared native/full-task execution now stops exact proposal cycles of periods1–3 before a repeating proposal executes. Only96recent evidence rows/six identities are considered; real content changes reset multi-step history, no-op writes do not, and legacy successful edits are conservative boundaries. Cycle period and a content-progress bit persist alongside existing content-free proposal identities. No semantic-loop claim or new content logging; periods greater than3 and changing-output cycles remain outside this guard. Existing scope/approval/cancel/resume and lifetime budgets are unchanged. See docs/AGENT_PROGRESS_GUARDS.md.

@@ -30,7 +30,8 @@ AUTONOMOUS_APP = ROOT / "data/autonomous-app/Personal Codex.app"
 FULL_TASK_APP = ROOT / "data/full-task-app/Personal Codex.app"
 OBSERVABILITY_APP = ROOT / "data/observability-app/Personal Codex.app"
 DOCUMENTS_APP = ROOT / "data/document-search-app/Personal Codex.app"
-DEFAULT_APP = next((path for path in (DOCUMENTS_APP, OBSERVABILITY_APP, FULL_TASK_APP, AUTONOMOUS_APP) if (path / APP_BINARY).is_file()), PREVIOUS_APP)
+MAC_ACTIONS_APP = ROOT / "data/mac-actions-app/Personal Codex.app"
+DEFAULT_APP = next((path for path in (MAC_ACTIONS_APP, DOCUMENTS_APP, OBSERVABILITY_APP, FULL_TASK_APP, AUTONOMOUS_APP) if (path / APP_BINARY).is_file()), PREVIOUS_APP)
 
 
 def private_dir(path: Path):

@@ -1,0 +1,64 @@
+name: Verify Personal Codex
+on:
+  push:
+    branches: [main, personal-codex/stabilization]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - name: Isolated backend and HTTP regression
+        env:
+          PERSONAL_CODEX_HTTP_TESTS: '1'
+          PERSONAL_CODEX_DATA: ${{ runner.temp }}/personal-codex-tests
+        run: python -m unittest discover -s tests -v
+      - name: Synthetic document retrieval evaluation
+        run: python scripts/document_search_acceptance.py --output "$RUNNER_TEMP/document-retrieval.json"
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run build
+  native:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Prepare embedded frontend
+        working-directory: desktop
+        run: npm ci --ignore-scripts && npm run build
+      - name: Native policy and one-use action tests
+        run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml -j 2

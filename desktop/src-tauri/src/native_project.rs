@@ -24,7 +24,7 @@ fn valid_name(name: &str) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-async fn pick_paths(app: &AppHandle, title: &'static str, folders: bool, limit: usize)
+pub(super) async fn pick_paths(app: &AppHandle, title: &'static str, folders: bool, limit: usize)
     -> Result<Vec<std::path::PathBuf>, String>
 {
     use block2::RcBlock;
@@ -82,7 +82,7 @@ async fn pick_paths(app: &AppHandle, title: &'static str, folders: bool, limit: 
 }
 
 #[cfg(not(target_os = "macos"))]
-async fn pick_paths(_: &AppHandle, _: &'static str, _: bool, _: usize)
+pub(super) async fn pick_paths(_: &AppHandle, _: &'static str, _: bool, _: usize)
     -> Result<Vec<std::path::PathBuf>, String>
 {
     Err("The native Finder picker requires macOS".into())

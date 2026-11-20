@@ -1,5 +1,14 @@
 # Architecture
 
+## Current product map — 2026-11-20
+
+The native Mac client talks through its bounded authenticated Rust transport to a local Python control plane, or an explicitly configured private HTTPS control plane. The backend owns SQLite history, approvals, inference jobs, project worktrees and delivery. Offline coding uses existing Mac Ollama. The proposed JARVIS profile uses an outbound Mac inference worker, worker-only inference, no-connect restrictions and disabled repository execution; it is not yet deployed.
+
+A separate native Mac opening capability has no backend route and does not contact a model. Selection creates an exact expiring in-memory preview; one confirmation consumes it. It can open installed apps/documents and reveal Finder items, not arbitrarily read or automate applications. Project work remains bound to approved task scopes.
+
+The shared task lifecycle wraps current engines rather than replacing them. Imported references are untrusted; selected-document FTS5 is an opt-in scoped reference index, not model training or automatic fact promotion. See docs/IMPLEMENTATION_MATRIX.md for current proof and limits. The detailed design notes below include historical descriptions; they do not override current security/deployment gates.
+
+
 ## Mission 1B components
 
 `app/worker_state.py` provides durable claim-before-inference metadata, separate from server history. Worker replies have strict schemas; server jobs additionally bound sequence/empty chunks and monotonic consumer lifetime. Explicit owner token reload interrupts old worker leases without replay. The private credential directory mount permits atomic replacement, while no executor sees it.

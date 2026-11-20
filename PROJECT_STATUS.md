@@ -1,203 +1,26 @@
 # Project status
 
-## Bounded proposal cycles and owner-dashboard review — 2026-11-20
+Updated 20 November 2026. **The project is partially complete; JARVIS is not deployed.**
 
-The mission is active after the user's latest “it's back”; older pause sections are historical. Shared native/full-task execution now stops exact proposal cycles of periods1–3 before a repeating proposal executes. Only96recent evidence rows/six identities are considered; real content changes reset multi-step history, no-op writes do not, and legacy successful edits are conservative boundaries. Cycle period and a content-progress bit persist alongside existing content-free proposal identities. No semantic-loop claim or new content logging; periods greater than3 and changing-output cycles remain outside this guard. Existing scope/approval/cancel/resume and lifetime budgets are unchanged. See docs/AGENT_PROGRESS_GUARDS.md.
+## Ready locally
 
-Backend377discovered/372passed/5skipped(70.115s). Six new guard cases first failed against the absent function, then passed. Actual authenticated loopback/macOS-sandbox deterministic scenarios blocked period2after4implementation proposals and period3after6implementation proposals; immediate repeat still blocked after2implementation proposals. A normal multi-round repair still delivered verified code. The first ordinary test attempt lacked local socket permission; rerun under authorized test permissions passed. Failed logs are retained. No model calls, target commands or frontend changes in this increment.
+Native chat/history/streaming, existing local models, reviewed coding tasks, isolated worktrees, repair/checks/delivery, explicit resume, memory integrity, attributed document search and bounded exact proposal-cycle detection.
 
-Exact committed runtime282b90d759c2cf76e3306fe87ee6a1f74f7922f2 now passed17container checks in42.435s in the disposable Linux guest. Minimal context SHA256f440733284af9f5da02f2d3e5a7275e7fddd719120c1936ffde41eeb97bd89e6; resulting local image sha256:6e93d5296b60fd6eec7e781391b57590c4a147e0db87c84dba8d0e66b134bd0f. Actual FTS5/index/attribution/remove, cycle guard/progress boundary, credentials, no-connect/disabled execution,512MiB/1CPU/PID bounds, readonly/dropALL/NNP, mounts and persisted restart were verified. Idle21.46MiB/one process; clean container exit0/noOOM. Guest snapshotted/stopped. No target or user-namespace/coding-executor certification; fixture capacity reserve1GB differs from unchanged production200GB/24GBdata settings. Earlier baa4e4a16check/5ec6f4c13check receipts remain historical.
+## Implemented, acceptance still limited
 
-Read-only JARVIS dashboard review confirmed the existing local owner account and installed1.6.2 Custom App → Import → Compose/DockerCLI route. Only blank forms/visible hardware/storage metadata were inspected, no Submit/Install/file upload or settings/service change. Rounded storage is not exact admission proof. Public related CasaOS source raises pull/path-creation concerns but is not established as the installed binary. Numeric ownership, image build/load and preservation of every hardening field remain unverified. Current private ZIMAOS_ADMIN_METHOD_REVIEW.md and JARVIS_DASHBOARD_READONLY.json supersede old “role unknown” claims. Original user tabs were not navigated; closure of only the new inspection window was requested but could not be confirmed after connection timeout. Do not blindly close more windows.
+Mac actions can request installed-app/document opening and Finder reveal through exact one-use native review. Native tests/build passed; visual opening acceptance is blocked. General cross-app automation is not implemented.
 
-No JARVIS write, privileged workaround, password/key extraction/reset, declined probe, Serve/policy edit or publication. Do not ask again for the unknown passphrase. Preserve protected diagnostic unread/unstaged, profiles, user Ollama and old release bundles. Continue local reliability work and resolve installed-version/ownership/family-preservation gates before requesting concrete installation approval. The full mission remains partial.
+The outbound Mac inference worker and restricted backend profile are implemented and locally tested. The exact backend source passed 17 disposable-Linux container checks, not target deployment acceptance.
 
-## Attributed document search verified — 2026-11-20
+## Verification
 
-Opt-in project document search is integrated in native Workspace, offline project chats, full/native coding calls and manual approval-bound prompts. It uses only selected imported excerpts, scoped SQLite FTS5, source/excerpt/chunk hashes and offsets; no source-file/server scan, model, embedding download or extension loading. Explicit owner add/update/remove actions, bounded literal queries, transactional reindex, stale/tampered/credential-like omission, caps and untrusted-reference labeling preserve memory/approval boundaries. See docs/PROJECT_DOCUMENT_SEARCH.md for exact behavior and limits.
+| Check | Result |
+|---|---|
+| Local backend | 372 passed / 5 skipped / 377 discovered |
+| Frontend | 14 passed, TypeScript/Vite build passed |
+| Native | 7 Rust tests passed, optimized app built, strict ad-hoc signature verified |
+| Current API container | 17 checks passed; clean stop/restart persistence |
+| New Mac actions UI | Blocked by UI connector; no visual success claim |
+| JARVIS | Dashboard TCP reachable; HTTPS443 and backend8787 refuse; remote acceptance incomplete |
 
-Full371backend discovered/366passed/5skipped(64.780s),16new cases; frontend12/TypeScript/Vite and native build passed. Actual deterministic HTTP/macOS-sandbox task proved references entered planning/implementation prompts(1.15s). Independent six-topic lexical evaluation P@1/MRR1.0 plus isolation/stale/removal negatives; not a semantic or live-model quality claim. Native chooser/add/search/hash/range/remove/empty-result checks passed in the preserved separate profile after UI automation expired and reset recovered. User browser and preexisting Ollama were untouched; helper owned only backend/app and read model metadata. Both owned processes stopped. New strictly ad-hoc signed13.15MiB bundle is data/document-search-app/Personal Codex.app; launcher prefers it, retaining all older bundles/profiles. Initial unsigned staging copy was explicitly signed before verification; no notarization claim.
-
-Earlier exact5ec6f4c API container passed13checks in18.827s in the disposable guest, then guest snapshotted/stopped. The document-search source needs its own committed context/container acceptance next. JARVIS remains online but local SSH agent empty at refresh; no authentication attempt, target command/change, policy/Serve action or publication. Do not ask for the unknown passphrase again, extract/reset credentials, use target privilege workarounds or revive declined probes. Continue the same master mission and preserve unread/unstaged diagnostic, histories and separate-browser preference.
-
-## Resumed by user — 2026-11-20
-
-The new user message “it's back” fulfills the second pause below. All98saved artifact hashes and the full Git bundle verified; entry HEAD40f572c, tracked tree clean, implementation5ec6f4c retained. Protected diagnostic remains unread/unstaged. Current private resumed-mission-2026-11-20/RESUMED_STATE.json is active; old pause/checkpoint records remain historical. Resume the same master mission. Next: exact5ec6f4c container verification in the dedicated disposable guest, then remaining local engineering and authenticated target/preservation gates. No JARVIS write, privileged workaround, credential guessing/extraction, declined probe or live policy/Serve change is authorized by the trigger. Preserve current user browsing; use separate windows or hidden in-app browser.
-
-## PAUSED BY USER — second safe stop, 2026-11-19
-
-**Do not continue this mission, start services/VM, contact JARVIS, run engineering tasks or poll until a future user message explicitly says “it's back”.** The latest user request quotes that phrase only as a future condition. No automation is scheduled. This pause supersedes every active/next-action section below.
-
-Verified implementation5ec6f4cd26a2cf21684eb776616dc8bc798781f5 on personal-codex/stabilization is preserved; this documentation-only pause commit follows.355backend discovered/350passed/5skipped(74.501s),10frontend tests/native build, real9BCLI and existing-project ML repair,12independent ML checks/artifacts/corrected frontend are saved. Read docs/ML_WORKFLOW_ACCEPTANCE.md for scaffold authorship, failed attempts and corrected weak fairness test; do not claim universal or blank-project full-generation success. No JARVIS deployment/change or publication.
-
-Private current-chat outputs/safe-stop-2026-11-19-2 contains SAFE_STOP.md/state, consistent SQLite backup(integrity_check passed), synthetic project/workspace archive, full Git bundle and artifact hashes. All profiles, bundles, delivered/uncommitted fixture files, tests, artifacts, histories and model cache are retained. Owner token stays in its original private file; protected user diagnostic remains unread/unstaged/unchanged and excluded from archives. No reset/clean/delete.
-
-Task-owned native app/backend/Ollama/test server and QEMU stopped; listeners8787/8799/11434/22291 absent. Hidden in-app test tab closed; user's browser untouched. Guest checkpoint/private restart metadata are saved; original and newer overlays remain. Final5ec6f4c source context was prepared, but automatic approval review rejected its pending container verification because this pause became active. It did not start and must not be retried during pause. Earlier13container assertions passed on a4276b4 in the disposable guest, not JARVIS.
-
-After the future trigger, first verify saved state/manifests/bundle, actual branch/HEAD/tree and concurrent user changes without accessing the diagnostic. Resume the same master mission from current source and saved evidence. Next work is final source-specific disposable-container acceptance, then remaining native/remote acceptance and authenticated/operator/family-preservation gates. Do not repeatedly request the unknown passphrase, guess/extract/reset credentials, retry unchanged keys, use JARVIS privilege workarounds or revive declined probes. Use separate windows or in-app browser. Do not apply policy/Serve changes from stale/gated candidates. Preserve all functionality and safe-stop instructions across context/account changes.
-
-## Verified ML repair and runtime follow-through — 2026-11-19
-
-Latest backend regression355discovered/350passed/5skipped,74.501s;6new sequential-patch tests,6planner-reference tests and the final-review prompt test pass. Four deterministic delivery scenarios passed: new1.20s/existing1.22s/conflict1.74s/cancel-resume1.52s. Sequential patches are bound/reviewed against projected incoming bytes, retaining digest checks at every actual write, external-change refusal and exclusive creation. Web review labels those hashes as before-this-step. No permission or production execution gate was relaxed.
-
-The real9B statistics task passed after resume with unchanged tests. The complete synthetic ML scaffold now also has an actual9B-maintained delivered project,12independent tests, CLI smoke, model-artifact prediction/hash verification and corrected frontend visually checked in a separate hidden in-app tab. Final fairness repair3rounds/75.619s. Read docs/ML_WORKFLOW_ACCEPTANCE.md: trusted scaffold authorship, failed absolute-path attempts, sequential-hash/review/planner repairs and the weak initial fairness test/false-positive acceptance are all explicit. Three new discriminating fairness cases first failed against delivered code, then passed after the agent repair. Do not claim blank-project full ML generation or universal reliability. Runtime artifacts are generated by the explicit documented command, not automatically copied by source delivery.
-
-Native test profile/projects/history/failed worktrees/artifacts remain private and saved. Our native app/backend/Ollama launcher and synthetic frontend server were stopped cleanly after completed tasks; no polling/automation. The Linux verification VM remains snapshotted/stopped pending source-current container follow-through. Local access refresh: Tailscale Running/JARVIS online, existing SSH agent empty. No SSH auth attempt/target command/configuration/Docker/Serve/policy change or publication. Do not ask again for the unknown passphrase or revive declined probes. User's browser was untouched.
-
-Continue the full master mission from actual Git HEAD, not older checkpoint hashes. Source-current image/context and fresh target authentication/operator/preservation gates still determine deployment; prior a4276b4container evidence is exactly scoped. Remote full acceptance, production quota/recovery scale/OS executor and broader native dependencies/visual-generation remain open. Preserve unread/unstaged diagnostic and all old profiles/bundles/history.
-
-## Resumed runtime verification — 2026-11-19
-
-Verified source a4276b4 adds model metadata and content-minimal inference observations. The later proposal/context reliability repair passed342Python discovered/337passed/5skipped in79.107s, plus5focused proposal cases and a real HTTP/macOS-sandbox identical-invalid-proposal scenario (1.2s). Explicit task paths are ranked ahead of incidental references; large relevant files now contribute bounded UTF-8 snippets instead of being silently omitted below the default4K snippet size. Two new context regressions cover this. Repeated identical tool operations are compared before binding/execution, including invalid proposals; cosmetic summaries do not evade identity. This is exact consecutive repetition detection, not general semantic/cycle reasoning.
-
-A real installed9B task initially exhausted6rounds on malformed/wrong-path/create-over-existing proposals (58.009s); guards preserved the original files. After clearer complete-envelope/actual-path instructions, explicit resume delivered the corrected CLI and README in3more rounds/27.253s. Independent smoke returned4.0; original tests unchanged. Native UI visibly displayed real call4.48s/first text0.15s/provider-reported584input/100output/22.53tokens/s. These are an observed call, not a hardware benchmark or universal throughput claim.
-
-The exact a4276b4 minimal context built offline against the pinned base in a separate Debian VM.13container checks passed: owner/worker boundary, disabled execution/direct-provider refusal, exact synthetic proxy authority, actual512MiB/1CPU/128PID/read-only/drop-all/NNP constraints, PID1two seccomp filters/zero effective capabilities, dedicated mounts, authenticated readiness and conversation persistence across clean restarts. Idle21.08MiB; clean exit0/noOOM. A harness response-shape mistake was corrected and failed logs retained. No JARVIS/Serve/HTTPS/ACL/container-executor/user-namespace acceptance is implied. Guest has identity UID mapping and cannot certify the coding executor. It is snapshotted/stopped with original overlay/history retained.
-
-Synthetic ML scaffold has9independent tests passing normally(0.483s) and through the app's read-only command sandbox(0.476stest/3.451swall), including model-artifact prediction round-trip. Five separate bounded stress cases passed in1.285s. A9Brepair task against two deliberately broken production functions stopped on repeated absolute-path proposals after3rounds/98.818s, without delivery. Keep this failure; do not claim complete realistic ML agent acceptance. Scaffold was authored as a trusted benchmark, not entirely generated by the model. Frontend/browser and independently exported artifacts remain pending for that live repair.
-
-No JARVIS command/change, publication or diagnostic access occurred. Current private receipts/logs and live processes are in resumed-mission-2026-11-19. Separate native verification launcher owns127.0.0.1:8787/11434; no model invocation should be left running across a user pause. Read actual Git status and private runtime state before continuing. The mission remains partial; remote authentication and preservation gates remain unresolved. Earlier pause sections are historical after the user's “it's back”.
-
-## Active resumed milestone — 2026-11-19
-
-Pause fulfilled by the user's “it's back”. Model metadata and content-minimal inference observations now pass335Python cases (330passed/5skipped),10frontend tests, native build/signature and four deterministic task scenarios. Native settings displayed real installed model metadata in a separate authenticated offline profile. Thirteen actual Linux network-policy tests passed in a disposable Debian guest; Docker/base image available there. Container/live-model acceptance remains pending. Default launcher prefers the new observability bundle, retaining older bundles. JARVIS authentication unresolved; no target change or publication. Current NEXT_SESSION_PROMPT.md and private resumed-mission receipts supersede historical paused sections below.
-
-## Paused by user — 2026-11-19
-
-Do not resume this mission until the user explicitly says “it's back.” Last verified implementation95ed914 retains all previous functionality and adds the shared native task lifecycle.319Python discovered/314passed/5skipped; four actual deterministic HTTP/sandbox scenarios passed. Unverified observability edits are archived privately and removed from the active runtime; the new draft module remains untracked and unused. Temporary local VM is snapshotted/stopped; no JARVIS deployment/change occurred. Read current NEXT_SESSION_PROMPT.md and docs/PAUSED_CHECKPOINT.md before any work.
-
-## Current master mission — 2026-11-19
-
-**Partial; JARVIS undeployed.** Source9e3f6fd audits the newer Mac offline/coding/full-task runtime and OpenJarvis427c2dd, retaining Personal Codex identity and no new mandatory dependency. Corrected memory credential/provenance/atomic-decision/capacity defects; fresh303Python discovered/298pass/5skip, frontend7/build and Rust3passed. Full-task synthetic acceptance passed before this repair; no fresh live-model/native UI/remote proof.
-
-See `docs/MASTER_MISSION_ROADMAP.md` and test report for unimplemented shared backend lifecycle, model metadata/metrics, traces/FTS5, realistic ML/frontend acceptance and remote operations. Tool-visible SSH agent/Tailscale state still conflicts with owner confirmation; no target command ran. Existing source/context, infrastructure and policy receipts are historical until refreshed. No production coding, policy/Serve/Docker/service/data change or publication is authorized. Current NEXT_SESSION_PROMPT.md supersedes older access/operator claims below.
-
-## Policy review prepared; application blocked by preservation checks
-
-Complete user policy received and parsed privately. Proposed full replacement, exact raw/active diffs, rollback and seven-part impact/validation review are outside Git. No live change. SSH rule is retained; a limited local model passed82endpoint assertions and six negative controls. Vendor tests and live enforcement remain unverified.
-
-User confirms family HTTPS usage and other routes/shares/devices are unknown. Candidate has a demonstrated preservation gap for subnet destinations outside device prefixes; shared HTTPS could also break family access. It is not safe to apply until inventory, vendor validation and exact approval are complete. Declined probes remain unexecuted; no operator/installation/publication authority is assumed.
-
-
-## Current user decision: read-only investigation
-
-Both transient probes declined and unexecuted. No separate Docker operator/login is identified; do not assume one, use sudo or change Docker groups. Investigated owner-operated ZimaOS Custom App management; this avoids an SSH Docker grant but needs broad dashboard administration. App-only delegation, actual session role,installed-version importer control preservation, build/load and numeric ownership are unverified. See current private method review.
-
-Tailscale policy read/draft is authorised, apply is not. Signed-in page has not yet been exposed stably to inspection; full current policy/diff not obtained. User was asked to bring Access controls frontmost. No server or policy change; code/verification unchanged atfb1fef1 and historical281pass/5skip. Mission1 partial, coding disabled.
-
-
-## Mission 1C.1 current checkpoint
-
-Authorised SSH preflight refreshed privately; no server writes/install/deployment. Existing account still lacks daemon access; awaiting the existing authorised Docker operator's receipt, current full policy/sign-in and revised transient probe decision. No operator login/session has been supplied, and no privilege workaround is permitted.
-
-Implemented worker-only inference gates and startup-required additive Linux no-connect filter, including TCP Fast Open/alternate routes. Initial data admission24GB within25GB total target;200GB reserve/75GB planned maximum, no hard quota. Final286 discovered/281passed/5skipped60.050s; Linux filter runtime skip remains explicit. Target image/container/HTTPS/worker/native/recovery acceptance unverified. See SECURITY.md and current NEXT_SESSION_PROMPT.md. Coding disabled; Mission1 partial; no push.
-
-
-## Read-only inspection and final approval preparation
-
-SSH continuation resolved without key/config/agent changes. Approved read-only target inspection completed; exact hardware/storage/runtime/permissions/DNS/TLS evidence remains private. Docker daemon/Serve inspection is blocked by the current account's socket permissions, not by SSH or missing client tools. No escalation or server modification performed.
-
-Implemented locally: protected-ancestor preflight, safer proposed root, correct unknown capability reporting, deterministic minimal committed build context and eight new regressions. Current full HTTP suite:276 discovered, 272 passed, 0 failures/errors, 4 skipped, 59.544s. The isolation prototype now rejects AppArmor complain mode; application/native behavior otherwise unchanged. No model/native acceptance rerun or deployment claimed. See current private approval package and `docs/DEPLOYMENT_REVIEW.md`.
-
-
-## Mission 1B current result — 2026-11-07
-
-Implemented: worker durable replay journal/hot credential rotation/strict protocol and clock/chunk limits; descriptor snapshots; encrypted offline multi-component recovery and stale-authority revocation; production write admission/main DB cap; operator-only isolated executor prototype; pinned public image metadata and read-only runtime/HTTPS acceptance tooling. Actual Qwen worker proof passed **19/19 in 46.418 s**; recovery drill **6/6**, tiny fixture 9 ms checkpoint/10 ms restore. Final regression:268 Python discovered; HTTP264passed/4skipped, default213passed/55skipped; zero final failures,7Vitest/3Rust and frontend build passed. Exact timings in NEXT_SESSION_PROMPT.md.
-
-**No target deployment or remote command.** Agent empty; further public-key-only SSH diagnostic rejected by auto-review pending access change/approval. Local Mac has no Docker; actual Linux isolation, container constraints, quota, private HTTPS/ACL and remote inference are unverified. Coding remains disabled. Full encrypted recovery limited to 64 MiB; production growth needs reviewed streaming recovery. No publishing/installation approval exists. Earlier sections below are historical.
-
-
-## AFK final local result — 2026-11-07
-
-Locally implemented and verified: durable outbound-only Mac worker, private Serve auth boundary/readiness, bounded runtime/shutdown, stalled-stream cancellation, native contract/capabilities, authenticated browser access and maintenance safeguards. Real Qwen worker coding proof passed 17/17 checks in 82.764 s; rebuilt native Gemma streaming/stop and browser owner sessions manually verified. Prepared nonroot bounded deployment/preflight/ACL/recovery templates; no Docker/server execution. Final regression: 219 Python discovered, HTTP 215 passed/4 skipped, default 171 passed/48 skipped, zero failures; seven Vitest and three Rust passed, optimized builds and syntax checks passed. Exact timing/evidence is in NEXT_SESSION_PROMPT.md.
-
-Mission 1 remains **PARTIAL**. No JARVIS installation or networking change; unattended SSH authentication failed before remote commands. Initial deployment disables code proposal/patch/command/Git/worktree actions until OS containment is approved. Remote HTTPS/ACL/resources/storage freshness, hard quota, automatic backup schedule and server acceptance remain unverified. Local AFK changes are committed only, not pushed. Preserve the untracked diagnostic without reading/staging it. Earlier checkpoints below are historical.
-
-## 2026-11-07 13:14 IST — AFK local backend/worker milestone
-
-Implemented private Serve contract and outbound-only Mac inference jobs, scoped authentication, leases, ordered chunks, cancellation/restart recovery, readiness, instance locking, shutdown, safe deployment execution gating and native stream/capability changes. Last full suite 205 discovered (201 passed, 4 skipped); TS/Vite and 7 frontend tests passed. Real Qwen worker-driven coding/restart proof passed 17 checks in 82.764 s on disposable Mac loopback fixtures. Remote JARVIS deployment remains unapproved; unattended dedicated-key SSH rejected. Deployment artifacts, browser auth and final QA are in progress. AFK contract supersedes step-by-step waiting; continue safe local work.
-
-## Deployment readiness correction — 2026-11-07
-
-The user's newer directive supersedes the prior SSH blocker and primary-server-inference plan. Intended deployment is Mac inference/client → private Tailscale Serve HTTPS → authenticated JARVIS localhost backend. Dedicated-key SSH and hardware inventory are reported established; do not repeat key installation/full discovery. No server deployment is authorized yet. Fresh local readiness checks: 11 security/auth tests + 4 backup/restore tests passed. Current code rejects the proposed proxy authority/origin contract, and a private Mac inference bridge plus safe execution isolation still need preparation. Current Serve/ACL/storage/runtime state and hostname resolution await one-command-at-a-time user results. DNS warning is not yet a demonstrated functional blocker. See current handoff and local-only readiness/private notes. No server/service/container/network changes were made.
-
-## Current verified checkpoint — 2026-11-07
-
-Branch: `personal-codex/stabilization`, reconciled from remote `12a24d5` without changing `main` or the existing untracked diagnostic. Repository: `https://github.com/SamarthRamesha/personal-codex`.
-
-**Mission 1: PARTIAL.** Native Mac client and genuine local-model coding work now function; server deployment is blocked on SSH authentication. The user confirmed JARVIS at `<server-tailscale-ip>`, user `<ssh-user>`, home `/DATA`. Tailscale is running and JARVIS is online/active. Authorized read-only SSH reached the host but the configured identity was rejected. No server software, configuration, storage, certificates or tailnet settings were changed; no backup directories were accessed.
-
-Implemented this session: Tauri/React/TypeScript native application, original app icon, secure Rust connection bridge, owner-token/cookie authentication, request framing/size and Host/Origin hardening, restricted private TLS startup, independent data root, contained project file APIs, installed-model selection, atomic streamed-content/resume cursors, newest-message history, duplicate-turn/concurrency limits, cancellation-after-planning protection, atomic approval decisions and execution rollback, accurate native-tool capability metadata, safe cloud-chat refusal, default-disabled external gateway, pruned context traversal, own-data storage diagnostics, verified database snapshots and new-path restore.
-
-Native UI exercised on the actual Mac: history, streaming/stop, files, task/test evidence, proposals/diffs, snapshot creation, disconnect/reconnect, missing-token refusal, owner authentication, untrusted-TLS refusal with no fallback. The local release client still requires a separately running backend; no service was installed. File pane is read-only and terminal is an exact-approved command runner, not an editor/PTY.
-
-Real inference: installed `qwen2.5-coder:14b` passed the synthetic authenticated chat → approved worktree → real patch → passing test → model completion → restart persistence workflow. Total 110,671 ms; plan 65,546 ms. Installed `llama3.2:3b` passed chat/streaming and a coding round but failed to conclude reliably. No weights or inference engines were installed. Tokens/s and peak RAM remain unmeasured; no ZimaOS model is selected.
-
-Tests: HTTP-enabled Python suite 177 discovered, OK (4 skips); default 177, OK (34 skips); Python compilation, dashboard JS syntax, TypeScript and Vite build passed; 2 Vitest tests and 1 Rust test passed. Optional gateway dependency is absent (3 skips); Linux `/proc` child check is inapplicable on Mac (1 skip). Browser/native UI checks are manual CUA evidence, not a broad automated UI suite.
-
-See `docs/MISSION_1_ACCEPTANCE.md` for every PASS/PARTIAL/BLOCKED criterion and `docs/THREAT_MODEL.md` for the remaining OS sandbox, egress, server deployment, resource scheduling and update gaps. Do not describe this checkpoint as the finished autonomous environment.
-
-## Historical checkpoint follows
-
-The dated inventory below is preserved for project history. The current checkpoint above supersedes old test counts, branch references and claims that no desktop, authentication, TLS or real-model proof exists.
-
-Updated: 2026-11-02 (Asia/Kolkata)
-
-## Current milestone: interactive execution — cancellation, live activity, diff review and search
-
-Continuity protocol: `NEXT_SESSION_PROMPT.md` is a permanent, ready-to-use cross-account handoff. It is regenerated after each meaningful verified milestone, on user request, and before usage exhaustion; it must embed the recursive continuation protocol for the next account.
-
-GitHub protocol: `origin` is the official `https://github.com/SamarthRamesha/personal-codex.git` remote. Meaningful verified milestones are committed and pushed to `main` when available, without force-pushing or overwriting unexpected history.
-
-Implemented and verified:
-
-- Python local service with SQLite persistence (`app/server.py`).
-- Browser dashboard for project registration and task-plan creation (`web/`).
-- Repository summary that excludes common generated directories and secret-named files.
-- Role-based task plan: planner, developer, testing, independent reviewer.
-- Approval and model-provider registries; no provider secret values are stored.
-- Approval-gated Git worktree creation and exact-command execution API, constrained to task-owned workspaces and an explicit development command allowlist.
-- Dashboard task detail, approval decision controls, workspace requests, command-approval requests, execution controls, and event/output inspection.
-- Approval decisions are one-way: a pending request may be approved or rejected once, but never altered afterward.
-- Recoverable clean-workspace release, read-only merge preview with conflict reporting, critical-approved merge, and separately critical-approved recovery-branch deletion. Merge approvals bind the reviewed source and target commit IDs; deletion approvals bind the recovery-branch commit ID.
-- Provider registration validates `ollama` and `openai-compatible` metadata only: absolute HTTP(S) endpoints without embedded credentials, loopback required unless `cloud_allowed: true`, and `secret_ref` restricted to environment-variable names. Registration and capability discovery never read a secret or contact a provider.
-- Provider invocation is an end-to-end approval-gated flow: `POST /api/tasks/{id}/provider-request` records a pending approval bound to task, provider, endpoint, model, prompt SHA-256, and cloud flag; `POST /api/tasks/{id}/invoke` requires that exact approved binding. Loopback providers need `provider-invoke`; cloud-consented providers need a separate `network` approval. Responses are bounded, redacted, persisted with the prompt digest, and listed at `GET /api/tasks/{id}/invocations`.
-- Real provider transports (`app/providers.py`, standard library only): Ollama `/api/chat` (with `/api/generate` support) and OpenAI-compatible `/chat/completions`. Shared hardening: `http.client` with no proxy-env or redirect handling (3xx refused), connection timeout (60 s default), 1 MB response cap, JSON shape validation, sanitised error text, and an independent loopback check unless the provider is cloud-consented.
-- OpenAI-compatible credentials are resolved from the named environment variable inside the transport at call time, placed only in the `Authorization` header, and never stored or logged. A cloud provider without a secret reference is refused, and a missing credential fails before any request.
-- `server.PROVIDER_TRANSPORT` remains the injection seam: `None` selects the built-in adapters, a callable overrides them, and `unavailable_provider_transport` restores a hard fail-closed service.
-- Dashboard wiring for provider invocation: provider select with a transport-policy hint, approval request, invoke action with duplicate-submission guard, and a provider-response ledger.
-- Agent tool layer (`app/tools.py`): closed-schema proposals over `list_files`, `read_file`, `apply_patch`, and `run_tests`; unknown tools/arguments, oversized values, absolute paths, `..`, ignored directories, secret-named files, and symlink escapes are rejected; patches must match exactly once and re-verify the reviewed SHA-256; execution stops at the first failure and marks later operations skipped.
-- Agent lifecycle API: `POST /agent/request` (deterministic prompt + approval), `POST /agent/plan` (approved invocation → validated proposal → file hashes → proposal approval), `POST /agent/execute` (approved digest only, atomically claimed once, runs inside the task worktree), and `GET /agent` for the latest proposal and results.
-- Dashboard agent panel: extra instructions, request/build/execute controls, proposal operations with patch previews, digest and branch binding, and execution results.
-- Multi-round engine: `rounds` table plus `/api/tasks/{id}/agent/round/{request,plan,execute,cancel}`, `GET /agent/rounds`, and `GET /agent/report`. Each round binds a fresh provider and proposal approval to its round number; the next prompt embeds bounded, redacted evidence from previous rounds (test command, exit code, output tail, failed test names, changed files, errors). Default limits are 3 rounds (`PERSONAL_CODEX_MAX_ROUNDS`), 30 minutes per task, and 8 operations per round.
-- Objective completion: a `complete` status is rejected unless a passing executed round recorded both a zero-exit test command and an approved file change, and the latest executed round passed. False claims are stored as `rejected-completion` without changing the workspace.
-- Loop safety: duplicate provider responses and already-reviewed proposal digests are refused, a round can execute at most once, cancellation invalidates its pending proposal, and a failing test run is distinguished from a failed tool operation.
-- Crash recovery: on start, any round still marked `executing` becomes `interrupted` with an event and its proposal is closed, so a restart cannot leave a task stuck or a half-applied round looking passed.
-- Dashboard rounds panel: round count/limits/elapsed, per-round status with test exit codes and failed test names, errors, and a final report with changed files and bounded diff stat. Action buttons ignore repeated clicks while a request is in flight.
-- Cancellation: `POST /api/tasks/{id}/cancel` persists a cancellation bound to the active round, revokes its approved proposal, and is consulted before every tool operation. Completed operations are preserved, skipped ones are marked `cancelled`, and a cancelled round cannot execute with its old approval.
-- Operation ledger (`operations` table): task, round, index, tool, proposal digest, status, timing, summary, error, applied flag, and before/after file hashes, written before and after each operation. Startup marks running rows `interrupted` and never replays them.
-- Cumulative budgets (`usage` table): prompt bytes, response bytes, test output bytes, context bytes and invocations, with seven clamped environment variables. Exhaustion refuses the next provider call, records the reason, sets `budget-exhausted`, and requires an explicit confirmed reset.
-- Repository context engine (`app/context.py`): manifest, doc/manifest prioritisation, Python `ast` and JS symbol outlines, token/failed-test/changed-file ranking, `.gitignore` and secret exclusion, symlink containment, per-file and total byte caps, stable digest, and an explicitly untrusted prompt block.
-- Project memory foundation (`memory` table): seven kinds, bounded content, credential-pattern rejection, project-scoped CRUD, and a "possibly stale" prompt section.
-- Dashboard: cancel task, explicit budget reset, budget meter, operation ledger, and selected-context panel with reasons, line ranges and digest.
-- Memory promotion: proposals only after a passing round, with provenance, duplicate and credential refusal, explicit approve/reject, staleness labelling and relevance-ranked bounded retrieval.
-- Streaming: bounded, cancellable NDJSON (Ollama) and SSE (OpenAI-compatible) adapters with rejection of malformed, unterminated, oversized and erroring streams; opt-in via `PERSONAL_CODEX_STREAM_PROVIDER`.
-- Diagnostics: `scripts/live_provider_check.py` (model discovery, explicit model choice, schema probe, latency/bytes, sanitised errors) and provider health/latency metadata in the API.
-- Secret-shape redaction for provider error bodies.
-- Milestone 6 interaction work: subprocess-level cancellation (SIGTERM then SIGKILL, partial output preserved, exit 130, recorded as `cancelled`), a resumable Server-Sent Events stream over persisted events (`Last-Event-ID`/`?after=`), diff review with bound and current file digests plus stale detection, bounded `.gitignore`-aware repository search, and restrictive security headers on every response.
-- Browser-free dashboard contract tests (`tests/test_ui.py`) assert that scripted element IDs exist, every button is wired, every `/api/...` path used by the script is routed, gated actions are all present, and only local assets are loaded without browser-stored secrets.
-- Provider adapter tests (`tests/test_providers.py`) run against an ephemeral loopback stub server: request shape and path, response extraction, malformed JSON, HTTP errors, redirect refusal, connection refusal, timeout, oversized response, unexpected structure, invalid endpoints, non-loopback refusal, credential handling, and transport selection. No external network or real model is used.
-- Agent tests (`tests/test_tools.py`): schema and argument validation, path/symlink/secret containment, patch hash binding, duplicate-match refusal, stop-on-failure execution, runner failure handling, digest binding, and an opt-in HTTP lifecycle where an approved proposal edits the worktree, runs a test command, refuses a second execution, and rejects a stale file with the file preserved.
-- Resource-aware execution: 1–300 second wall timeout; child CPU, file-size, descriptor, address-space limits where supported; 50 MiB child-file cap; 200 kB retained redacted output cap.
-
-Verification completed (2026-11-01, this session):
-
-- `python3 -m unittest discover -s tests -v` — 126 tests, `OK (skipped=19)`: the listener-gated tests are correctly skipped unless explicitly enabled.
-- `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests -v` — all 126 tests passed, including the two-round self-correction cycle, evidence-checked completion, per-round approvals, false-completion rejection, duplicate-response refusal, the round limit, cancellation between operations with partial-work preservation, operation-ledger persistence, interrupted-operation recovery, budget refusal and explicit reset, and context visibility.
-- `python3 -m py_compile app/server.py app/providers.py app/tools.py app/context.py` — passed.
-- `node --check web/app.js` — passed.
-- Earlier loopback smoke test confirmed health, dashboard provider controls, 403 before approval, bound approval detail, and rejection of a cloud endpoint without consent; later transport coverage replaced the fail-closed-only check with the stub-server adapter suite above.
-
-Environment note: this cloud workspace ran Python 3.12.3 and Node 26.13.0; the owner's Mac has Python 3.13.9 and Node 24.22.1.
-
-Not implemented: provider-native tool calling, semantic retrieval, native desktop shell, server connector, encrypted secrets, auth/TLS remote protocol, conflict-resolution tooling, and browser-automation UI tests. No live model has been exercised: all adapter and agent tests use injected transports or a local stub server, so a real Ollama/macOS run remains outstanding.
+See [implementation matrix](docs/IMPLEMENTATION_MATRIX.md), [remaining work](TASKS.md), [getting started](docs/GETTING_STARTED.md) and [continuation](NEXT_SESSION_PROMPT.md). GitHub synchronization and hosted CI outcomes must be checked from the actual remote, not inferred from local commits.

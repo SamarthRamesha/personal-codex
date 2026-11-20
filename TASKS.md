@@ -1,110 +1,29 @@
-# Tasks
+# Remaining work
 
-## Mission 1B completed local work and gates
+Updated 20 November 2026. Completed functionality and evidence are in [the implementation matrix](docs/IMPLEMENTATION_MATRIX.md).
 
-- [x] Worker replay/rotation/strict schemas/monotonic deadlines and real Qwen 19-check proof.
-- [x] Encrypted bounded offline DB/project/workspace/release/config recovery; stale authority invalidation; actual local restore drill.
-- [x] Operator-only no-mount/no-network executor prototype and independent host supervisor bounds.
-- [x] Storage admission/DB cap, public pinned image metadata, scoped preflight and read-only HTTPS checker.
-- [ ] SSH access change/approval; actual target kernel/cgroups/LSM/quota/runtime/Serve/policy facts.
-- [ ] Actual executor Linux adversarial acceptance and narrow backend broker integration before enabling coding.
-- [ ] Streaming encrypted recovery for data beyond 64 MiB; approved key escrow/off-device schedule/retention.
-- [ ] Approve exact directories/identity/image downloads/services/Serve/full ACL/persistent Mac worker.
-- [ ] Actual remote inference/native/HTTPS/resource/recovery/ACL acceptance and existing service health.
-- [ ] Approve GitHub publication separately. No automatic push.
+## Next local work
 
+- [ ] Visually verify the new Mac opening panel when the UI connection works: app launch, selected document, Finder reveal, cancel/expiry and preservation of existing apps.
+- [ ] Add scoped cross-app automation only after designing actual Accessibility/Automation consent, target binding, sensitive-field exclusion, exact review and failure recovery. Opening apps alone does not complete it.
+- [ ] Improve offline dependency/dev-server lifecycle and broader full-task stack acceptance.
+- [ ] Correlate task/provider/tool traces with minimal data and bounded retention; evaluate semantic/changing-content cycles.
+- [ ] Verify broader blank-project ML generation independently; preserve the existing scaffold/repair evidence and failed attempts.
+- [ ] Expand retrieval evaluation and native regression coverage.
 
-## AFK completion and remaining gates — 2026-11-07
+## JARVIS deployment gates
 
-- [x] Audit implementation matrix and preserve existing architecture/history.
-- [x] Scoped outbound worker, durable leases, restart recovery, model discovery/location and no silent fallback.
-- [x] Serve auth/proxy boundary, readiness, execution-disabled profile, instance lock, graceful shutdown and provider cancellation.
-- [x] Authenticated browser path, native protocol/capability alignment, optimized app and real synthetic UI/worker verification.
-- [x] Bounded snapshots/logging, deployment/preflight/resource/backup/recovery/ACL templates and API docs.
-- [ ] Restore unattended read-only SSH; refresh exact free space, target permissions, Docker and existing Serve state.
-- [ ] Approve exact service identity/root/image/quota and server writes, private Serve change and reviewed full ACL policy.
-- [ ] Approve persistent outbound Mac worker after a real remote HTTPS test; no Ollama exposure needed.
-- [ ] Validate actual Docker constraints, HTTPS, ACL rejection, remote model cancellation/restart and restore-to-new-path on JARVIS.
-- [ ] Design and approve OS execution/egress containment before enabling coding on JARVIS; general editor/PTY and multi-user access remain unimplemented.
+- [ ] Verify installed-version Custom App field preservation, supported image delivery and mapped numeric ownership.
+- [ ] Refresh exact protected-parent/capacity facts; preserve200 GB free,25 GB initial total/24 GB data and75 GB overall maximum. Establish a real whole-volume quota if required.
+- [ ] Freeze and approve exact dedicated storage/image/container operations, then verify actual target runtime controls.
+- [ ] Inventory family HTTPS443, Serve/Services mappings, tags/shares/routes/exit nodes and emergency administration; validate/approve the exact policy and Serve changes separately.
+- [ ] Install the persistent outbound worker only after approval; exercise actual remote HTTPS/chat/stream/stop/retry/reconnect/sleep/restart and denied clients in both address families.
+- [ ] Engineer/test production-scale encrypted recovery beyond the64 MiB envelope; approve key custody/schedule/off-device retention.
+- [ ] Accept an OS-isolated coding executor/broker before any separate approval to enable server execution.
 
-Mission 1 remains partial. All deployment-dependent tasks are gated; no production service or networking change was performed.
+## Distribution
 
-## Mission 1 priorities — 2026-11-07
+- [ ] Signed/notarized installer, trusted update/rollback workflow and broader UI automation acceptance.
+- [ ] General editor/PTY, richer Git/memory controls, system-wide entry point and optional voice workflows.
 
-- [x] Reconcile actual checkout and remote stabilization branch; preserve untracked diagnostic and historical main.
-- [x] Establish 156-test baseline after incorporating remote test fix; extend to 177 discovered tests.
-- [x] Discover Mac Tailscale and installed Ollama models without downloads.
-- [x] Build native Tauri/React/TypeScript client with guarded backend transport, streaming chat and a coherent coding review slice.
-- [x] Add owner authentication, sessions, request hardening and private TLS listener policy.
-- [x] Close chat auto-cloud-consent and default-enabled external-gateway gaps.
-- [x] Add storage diagnostics, verified bounded snapshots and no-overwrite restore tests.
-- [x] Prove a genuine installed local-model coding workflow and restart persistence.
-- [x] Test actual native UI, owner-token failure/success and TLS identity refusal.
-- [ ] Establish SSH authentication for `<ssh-user>@<server-tailscale-ip>` without putting credentials in chat or Git.
-- [ ] Run read-only host inventory; measure actual CPU/RAM/GPU/filesystem/services/model storage.
-- [ ] Prepare a reviewed least-privilege server deployment; obtain approval before installations/configuration/credential use or server writes.
-- [ ] Verify 200 GB free reserve and 75 GB total owned-storage budget including model storage; no backup traversal or cleanup.
-- [ ] Deploy authenticated TLS on the actual Tailscale interface; test at home and remotely.
-- [ ] Complete genuine native-to-JARVIS coding acceptance and hardware performance measurements.
-- [ ] Add OS execution/egress isolation, bounded global agent scheduling, backup supervision and automated UI coverage.
-- [ ] Extend native editor/PTY, memory/Git controls and conversation management; add signing/notarization and reviewed update strategy.
-- [ ] Continue Missions 2 and 3 after the actual remote foundation is accepted.
-
-Memory promotion must always retain explicit approval; ordinary retrieval/configuration is not model training. Do not implement the old “automatic promotion” idea as automatic storage.
-
-## Historical checklist follows
-
-Preserved for continuity; the current priorities and implementation evidence above supersede stale unchecked entries.
-
-## Highest priority
-
-- [x] Establish permanent cross-account continuation protocol and regenerate the ready-to-use prompt after verified milestones.
-- [x] Build capability-gated command executor: worktree-only CWD, allowlisted commands, output redaction, timeout, approval lookup, and audit event.
-- [x] Add basic Git worktree lifecycle with per-task ownership.
-- [x] Add clean workspace release/recovery controls and resource limits beyond timeout.
-- [x] Add explicit user-approved branch merge, conflict reporting, and recovery-branch deletion controls.
-- [x] Add provider metadata validation and capability discovery without secret access or network I/O.
-- [x] Connect the injected transport seam to approval-gated invocation endpoints, with bounded redacted responses, a digest-keyed ledger, and audit events.
-- [x] Add browser-free dashboard contract tests covering the approval/workspace/command/merge/provider controls.
-- [x] Implement a real Ollama HTTP transport behind the injected seam, approval-gated, loopback-only without cloud consent, verified against a local stub server.
-- [x] Implement an OpenAI-compatible `/chat/completions` transport whose key is read only from the named environment variable at call time.
-- [x] Harden the shared transport: no redirects, no proxy-env use, bounded timeout/size, sanitised errors, missing-credential failure before sending.
-- [x] Implement the first bounded developer-agent cycle: strict allowlisted tool-call schema, approval-gated patch application in the task worktree, and test-result recording.
-- [x] Add the agent lifecycle API and dashboard proposal/execute controls.
-- [ ] Replace placeholder plan-only workflow with a multi-round agent engine that feeds bounded test results back to the provider.
-
-## Next
-
-- [x] Implement the bounded multi-round loop: send redacted test output back to the provider, cap rounds/time/operations, and require a fresh approval per proposal.
-- [x] Add streaming response support.
-- [ ] Add audited provider-native tool-call handling.
-- [x] Add a bounded repository context engine (manifest, docs, symbols, ranking, digest).
-- [x] Add a project-memory foundation with CRUD and credential rejection.
-- [x] Add a live-provider diagnostic harness and deterministic coverage for it.
-- [x] Add evidence-backed memory promotion with provenance, staleness and bounded retrieval.
-- [x] Add bounded streaming for Ollama with cancellation and validation.
-- [x] Add provider health/latency metadata and secret-shape error redaction.
-- [ ] Run a live Ollama round on the owner's Mac and record the real failure modes.
-- [x] Add OpenAI-compatible SSE streaming.
-- [x] Add provider failure classification and safe read-only retry.
-- [x] Add evidence-derived completion summary proposals.
-- [ ] Add provider-native tool calls.
-- [ ] Promote verified memory entries automatically from completed rounds.
-- [x] Add restart recovery for interrupted rounds: they are marked `interrupted`, their proposals are closed, and the task returns to `needs-another-round`.
-- [x] Add a persisted cancellation checked between tool operations, with partial-result preservation and skipped-operation recording.
-- [x] Persist an operation-level ledger with timing, applied flag and file hashes; mark running rows interrupted on restart.
-- [ ] Run one live Ollama agent cycle on the owner's Mac with a locally pulled model (requires the owner's machine and an installed Ollama).
-- [ ] Implement project memory rebuild from manifests, docs, and parsed symbols.
-- [ ] Design and implement mutually authenticated ZimaOS worker registration after actual server discovery credentials are supplied.
-- [ ] Package a Tauri desktop shell only after the local API is covered by integration tests.
-- [x] Stop a running test command on cancellation: SIGTERM, then SIGKILL after a 1.5 s grace, partial output preserved, exit code 130.
-- [x] Stream persisted task events to the dashboard with resumable ids (`Last-Event-ID`).
-- [x] Review a pending proposal as a unified diff bound to current file digests, with stale detection.
-- [x] Add bounded, `.gitignore`-aware local repository search.
-- [x] Send restrictive security headers (CSP, nosniff, no-referrer, frame denial, no-store) on every response.
-- [ ] Add optional browser automation (Playwright) UI tests once a browser runtime is available in the target environment.
-
-## Deferred by unavailable access
-
-- [ ] ZimaOS inspection and deployment: no hostname, credentials, or authorized remote session were supplied.
-- [ ] Live cloud-provider testing: no user-authorized provider credentials were supplied.
+No unknown passphrase should be requested repeatedly. Do not bypass target permissions, revive declined probes, change family services or treat partial local proof as full mission completion. GitHub publication is authorized by the owner's20Novemberrequest; preserve remote history and exclude private data.
