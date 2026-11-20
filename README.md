@@ -1,5 +1,7 @@
 # Personal Codex
 
+[![Verify Personal Codex](https://github.com/SamarthRamesha/personal-codex/actions/workflows/verify.yml/badge.svg)](https://github.com/SamarthRamesha/personal-codex/actions/workflows/verify.yml)
+
 A local-first AI development workspace for your Mac, with a native application, reviewed coding actions, persistent history and a prepared private home-server backend.
 
 **Current status — 20 November 2026:** the Mac coding workflow works locally. Document search, bounded repair loops and a first set of local Mac opening actions are implemented. The JARVIS deployment is **not live**; private HTTPS, remote inference and family-access preservation still need target verification and exact deployment approvals.

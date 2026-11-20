@@ -10,6 +10,10 @@ Refreshed README, native/setup/Mac-action guides, documentation index, current i
 
 Read-only JARVIS test resolved private DNS and connected dashboard80;443/8787refused. No credentials, HTTP/inference requests, SSH commands or target changes. Remote integration remains unaccepted. Publication was authorized by the owner's new request; actual synchronization/CI status is recorded separately after execution.
 
+## Hosted verification follow-through
+
+The first published source9d2de2d passed GitHub's frontend and macOS native jobs. Its Linux backend job found a fixture assumption: the process-readiness test inherited the production200GBfree reserve. Only the disposable test subprocess now explicitly uses1GBreserve/5GBdata admission; production limits and dedicated low-space tests are unchanged. The six affected runtime tests passed locally after the fix. A fresh complete hosted run is required and must be checked from GitHub; do not infer success from the local result. Current operations/security/container guides now replace old untested-image and74GBinitial-allocation claims with actual scoped proof and the strict24GBdata/25GBtotal contract.
+
 ## Earlier verified milestones
 
 The remaining entries are historical evidence. Current status and NEXT_SESSION_PROMPT supersede their older pause, source, deployment and publication claims. Full original content remains in Git history.

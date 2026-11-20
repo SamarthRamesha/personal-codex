@@ -27,7 +27,7 @@ Existing authenticated ZimaOS 1.6.2 dashboard showed the owner's role and Custom
 
 ## Exact next work
 
-1. Finish/verify GitHub synchronization without force-push or unexpected remote overwrites; inspect hosted checks. Publication was explicitly requested on 20 November, superseding older no-push instructions for this task.
+1. Source9d2de2d was published by fast-forward to main and stabilization; frontend/native hosted jobs passed. Its first Linux backend run exposed the production-capacity assumption in a disposable readiness fixture. The fixture-only explicit small budget passed six local runtime tests; check the fresh hosted run after the follow-up publication. Preserve remote history; no force-push. Publication was explicitly requested on 20 November, superseding older no-push instructions.
 2. When a reliable native UI connection is available, verify Mac actions opening/cancel/expiry against synthetic items, preserving existing apps/browser work. Use separate windows or hidden browser tabs. Do not silently mark this accepted.
 3. Continue scoped cross-app capability design, task/provider/tool trace correlation, dependency/dev-server lifecycle and broader independent coding/ML acceptance. Opening apps is not universal system control.
 4. Resolve actual ZimaOS importer/image/identity and fresh family service/tag/share/route/emergency-admin facts read-only. Freeze exact directory/container/image/Serve/policy operations, risks, rollback and verification before requesting specific approvals.

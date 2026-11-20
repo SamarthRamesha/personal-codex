@@ -53,7 +53,10 @@ class ServiceProcessTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
         self.token='synthetic-process-owner-'+'x'*32;self.key=self.root/'owner-token';self.key.write_text(self.token);self.key.chmod(0o600)
         self.env={'PATH':os.getenv('PATH',''),'HOME':str(self.root),'LANG':'C',
-                  'PERSONAL_CODEX_DATA':str(self.root/'data'),'PERSONAL_CODEX_PORT':'0','PERSONAL_CODEX_TOKEN_FILE':str(self.key)}
+                  'PERSONAL_CODEX_DATA':str(self.root/'data'),'PERSONAL_CODEX_PORT':'0','PERSONAL_CODEX_TOKEN_FILE':str(self.key),
+                  # This disposable process fixture is not a production-capacity test.
+                  # Retain real readiness checks without requiring a 200 GB CI runner.
+                  'PERSONAL_CODEX_RESERVE_GB':'1','PERSONAL_CODEX_STORAGE_GB':'5'}
         self.process=subprocess.Popen([sys.executable,'app/server.py'],cwd=server.ROOT,env=self.env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         selector=selectors.DefaultSelector();selector.register(self.process.stdout,selectors.EVENT_READ)
         try:
