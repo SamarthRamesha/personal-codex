@@ -30,3 +30,5 @@
 :root .model-observations dl>div,:root .inference-stats>div{display:flex;justify-content:space-between;gap:16px;margin:5px 0}
 :root .model-observations dt,:root .inference-stats dt{opacity:.7}
 :root .model-observations dd,:root .inference-stats dd{margin:0;text-align:right;overflow-wrap:anywhere}
+
+.project-documents{margin:12px 20px;padding:12px;border:1px solid #353b36;border-radius:9px}.project-documents summary{cursor:pointer;font-weight:600}.project-documents summary+p{margin-top:12px}.document-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.document-actions input,.document-actions select{min-width:160px;flex:1}.document-actions button,.saved-document button{border:1px solid #353b36;padding:6px 10px}.saved-document{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #2b332d}.saved-document span{flex:1}.document-results article{border-top:1px solid #353b36;padding:12px 0}.document-results small{display:block;color:#91a094}.document-results pre{max-height:240px;overflow:auto}

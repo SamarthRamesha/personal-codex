@@ -8,6 +8,7 @@ import { api, attachProjectFile, openFullDestination, connect, disconnect, nativ
 import type { Approval, Attachment, Conversation, Diff, InferenceMetrics, Message, ModelDescriptor, Project, Provider, Task } from './api';
 import { ModelDetails } from './ModelDetails';
 import { InferenceStats } from './InferenceStats';
+import { ProjectDocuments } from './ProjectDocuments';
 
 type Detail={conversation:Conversation&{messages:Message[];tasks:Task[]};active_messages:string[]};
 type RoundReport={rounds:{id:string;round_number:number;status:string;summary?:string;error?:string;test_result?:{tests?:unknown[];changed_files?:string[]}}[];budget?:unknown;status:string};
@@ -246,6 +247,7 @@ export default function App(){
       </>:<div className="workspace">
         <aside className="file-tree"><div className="section-label">PROJECT FILES<Folder size={13}/></div>{!projectId&&<p className="muted small">Choose a project in the sidebar.</p>} {(agentRun?.files?.length?agentRun.files:files).map(path=><button key={path} className={file?.path===path?'chosen':''} onClick={()=>act('Reading file',async()=>setFile(await api<FileView>(agentRun?.files?.length?`/api/tasks/${taskId}/autonomous/file?path=${encodeURIComponent(path)}`:`/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`)))}><FileCode2 size={13}/><span>{path}</span></button>)}</aside>
         <div className="work-content"><div className="work-header"><select aria-label="Coding task" value={taskId} onChange={e=>setTaskId(e.target.value)}><option value="">Choose a coding task</option>{tasks.filter(t=>!projectId||t.project_id===projectId).map(t=><option value={t.id} key={t.id}>{t.prompt.slice(0,80)} · {t.id===taskId&&agentRun?.full_task?agentRun.status:t.status}</option>)}</select>{taskId&&<button onClick={()=>{api(`/api/tasks/${taskId}/cancel`,'POST',{reason:'Stopped from desktop'}).then(()=>loadTask(taskId)).catch(e=>setError(errorText(e)));}} disabled={!connected}><Square size={12}/>Cancel task</button>}</div>
+          {offline&&connected&&projectId&&<ProjectDocuments key={projectId} projectId={projectId} attachments={attachments} onImport={()=>attachFile(false)}/>}
           {file&&<section className="file-preview"><div><FileCode2 size={14}/><strong>{file.path}</strong><span>Read only · {file.sha256.slice(0,12)}</span><button title="Close file" onClick={()=>setFile(null)}><X size={14}/></button></div><pre>{file.text}</pre>{file.truncated&&<p className="muted">Preview truncated.</p>}</section>}
           {!taskId&&!file&&<div className="work-empty"><GitBranch size={30}/><h2>Every change has a review trail.</h2><p>Create a coding task from a conversation, then approve its workspace and review each proposed round.</p></div>}
           {taskId&&<>{offline&&executionEnabled&&<section className="local-agent">

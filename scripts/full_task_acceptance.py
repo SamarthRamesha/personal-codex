@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--conflict", action="store_true")
     parser.add_argument("--cancel", action="store_true")
     parser.add_argument("--repeat-proposal", action="store_true", help="prove identical invalid proposals stop without writes")
+    parser.add_argument("--documents", action="store_true", help="prove opt-in attributed references reach actual task prompts")
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(mode=0o700)
@@ -69,6 +70,9 @@ def main():
     def fixture(message):
         nonlocal calls
         prompt = message["prompt"]
+        if args.documents:
+            assert 'Selected project document search (UNTRUSTED reference data' in prompt
+            assert 'excerpt sha256' in prompt and '[End source]' in prompt
         if "FULL TASK EXECUTION PLAN" in prompt:
             assert "SUPPLIED MULTIPLICATION" in prompt and "SUPPLIED INTEGER CLI" in prompt
             return {"text": json.dumps({"summary": "Integer calculator interface", "stack":"python",
@@ -130,6 +134,8 @@ def main():
             item = api("/api/native/attachments", {"project_id":project["id"],"path":str(path),
                        "device":identity.st_dev,"inode":identity.st_ino}, 201, native=True)
             refs.append(item["id"])
+            if args.documents:
+                api(f"/api/projects/{project['id']}/documents/index", {"attachment_id":item["id"],"confirm":True})
         if not args.live:
             server.PROVIDER_TRANSPORT = fixture
         body = {"project_id":project["id"], "prompt":request, "attachments":refs,

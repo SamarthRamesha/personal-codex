@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend  # script execution puts app/ on sys.path
+    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend
+    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -104,6 +104,7 @@ class Store:
         # A streamed chat turn writes from a worker thread while HTTP threads read; wait instead of failing.
         self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.executescript(SCHEMA); self.conn.commit()
+        documents.initialize(self.conn)
         self.migrate()
         self.recover_interrupted()
     def migrate(self):
@@ -233,10 +234,11 @@ def conversation_project_context(project_id, request):
         return ""
     try:
         root = safe_project_path(project["path"])
-        selection = context.select(root, request, max_bytes=4500, max_files=6)
+        references = documents.prompt_block(STORE, project_id, request, budget=1600)
+        selection = context.select(root, request, max_bytes=max(1,4500-len(references.encode("utf-8"))), max_files=6)
     except (OSError, ValueError):
         return "The selected project could not be read under the current workspace authorization."
-    return context.prompt_block(selection)
+    return context.prompt_block(selection) + references
 
 
 conversations.PROJECT_CONTEXT = conversation_project_context
@@ -408,6 +410,7 @@ def build_agent_prompt(task: dict, workspace: dict, extra: str = "") -> str:
     listing=[entry["path"] for entry in tools.list_files(safe_workspace_path(workspace), ".", 1, 60)["entries"] if entry["path"] != ".git"]
     prompt=tools.agent_instruction(listing)+f"\nTask: {str(task['prompt'])[:2000]}"
     if extra: prompt+=f"\nExtra instructions: {extra[:2000]}"
+    prompt += documents.prompt_block(STORE, task["project_id"], task["prompt"], budget=min(2200,max(0,20_000-len(prompt))))
     return prompt
 
 def task_rounds(task_id: str) -> list:
@@ -453,6 +456,7 @@ def build_round_prompt(task: dict, workspace: dict, extra: str = "", rounds: lis
     prompt += f"\nTask: {str(task['prompt'])[:2000]}"
     prompt += f"\nExecution history:\n{round_history_text(rounds)}"
     if extra: prompt += f"\nExtra instructions: {extra[:2000]}"
+    prompt += documents.prompt_block(STORE, task["project_id"], task["prompt"], budget=min(2200,max(0,20_000-len(prompt))))
     return prompt
 
 def round_invocation_detail(task_id: str, provider: dict, prompt: str, round_number: int) -> str:
@@ -1284,6 +1288,22 @@ class App(SimpleHTTPRequestHandler):
             pid=route.split("/")[3]
             if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
             return self.json({"project_id":pid,"kinds":sorted(MEMORY_KINDS),"proposals":memory_proposal_rows(pid)})
+        document_route = re.fullmatch(r"/api/projects/([a-f0-9-]{36})/documents(?:/(search))?", route)
+        if document_route:
+            if not AUTH.enabled:
+                return self.json({"error":"Owner authentication is required for project document search"},403)
+            pid, operation = document_route.groups()
+            if not STORE.one("SELECT id FROM projects WHERE id=?", (pid,)):
+                return self.json({"error":"Project not found"},404)
+            if operation:
+                params = parse_qs(urlparse(self.path).query)
+                try:
+                    limit = int((params.get("limit") or ["5"])[0])
+                    hits = documents.search(STORE, pid, (params.get("q") or [""])[0], limit)
+                except ValueError as error:
+                    return self.json({"error":str(error)},400)
+                return self.json({"project_id":pid,"hits":hits})
+            return self.json(documents.listing(STORE, pid))
         if route.startswith("/api/projects/") and route.endswith("/memory"):
             pid=route.split("/")[3]
             if not STORE.one("SELECT id FROM projects WHERE id=?",(pid,)): return self.json({"error":"not found"},404)
@@ -1401,6 +1421,22 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            document_route = re.fullmatch(r"/api/projects/([a-f0-9-]{36})/documents/(index|remove)", route)
+            if document_route:
+                if not AUTH.enabled:
+                    return self.json({"error":"Owner authentication is required for project document search"},403)
+                if set(data) != {"attachment_id","confirm"} or data["confirm"] is not True or not isinstance(data["attachment_id"],str):
+                    return self.json({"error":"Confirm this exact imported document action"},400)
+                pid, operation = document_route.groups()
+                if not STORE.one("SELECT id FROM projects WHERE id=?", (pid,)):
+                    return self.json({"error":"Project not found"},404)
+                try:
+                    result = (documents.index if operation == "index" else documents.remove)(STORE, pid, data["attachment_id"])
+                except LookupError as error:
+                    return self.json({"error":str(error)},404)
+                except ValueError as error:
+                    return self.json({"error":str(error)},400)
+                return self.json(result)
             if route == "/api/full-tasks":
                 backend = task_service()
                 try: plan = backend.plan_task(data)

@@ -127,6 +127,7 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
     def ask(prompt):
         if stopped():
             raise ValueError("Task stopped before the model step.")
+        prompt += server.documents.prompt_block(store, task["project_id"], task["prompt"], budget=min(2200,max(0,20_000-len(prompt))))
         result = server.invoke_provider(provider, prompt, server.round_transport(provider, stop_check=stopped))
         evidence.append({"attempt": attempt, "type": "inference", "model": provider["model"],
                          "metrics": result["metrics"]})

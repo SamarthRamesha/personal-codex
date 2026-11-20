@@ -1,5 +1,9 @@
 # Security model
 
+## Selected-document retrieval boundary
+
+Project search is an explicit owner action over previously imported excerpts, separate from approved memory. No file/server scan, embedding service, dynamic extension load or inference is involved in index/search. Literal parameterized queries are project-scoped; metadata/hash/chunk offsets and bytes are revalidated against the saved source before retrieval. Stale/altered/obvious credential-like content is omitted; this is not complete DLP or a prompt-injection guarantee. Index updates are atomic and capped; existing storage admission/database limits apply. Prompt context is bounded and labeled untrusted. Removing a derived index leaves the imported attachment, prior task snapshots and backups intact. Existing cloud/network/tool/execution approvals remain authoritative. See docs/PROJECT_DOCUMENT_SEARCH.md and its negative tests.
+
 ## Memory integrity review — 2026-11-19
 
 Memory edits now use the same bounded credential-pattern admission as creation, internal proposals and promotion. Editing content clears its old round evidence/digest and makes provenance manual; the original proposal audit is retained. Prompt labels distinguish user-provided content, intact project-matched passing-round evidence and stale/incomplete evidence. Digest checks detect inconsistent stored bytes; they are not signatures or protection from a compromised database administrator. All retrieved memory remains untrusted data.

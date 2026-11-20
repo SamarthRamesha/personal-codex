@@ -63,3 +63,8 @@ Production mutation admission may return **503** before creating state when meas
 Worker CLI requires a private durable state directory; every accepted UUID is claimed before inference and never replayed. Sequence is 1–4096, empty nonterminal chunks refused, future-dated presence offline until fresh report, consumer lifetime additionally uses monotonic time. Journal exhaustion is a fail-closed condition, never an automatic tombstone reset. No executor API or new production coding mode was introduced.
 
 Sequential tool proposals bind each patch to incoming bytes after earlier approved edits. Review `sha256_current` is the before-this-step digest with prior edits simulated; execution still checks actual bytes at every write. Planning/review never writes files.
+
+
+## Selected project documents
+
+Owner-authenticated routes: `GET /api/projects/{id}/documents` returns availability, selected-source metadata/staleness and limits; `GET /api/projects/{id}/documents/search?q=...&limit=5` returns attributed untrusted chunks. `POST /api/projects/{id}/documents/index` and `/remove` accept exactly `{"attachment_id":"...","confirm":true}`. Index accepts only an attachment imported into that project; removal retains the original attachment/file. Write admission remains enforced. No filesystem/network/model action occurs. Source hashes identify saved excerpts, not full files. See PROJECT_DOCUMENT_SEARCH.md for caps, query normalization, trust and lifecycle semantics.
