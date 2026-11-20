@@ -1,5 +1,7 @@
 # Security model
 
+Exact no-progress proposal cycles of periods1–3 are blocked before re-execution, within a bounded recent history. Real content changes reset multi-step history; this is not semantic cycle detection. Existing approval/containment/delivery gates remain authoritative. See docs/AGENT_PROGRESS_GUARDS.md for tested cases and limits.
+
 ## Selected-document retrieval boundary
 
 Project search is an explicit owner action over previously imported excerpts, separate from approved memory. No file/server scan, embedding service, dynamic extension load or inference is involved in index/search. Literal parameterized queries are project-scoped; metadata/hash/chunk offsets and bytes are revalidated against the saved source before retrieval. Stale/altered/obvious credential-like content is omitted; this is not complete DLP or a prompt-injection guarantee. Index updates are atomic and capped; existing storage admission/database limits apply. Prompt context is bounded and labeled untrusted. Removing a derived index leaves the imported attachment, prior task snapshots and backups intact. Existing cloud/network/tool/execution approvals remain authoritative. See docs/PROJECT_DOCUMENT_SEARCH.md and its negative tests.

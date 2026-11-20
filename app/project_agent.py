@@ -226,10 +226,13 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
                 if stopped():
                     break
                 fingerprint = full_task.proposal_fingerprint(model_text)
-                if full_task.repeated_proposal(evidence, fingerprint):
-                    final, summary = "blocked", "Repeated identical tool proposal without progress. Saved work remains available for review."
+                cycle_period = full_task.proposal_cycle_period(evidence, fingerprint)
+                if cycle_period:
+                    summary = ("Repeated identical tool proposal without progress." if cycle_period == 1
+                               else f"Repeated tool proposal cycle (period {cycle_period}) without content progress.")
+                    final, summary = "blocked", summary + " Saved work remains available for review."
                     evidence.append({"attempt": attempt, "type": "rejected", "feedback": summary,
-                                     "proposal_fingerprint": fingerprint})
+                                     "proposal_fingerprint": fingerprint, "cycle_period": cycle_period})
                     write("running", summary)
                     break
                 proposal = tools.parse_round_proposal(model_text)
@@ -273,7 +276,10 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
                 hashes = {item["path"]: item["sha256_after"] for item in result["operations"]
                           if item.get("path") in edited and item.get("sha256_after")}
                 record = {"attempt": attempt, "type": "tools", "digest": digest, "changed": edited,
-                          "hashes": hashes, "feedback": previous_feedback, "proposal_fingerprint": fingerprint}
+                          "hashes": hashes, "feedback": previous_feedback, "proposal_fingerprint": fingerprint,
+                          "content_progress": any(item.get("path") in edited and item.get("sha256_after")
+                                                  and item.get("sha256_before") != item["sha256_after"]
+                                                  for item in result["operations"])}
                 evidence.append(record)
                 write("running", proposal["summary"])
                 if stopped():

@@ -348,6 +348,29 @@ def repeated_proposal(evidence, fingerprint):
     return previous == fingerprint
 
 
+def proposal_cycle_period(evidence, fingerprint):
+    """Exact suffix cycles of 1–3 proposals; no payloads or semantic inference.
+
+    At most 96 recent evidence rows and six proposal identities are examined.
+    Actual content progress resets multi-step history. Older saved edits without
+    the progress bit are conservatively treated as progress rather than blocked.
+    """
+    recent = []
+    for item in reversed(evidence[-96:]):
+        if item.get("content_progress") or ("content_progress" not in item
+                and item.get("type") == "tools" and item.get("changed") and item.get("hashes")):
+            break
+        if item.get("proposal_fingerprint"):
+            recent.append(item["proposal_fingerprint"])
+            if len(recent) == 5:
+                break
+    sequence = list(reversed(recent)) + [fingerprint]
+    for period in (1, 2, 3):
+        if len(sequence) >= 2 * period and sequence[-period:] == sequence[-2 * period:-period]:
+            return period
+    return 0
+
+
 def implementation_prompt(request, plan, prior, selected, *, verified=False, existing=()):
     gate = ("All planned checks passed. Review these actual results against the full request. "
             "If satisfied, return status complete with operations []. If something is missing, continue with actual tool operations."

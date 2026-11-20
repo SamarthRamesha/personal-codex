@@ -23,8 +23,11 @@ def main():
     parser.add_argument("--conflict", action="store_true")
     parser.add_argument("--cancel", action="store_true")
     parser.add_argument("--repeat-proposal", action="store_true", help="prove identical invalid proposals stop without writes")
+    parser.add_argument("--proposal-cycle", type=int, choices=(2, 3), help="prove an alternating rejected-proposal cycle stops without writes")
     parser.add_argument("--documents", action="store_true", help="prove opt-in attributed references reach actual task prompts")
     args = parser.parse_args()
+    if args.proposal_cycle and (args.live or args.repeat_proposal or args.existing or args.cancel or args.conflict):
+        parser.error("--proposal-cycle is a standalone deterministic acceptance scenario")
     out = args.output.resolve()
     out.mkdir(mode=0o700)
     os.environ.update(PERSONAL_CODEX_DATA=str(out / "state"), PERSONAL_CODEX_PROJECT_ROOTS=str(out / "managed"),
@@ -79,6 +82,10 @@ def main():
                                        "files":["calculator.py", "tests/test_calculator.py"], "test":"unittest",
                                        "build":None, "smoke":{"argv":["python3","calculator.py","2","+","3"],"expect":"5"}})}
         calls += 1
+        if args.proposal_cycle:
+            return {"text": json.dumps({"status":"continue", "summary":f"Cycle round {calls}",
+                    "operations":[{"tool":"apply_patch", "path":f"missing-{(calls-1) % args.proposal_cycle}.py",
+                                   "old_text":"old", "new_text":"new"}]})}
         if args.repeat_proposal:
             return {"text": json.dumps({"status": "continue", "summary": f"Rejected round {calls}",
                     "operations": [{"tool": "apply_patch", "path": "missing.py", "old_text": "old", "new_text": "new"}]})}
@@ -174,7 +181,14 @@ def main():
         ev["checks"].append("content-minimal inference measurements survive task inspection")
         delivery = run["delivery"]
         assert delivery, run
-        if args.repeat_proposal:
+        if args.proposal_cycle:
+            period = args.proposal_cycle
+            assert run["status"] == "blocked" and f"cycle (period {period})" in run["summary"], run["summary"]
+            assert calls == 2 * period, calls
+            assert run["evidence"][-1]["cycle_period"] == period
+            assert not list(destination.glob("*.py")) and not (destination / "README.md").exists()
+            ev["checks"].append(f"period-{period} rejected cycle stops after {calls} calls without delivery")
+        elif args.repeat_proposal:
             assert run["status"] == "blocked" and "Repeated identical tool proposal" in run["summary"], run["summary"]
             assert calls == 2 and not list(destination.glob("*.py"))
             assert not (destination / "README.md").exists()
