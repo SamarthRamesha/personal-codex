@@ -6,6 +6,6 @@ Local Mac coding, attributed document search and bounded repair loops are implem
 
 The current API source passed 17 disposable-Linux checks. Actual JARVIS deployment remains incomplete: private dashboard connectivity works, HTTPS443/backend8787 refuse, SSH is locked, and importer/image/ownership/family-preservation gates remain unresolved. No server changes were performed. Do not request the unknown passphrase again or bypass existing permissions.
 
-The owner explicitly authorized GitHub repository updates on 20 November. Preserve remote/local history, publish only reviewed source/docs, and verify hosted checks. Runtime profiles, private inventory, credentials, compiled bundles and the protected diagnostic remain excluded.
+The owner explicitly authorized GitHub repository updates on 20 November. Both main and stabilization were fast-forwarded to f2ea8e7; all three hosted jobs passed in run44749454322. Preserve remote/local history, publish only reviewed source/docs, and reverify current hosted checks. Runtime profiles, private inventory, credentials, compiled bundles and the protected diagnostic remain excluded.
 
 Prior milestones and safe pauses are preserved in Git history and private checkpoints. They are historical; continue from the current source and latest evidence. Refresh the continuation contract after each meaningful phase.

@@ -62,7 +62,7 @@ Latest local backend regression: **372 passed, 5 skipped, 377 discovered**. Late
 
 Real installed-model CLI and existing-project ML repair were exercised earlier; see [ML acceptance](docs/ML_WORKFLOW_ACCEPTANCE.md) for the authored scaffold, failures, independent tests and limits. The newest Mac actions UI could not be visually verified because the UI connector stalled; native policy tests and the build passed. No universal coding or system-automation success is claimed.
 
-[GitHub Actions](.github/workflows/verify.yml) runs isolated backend, frontend and native checks without private server credentials, models or a JARVIS connection.
+[GitHub Actions](.github/workflows/verify.yml) runs isolated backend, frontend and native checks without private server credentials, models or a JARVIS connection. The [verified hosted run](https://github.com/SamarthRamesha/personal-codex/actions/runs/44749454322) passed all three jobs; hosted optional/platform skips differ from the prepared Mac.
 
 ## Privacy and boundaries
 

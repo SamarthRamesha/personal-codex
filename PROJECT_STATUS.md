@@ -23,4 +23,4 @@ The outbound Mac inference worker and restricted backend profile are implemented
 | New Mac actions UI | Blocked by UI connector; no visual success claim |
 | JARVIS | Dashboard TCP reachable; HTTPS443 and backend8787 refuse; remote acceptance incomplete |
 
-See [implementation matrix](docs/IMPLEMENTATION_MATRIX.md), [remaining work](TASKS.md), [getting started](docs/GETTING_STARTED.md) and [continuation](NEXT_SESSION_PROMPT.md). GitHub synchronization and hosted CI outcomes must be checked from the actual remote, not inferred from local commits.
+See [implementation matrix](docs/IMPLEMENTATION_MATRIX.md), [remaining work](TASKS.md), [getting started](docs/GETTING_STARTED.md) and [continuation](NEXT_SESSION_PROMPT.md). Both GitHub branches were fast-forwarded to f2ea8e7. All three hosted jobs passed on that source: Linux backend (363 passed / 14 optional or platform skips), frontend and macOS native. [Verified run](https://github.com/SamarthRamesha/personal-codex/actions/runs/44749454322). The original failed readiness fixture and its test-only correction are recorded in the development log. Recheck current remote state on continuation.

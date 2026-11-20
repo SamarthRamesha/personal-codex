@@ -12,7 +12,7 @@ Read-only JARVIS test resolved private DNS and connected dashboard80;443/8787ref
 
 ## Hosted verification follow-through
 
-The first published source9d2de2d passed GitHub's frontend and macOS native jobs. Its Linux backend job found a fixture assumption: the process-readiness test inherited the production200GBfree reserve. Only the disposable test subprocess now explicitly uses1GBreserve/5GBdata admission; production limits and dedicated low-space tests are unchanged. The six affected runtime tests passed locally after the fix. A fresh complete hosted run is required and must be checked from GitHub; do not infer success from the local result. Current operations/security/container guides now replace old untested-image and74GBinitial-allocation claims with actual scoped proof and the strict24GBdata/25GBtotal contract.
+The first published source9d2de2d passed GitHub's frontend and macOS native jobs. Its Linux backend job found a fixture assumption: the process-readiness test inherited the production200GBfree reserve. Only the disposable test subprocess now explicitly uses1GBreserve/5GBdata admission; production limits and dedicated low-space tests are unchanged. The six affected runtime tests passed locally after the fix. The follow-up f2ea8e7 source passed all three hosted jobs in run44749454322: Linux backend377discovered/363passed/14optional-or-platform skips(63.188s), frontend and macOS native. Both remote branches match that source. The repository description/topics were updated without changing access or visibility. Current operations/security/container guides now replace old untested-image and74GBinitial-allocation claims with actual scoped proof and the strict24GBdata/25GBtotal contract.
 
 ## Earlier verified milestones
 
