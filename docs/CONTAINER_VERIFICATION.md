@@ -1,5 +1,9 @@
 # Disposable Linux verification
 
+## Final implementation verified — 2026-11-20
+
+The saved source5ec6f4cd26a2cf21684eb776616dc8bc798781f5/context0954acb14c6eafeeb3e043dd21b5249727900e1fe0915adaa0d2ea5dca4dcab3 built and passed all13container checks in18.827s after the explicit resume. Image7b232516613df906a4f0a0fc73be68cc49870c78e7a5a069d22f8c56406e52f5 is private in the same disposable guest. Authentication/policy/resources/additive filter/dedicated mounts/restart persistence passed; idle21.11MiB/one process, final clean stop exit0/noOOM. No new base download, publication or JARVIS action. The one-GB fixture reserve and identity UID-map limitations below still apply; production200GB reserve/coding-disabled gates are unchanged. Earlier pause rejection did not run this command; the later explicit trigger supplied authorization to resume it. Later source changes require fresh source-specific acceptance.
+
 On2026-11-19, source `a4276b4c8f994be4663f7a066765f8253d29e30f` was packaged by the committed-source allowlist builder, contextSHA256 `00c610084e55cc9ea58bd3cfdb7ba36591a376f1a5aa752b9fce8fab073a06e3`. The archive excludes diagnostics, credentials, runtime data and untracked files. The API image built with network disabled against the existing official Python base digest in `deploy/base-image.lock.json`.
 
 The disposable Debian13 x86_64 guest had1vCPU/1536MiBRAM/an8GiB overlay/no host mounts and only loopback SSH forwarding. It used its own newly provisioned operator; this provides no authority or runtime evidence on JARVIS. Thirteen actual Linux network-policy tests passed with real filter installation, accepted HTTP responses and descendant connection denial.

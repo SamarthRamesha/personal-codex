@@ -1,5 +1,9 @@
 # Development log
 
+## Resumed by user — 2026-11-20
+
+The new user message “it's back” fulfills the second pause below. All98saved artifact hashes and the full Git bundle verified; entry HEAD40f572c, tracked tree clean, implementation5ec6f4c retained. Protected diagnostic remains unread/unstaged. Current private resumed-mission-2026-11-20/RESUMED_STATE.json is active; old pause/checkpoint records remain historical. Resume the same master mission. Next: exact5ec6f4c container verification in the dedicated disposable guest, then remaining local engineering and authenticated target/preservation gates. No JARVIS write, privileged workaround, credential guessing/extraction, declined probe or live policy/Serve change is authorized by the trigger. Preserve current user browsing; use separate windows or hidden in-app browser.
+
 ## PAUSED BY USER — second safe stop, 2026-11-19
 
 **Do not continue this mission, start services/VM, contact JARVIS, run engineering tasks or poll until a future user message explicitly says “it's back”.** The latest user request quotes that phrase only as a future condition. No automation is scheduled. This pause supersedes every active/next-action section below.
