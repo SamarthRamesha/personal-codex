@@ -346,3 +346,40 @@ Verified on Linux: backend 382 tests OK (skipped=55); backend with `PERSONAL_COD
 378 tests OK (skipped=4) before the boundary tests were added; frontend 26 tests pass; `tsc -b` clean;
 `npm run build` (tsc + vite) clean. Not verified: any Swift compilation, every native rerun, capture
 and OCR, the browser workflow, and the local-model end-to-end path.
+
+## 21 November 2026 — phase 0 closed, publication unblocked, risk register
+
+Started from the reported state and verified it instead of trusting it: the worktree was clean at
+`bbcc62e`, 11 commits ahead of `origin/personal-codex/mac-automation`, and the primary checkout still
+held the owner's uncommitted `web/style.css` untouched.
+
+Diagnosed the publication failure rather than repeating it. The push tool transmits the chat
+checkout's HEAD, which sits on the stable branch 32 commits behind its remote, so every earlier push
+was rejected as "behind its remote counterpart". Re-pointing only that HEAD with
+`git symbolic-ref refs/heads/personal-codex/mac-automation` for the duration of the push sent
+`a6090d7..bbcc62e` as a fast-forward and then restored the branch. No file, index entry or branch
+content changed: `git status --porcelain` and the `sha256sum` of `web/style.css` were identical
+before and after, and `git ls-remote` confirms the new tip. No force-push, reset or checkout of user
+work was performed. A verified bundle of the branch was also written to the chat workspace as a
+second copy (`git bundle verify`: complete history).
+
+Baseline re-run rather than quoted: 382 backend tests OK with 62 environment-gated skips, and 382 OK
+with `PERSONAL_CODEX_HTTP_TESTS=1` (11 skips). The skip difference is the loopback HTTP, pinned
+gateway wheel, disposable-syscall and macOS gates, not new failures.
+
+Phase 1 review then found one real weakness that did not need a Mac. The synthetic self-check passed
+`approval_is_one_use` on *any* thrown error, so an unrelated fault during the second execute would
+have been reported as proven one-use enforcement. It now requires `AutomationError.actionNotConfirmed`
+and records a failure otherwise. The stronger identity was also never exercised: the check bound a
+wrong title only, so a wrong `AXWindowNumber` was implemented but untested. It now binds the correct
+title with `number + 1` and records `window_number_identity_refused` when the fixture exposes a
+number. A frontend contract test asserts both source shapes so a later edit cannot quietly undo them.
+Frontend: 34 tests pass, `tsc -b` clean.
+
+Wrote `docs/RISK_REGISTER.md`: 17 risks with severity, evidence, mitigation, verification method and
+status. Phase 0 is recorded as passed, phase 1 as blocked on native acceptance, phases 2-5 as gated
+and not started. Nothing in it claims a compiled or natively accepted result.
+
+Not verified: any Swift compilation of `a6090d7..54a11bd`, the 31 helper self-tests, and every native
+self-check. No compiler or macOS SDK exists in this workspace, and the hosted CI result is not
+observable from here.

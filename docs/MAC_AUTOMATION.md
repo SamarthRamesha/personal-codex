@@ -124,7 +124,7 @@ does not require guessing.
 |---|---|---|
 | Automation boundary: no HTTP route reaches the helper | Linux, every push | 4 checks, mutation-tested |
 | Window identity logic | Linux, every push | unit tests |
-| Hosted CI: Swift compile + 31 helper self-tests | macOS CI runner | pending your push |
+| Hosted CI: Swift compile + 31 helper self-tests | macOS CI runner | runs on every push; result not observable from the Linux workspace |
 | Native self-check, scrollbar, capture/OCR, browser | needs a Mac session | not run |
 
 The Linux session that produced these changes had no macOS SDK, so the Swift edits have not been
