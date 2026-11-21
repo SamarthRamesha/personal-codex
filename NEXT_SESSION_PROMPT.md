@@ -8,29 +8,35 @@ Read README.md, PROJECT_STATUS.md, docs/MAC_AUTOMATION.md, docs/IMPLEMENTATION_M
 
 ## Latest session (21 November 2026)
 
-Feature head is now **published**: `personal-codex/mac-automation` on origin carries every commit on
-this branch, starting with the fast-forward `a6090d7..bbcc62e`. Check the tip with
-`git log --oneline -3 origin/personal-codex/mac-automation`. Publishing had been failing because the push tool
-sends the chat checkout's HEAD, which is the stable branch and behind its remote; re-pointing only
-that HEAD with `git symbolic-ref`, pushing, and restoring it left every file byte-identical
-(`web/style.css` hash and `git status` matched before and after). A verified bundle also sits in the
-chat workspace at `.safety/mac-automation.bundle`.
+Feature head `7125f25` is published on `personal-codex/mac-automation`; stable `main` and
+`personal-codex/stabilization` remain `64189ef` and were not touched. Draft PR #2 is still a draft
+and is not to be merged.
 
-Linux-verified this session: backend 382 tests OK with 62 environment-gated skips, and 382 OK with
-`PERSONAL_CODEX_HTTP_TESTS=1` (11 skips); frontend 34 tests pass; `tsc -b` clean. Earlier sessions on
-this branch added the automation-boundary tests (mutation-tested), unit-tested window identity,
-`AXWindowNumber` binding, the deterministic scrollbar check, and the panel's self-check summary. This
-session tightened `approval_is_one_use` so only `AutomationError.actionNotConfirmed` counts as proof
-and added a native `window_number_identity_refused` check, and wrote `docs/RISK_REGISTER.md`.
+**CI is green for `7366121`**: workflow "Verify Personal Codex" run #19 (`44859571919`) completed
+successfully — backend, frontend, and the macOS `native` job (helper built with `--self-test`, 31
+checks; `cargo test --locked`, 13 tests). That retires the "never compiled" risk for that revision.
+It is not UI acceptance. `7125f25` has its own runs (push `44860058265`, PR `44860062647`): read the
+`native` job there before claiming that revision compiles.
 
-Still unverified and requiring the Mac: every Swift compile, the 31 helper self-tests, the synthetic
-self-check including the scrollbar and both identity guards, capture/OCR and protected-window refusal,
-the new-window browser workflow, and the local-model plan against a real synthetic window. The macOS
-CI job (`scripts/build_mac_automation.py --self-test` plus `cargo test`) compiles and self-tests the
-helper on push, so read its result first and use its failure stage before touching the panel.
+The publication problem is solved: pushes failed because the push tool sends the chat checkout's
+HEAD, which sits on the stable branch. Re-pointing only that HEAD with `git symbolic-ref`, pushing,
+and restoring it left every file byte-identical (`web/style.css` hash and `git status` matched). A
+verified bundle sits in the chat workspace at `.safety/mac-automation.bundle`.
 
-`docs/RISK_REGISTER.md` is the gate record: phase 0 passed, phase 1 is blocked on native acceptance,
-and phases 2-5 do not start until it passes. Do not describe any of the above as accepted.
+Changes this session: `approval_is_one_use` now requires `AutomationError.actionNotConfirmed` (any
+error used to count as proof); the self-check exercises a wrong `AXWindowNumber`
+(`window_number_identity_refused`); `newBrowserWindow` binds the created window by title/number
+instead of its index, which creating a window can reorder. Frontend 35 tests pass, `tsc -b` clean,
+backend suite unchanged by these edits (382 OK, 62 environment-gated skips; 382 OK with
+`PERSONAL_CODEX_HTTP_TESTS=1`, 11 skips).
+
+New documents: `docs/RISK_REGISTER.md` (17 risks with statuses) and `docs/MAC_ACCEPTANCE_RUNBOOK.md`
+(stages 0-7 with exact commands and the evidence each stage must produce).
+
+Still unverified and requiring the Mac: every real-UI check — the synthetic self-check including
+scrollbar and both identity guards, capture/OCR with protected-window refusal, cancellation and
+expiry, the new-window browser workflow, and the local-model plan. Phase 1's gate is only 
+"partially verified" until those runs happen.
 
 ## Current first priority
 
@@ -42,7 +48,7 @@ The owner was asked to manually grant Accessibility to Personal Codex Automation
 
 ## Exact next work
 
-1. Verify current preview source hashes/signature and permission status. If owner grants, run the bundled native synthetic self-check through the product, record actual results and fix observed issues. Keep optional capture separately consented. Do not count in-memory tests as UI acceptance.
+1. Read CI for `7125f25`, then follow `docs/MAC_ACCEPTANCE_RUNBOOK.md` stages 0-7 on the M3 and record every named check. Do not count CI, self-tests or in-memory policy tests as UI acceptance. Stop at the first failing stage and report its `stage`/`error` verbatim.
 2. Accept a disposable browser form in a newly created window, preserving existing tabs. Verify origin/focus isolation, stale-state refusal, Stop and meaningful changed results. Natural-language proposals still require exact review. Known app/label/credential filters are heuristic and public AX support varies; do not promise hostile-app isolation or universal automation.
 3. Update readable docs, private receipts/checkpoints and the feature branch from actual tests; inspect current hosted CI. Do not merge the preview into stable main until acceptance is justified. No force push.
 4. Only when priority 1 is complete: visually accept the earlier opening panel, then reassess JARVIS read-only and prepare exact deployment operations, then broader development workflows, then production operations.
