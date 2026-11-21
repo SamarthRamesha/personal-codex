@@ -63,6 +63,18 @@ cd desktop/automation && ./.build/Personal\ Codex\ Automation.app/Contents/MacOS
 
 Expect JSON with `accessibility`, `screen_capture`, `key_events` booleans. Record the starting values.
 
+To run the whole UI self-check as one command that prints `PASS`/`FAIL` per check and exits non-zero
+unless every check passed, use this instead of reading the panel's raw JSON by eye:
+
+```sh
+python3 scripts/mac_acceptance.py --run --save mac-acceptance.json
+python3 scripts/mac_acceptance.py --run --capture --save mac-acceptance-capture.json
+```
+
+Exit status: `0` verified, `1` not verified, `2` Accessibility not granted, `3` stopped early,
+`4` candidate helper missing. It reads or runs the candidate in `desktop/automation/.build/` only; it
+never grants permission, signs anything or touches the installed preview.
+
 ## Stage 1 — permissions and the panel
 
 Open Personal Codex, open **Mac automation**. Confirm the three permission indicators. Use
@@ -152,7 +164,8 @@ that — it is a real finding about `⌘N` handling for that browser.
 ## Evidence to send back
 
 For each stage: pass/fail, the exact check names from the panel, and any `stage`/`error` text. Paste
-the JSON receipt from stage 0 (it contains hashes, no personal data). Nothing else is needed, and
+the JSON receipt from stage 0 (it contains hashes, no personal data) and, for stages 2-3, the
+`mac-acceptance.json` written by the command above. Nothing else is needed, and
 nothing above requires sending window contents anywhere.
 
 ## Recording the result
