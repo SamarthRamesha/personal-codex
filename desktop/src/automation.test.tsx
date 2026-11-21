@@ -1,6 +1,8 @@
 import {describe,it,expect} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {readFileSync} from 'node:fs';
+import rust from '../src-tauri/src/automation.rs?raw';
+import swift from '../automation/Sources/Main.swift?raw';
+import ui from './MacAutomation.tsx?raw';
 import {AutomationReview,MacAutomation} from './MacAutomation';
 
 describe('scoped Mac automation',()=>{
@@ -19,9 +21,6 @@ describe('scoped Mac automation',()=>{
     expect(html).toContain('used once');
   });
   it('keeps native/helper argument contracts aligned',()=>{
-    const rust=readFileSync(new URL('../src-tauri/src/automation.rs',import.meta.url),'utf8');
-    const swift=readFileSync(new URL('../automation/Sources/Main.swift',import.meta.url),'utf8');
-    const ui=readFileSync(new URL('./MacAutomation.tsx',import.meta.url),'utf8');
     expect(rust).toContain('confirmed: bool');expect(ui).toContain('confirmed:modelConsent');
     expect(swift).toContain('request["window_index"]');expect(ui).toContain('window_index:windowIndex');
     expect(rust).toContain('if result.is_err() { guard.take();');

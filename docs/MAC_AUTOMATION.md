@@ -27,6 +27,8 @@ python3 scripts/build_mac_automation.py --self-test
 cd desktop
 npm ci --ignore-scripts
 npm run tauri -- build --bundles app --config '{"productName":"Personal Codex Automation Preview","identifier":"local.personalcodex.desktop.automationpreview"}'
+codesign --force --sign - "src-tauri/target/release/bundle/macos/Personal Codex Automation Preview.app"
+codesign --verify --deep --strict "src-tauri/target/release/bundle/macos/Personal Codex Automation Preview.app"
 ```
 
 The helper requires macOS 14 or later and Apple's installed Swift compiler. The build does not grant permissions or download models. The app is signed ad hoc, not notarized.
