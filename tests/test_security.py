@@ -85,7 +85,7 @@ class AuthHttpTests(unittest.TestCase):
         self.thread=threading.Thread(target=self.http.serve_forever,daemon=True);self.thread.start()
     def tearDown(self):
         self.http.shutdown();self.http.server_close();self.thread.join()
-        server.STORE.conn.close();server.DATA,server.DB_PATH,server.STORE,server.AUTH=self.old
+        server.STORE.close();server.DATA,server.DB_PATH,server.STORE,server.AUTH=self.old
         self.tmp.cleanup()
     def request(self,method,path,body=None,headers=None):
         client=http.client.HTTPConnection('127.0.0.1',self.http.server_port,timeout=3)

@@ -169,7 +169,7 @@ class AgentApiTests(unittest.TestCase):
         self.http.shutdown()
         self.http.server_close()
         self.thread.join()
-        server.STORE.conn.close()
+        server.STORE.close()
         server.DATA, server.DB_PATH, server.STORE, server.PROVIDER_TRANSPORT = self.old
         self.tmp.cleanup()
 
@@ -312,7 +312,7 @@ class RoundApiFixture(unittest.TestCase):
 
     def tearDown(self):
         self.http.shutdown(); self.http.server_close(); self.thread.join()
-        server.STORE.conn.close()
+        server.STORE.close()
         server.DATA, server.DB_PATH, server.STORE, server.PROVIDER_TRANSPORT, server.MAX_ROUNDS = self.old
         self.tmp.cleanup()
 

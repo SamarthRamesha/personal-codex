@@ -29,7 +29,7 @@ class MemoryPolicyTests(unittest.TestCase):
                            (self.task, self.project, "synthetic task", "completed", "[]", 1, 1))
 
     def restore(self):
-        server.STORE.conn.close()
+        server.STORE.close()
         server.DATA, server.DB_PATH, server.STORE, server.AUTH = self.old
 
     def proposal(self, content="Run the local regression suite"):

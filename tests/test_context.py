@@ -186,7 +186,7 @@ class ContextApiMemoryTests(unittest.TestCase):
             self.assertEqual(listing["memory"], [])
         finally:
             http.shutdown(); http.server_close(); thread.join()
-            server.STORE.conn.close()
+            server.STORE.close()
             server.DATA, server.DB_PATH, server.STORE = old
 
 

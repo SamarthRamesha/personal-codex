@@ -160,6 +160,15 @@ class Store:
     def write(self, sql, args=()):
         with self.lock:
             self.conn.execute(sql, args); self.conn.commit()
+    def close(self):
+        """Close the shared connection under the lock every reader and writer already takes.
+
+        Worker and streamed-response threads can still be inside rows()/write(); closing the
+        connection underneath one frees SQLite's handle mid-query and can crash the process.
+        Taking this lock makes close wait for that query to finish instead.
+        """
+        with self.lock:
+            self.conn.close()
     def decide_approval(self, approval_id: str, status: str) -> bool:
         with self.lock:
             result=self.conn.execute("UPDATE approvals SET status=? WHERE id=? AND status='pending'",(status,approval_id))
@@ -2146,7 +2155,7 @@ def main():
             drained=http.drain()
             chat_drained=conversations.drain(5)
             agent_drained=project_agent.stop_all()
-            if drained and chat_drained and agent_drained:STORE.conn.close()
+            if drained and chat_drained and agent_drained:STORE.close()
             else:print('Some requests interrupted; startup recovery will reconcile them',file=sys.stderr)
             for sig,handler in previous.items():signal.signal(sig,handler)
 

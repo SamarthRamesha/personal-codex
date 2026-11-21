@@ -44,7 +44,7 @@ class TaskBackendTests(unittest.TestCase):
                         "provider_id": self.provider, "rounds": 4, "confirm": True}
 
     def restore(self):
-        server.STORE.conn.close()
+        server.STORE.close()
         server.DATA, server.DB_PATH, server.STORE, server.AUTH = self.old
 
     def task(self):

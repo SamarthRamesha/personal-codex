@@ -208,7 +208,7 @@ class InteractionApiTests(unittest.TestCase):
         self.http.shutdown()
         self.http.server_close()
         self.thread.join(timeout=5)
-        server.STORE.conn.close()
+        server.STORE.close()
         server.DATA, server.DB_PATH, server.STORE = self.old
         self.tmp.cleanup()
 

@@ -86,7 +86,7 @@ class ConversationStoreTests(unittest.TestCase):
 
     def tearDown(self):
         conversations.TRANSPORT = self.old_transport
-        server.STORE.conn.close()
+        server.STORE.close()
         server.DATA, server.DB_PATH, server.STORE = self.old_data, self.old_db, self.old_store
         self.tmp.cleanup()
 
@@ -126,7 +126,7 @@ class ConversationStoreTests(unittest.TestCase):
     def test_message_persists_across_a_restart(self):
         row = self.conversation()
         conversations.new_message(self.store, row["id"], "user", "remember this line")
-        self.store.conn.close()
+        self.store.close()
         server.STORE = server.Store()
         self.store = server.STORE
         detail = conversations.conversation_detail(self.store, row["id"])
@@ -239,7 +239,7 @@ class ConversationStoreTests(unittest.TestCase):
         queued = conversations.new_message(self.store, row["id"], "assistant", "", status="queued")
         self.assertTrue(conversations.conversation_report(self.store, row["id"])["streaming"])
         # A restart drops every worker thread; sqlite is the only state that survives.
-        self.store.conn.close()
+        self.store.close()
         server.STORE = server.Store()
         self.store = server.STORE
         for message_id in (streamed["id"], queued["id"]):
@@ -335,7 +335,7 @@ class ConversationHttpTests(unittest.TestCase):
     def tearDown(self):
         conversations.TRANSPORT = self.old_transport
         self.http.shutdown(); self.http.server_close(); self.thread.join()
-        server.STORE.conn.close()
+        server.STORE.close()
         server.DATA, server.DB_PATH, server.STORE = self.old_data, self.old_db, self.old_store
         self.tmp.cleanup()
 

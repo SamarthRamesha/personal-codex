@@ -23,7 +23,7 @@ class DocumentTests(unittest.TestCase):
             self.store.write('INSERT INTO projects VALUES (?,?,?,?)',(identifier,'synthetic',str(path),1))
 
     def restore(self):
-        self.store.conn.close();server.DATA,server.DB_PATH,server.STORE,server.AUTH=self.old
+        self.store.close();server.DATA,server.DB_PATH,server.STORE,server.AUTH=self.old
 
     def attachment(self,text='Amber deployment rule: keep the demo service private.',project=None,name='architecture.txt'):
         identifier=server.uid();self.store.write('INSERT INTO project_attachments VALUES (?,?,?,?,?,?)',(identifier,project or self.project,name,'local text extraction',text,1));return identifier

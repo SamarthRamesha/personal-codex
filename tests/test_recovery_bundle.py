@@ -32,7 +32,7 @@ class RecoveryTests(unittest.TestCase):
         self.store.write('INSERT INTO workspaces VALUES (?,?,?,?,?,?)',('task','p',str(workspace),'checkpoint','ready',1))
         self.store.write('INSERT INTO conversations (id,title,project_id,model,created_at,updated_at) VALUES (?,?,?,?,?,?)',('chat','private fixture conversation','p','fixture',1,1))
         self.store.write('INSERT INTO operations (id,task_id,round_id,round_number,op_index,tool,digest,status,started_at,applied) VALUES (?,?,?,?,?,?,?,?,?,?)',('op','task','round',1,1,'apply_patch','d'*64,'complete',1,1))
-        self.store.conn.close()
+        self.store.close()
         self.key=self.base/'recovery-key';self.key.write_bytes(Fernet.generate_key());self.key.chmod(0o600)
         self.release=self.base/'release.zip'
         with zipfile.ZipFile(self.release,'w') as z:z.writestr('personal-codex/README.md','synthetic source release')

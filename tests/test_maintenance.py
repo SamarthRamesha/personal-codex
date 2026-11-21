@@ -16,7 +16,7 @@ class SnapshotTests(unittest.TestCase):
         self.store.write('INSERT INTO projects VALUES (?,?,?,?)',('p','Fixture','/synthetic',1))
         self.policy=patch.dict(os.environ,{'PERSONAL_CODEX_RESERVE_GB':'1','PERSONAL_CODEX_STORAGE_GB':'75'});self.policy.start()
     def tearDown(self):
-        self.store.conn.close();server.DATA,server.DB_PATH=self.old;self.policy.stop();self.tmp.cleanup()
+        self.store.close();server.DATA,server.DB_PATH=self.old;self.policy.stop();self.tmp.cleanup()
     def test_snapshot_restore_integrity_and_original_preservation(self):
         result=maintenance.snapshot(self.store,server.DATA,server.DB_PATH)
         self.assertEqual(result['integrity'],'ok')
