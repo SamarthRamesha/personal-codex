@@ -15,6 +15,9 @@ func axElements(_ element: AXUIElement, _ attribute: String, max: Int) -> [AXUIE
           let values = array as? [AXUIElement] else { return [] }
     return values
 }
+func axInt(_ element: AXUIElement, _ attribute: String) -> Int? {
+    (axValue(element, attribute) as? NSNumber)?.intValue
+}
 func axElementValue(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
     guard let value = axValue(element, attribute), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
     return unsafeBitCast(value, to: AXUIElement.self)
@@ -38,7 +41,7 @@ func rect(_ element: AXUIElement) -> CGRect? {
     var sensitivePresent = false
     var scopedOrigin: String?
     var browser: Bool { browserIdentifiers.contains(identifier) }
-    init(pid: pid_t, windowIndex: Int, expectedTitle: String? = nil) throws {
+    init(pid: pid_t, windowIndex: Int, expectedTitle: String? = nil, expectedNumber: Int? = nil) throws {
         guard AXIsProcessTrusted() else { throw AutomationError.permissionRequired }
         _ = NSApplication.shared
         guard let app = NSRunningApplication(processIdentifier: pid), let identifier = app.bundleIdentifier,
@@ -51,6 +54,11 @@ func rect(_ element: AXUIElement) -> CGRect? {
         // A window index is only a position. Refuse when the window now at that position is not the one
         // the caller listed, instead of silently controlling a different window.
         if let expectedTitle, axString(selected, kAXTitleAttribute) != expectedTitle { throw AutomationError.targetChanged }
+        // The window number survives reordering and title edits, so it is the stronger identity.
+        // It is optional: some apps expose none, and the title check above still applies.
+        if let expectedNumber, let observedNumber = axInt(selected, "AXWindowNumber"), observedNumber != expectedNumber {
+            throw AutomationError.targetChanged
+        }
         self.app = app; self.launched = app.launchDate; self.identifier = identifier
         self.application = application; self.window = selected
     }

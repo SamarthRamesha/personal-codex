@@ -28,6 +28,15 @@ describe('window identity for a new scope',()=>{
     expect(windowStillMatches({index:0,title:'Named'},[{index:0,title:'   '}],0)).toBe(false);
     expect(windowMismatchReason({index:0,title:''},[{index:0,title:''}],0)).toContain('no title');
   });
+  it('binds the window number when both sides expose one',()=>{
+    expect(windowStillMatches({index:0,title:'Doc',number:7},[{index:0,title:'Doc',number:7}],0)).toBe(true);
+    // Same title at the same position but a different window number means the window was replaced.
+    expect(windowStillMatches({index:0,title:'Doc',number:7},[{index:0,title:'Doc',number:9}],0)).toBe(false);
+    expect(windowMismatchReason({index:0,title:'Doc',number:7},[{index:0,title:'Doc',number:9}],0)).toContain('replaced');
+    // Numbers are optional: when an app exposes none, the title check still decides.
+    expect(windowStillMatches({index:0,title:'Doc'},[{index:0,title:'Doc',number:9}],0)).toBe(true);
+    expect(windowStillMatches({index:0,title:'Doc',number:7},[{index:0,title:'Doc'}],0)).toBe(true);
+  });
   it('asks for a window when nothing was chosen',()=>{
     expect(windowStillMatches(undefined,[listed],0)).toBe(false);
     expect(windowMismatchReason(undefined,[listed],0)).toBe('Choose a window to control.');

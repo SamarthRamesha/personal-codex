@@ -11,7 +11,7 @@ type Plan={plan_id:string;proposal:Proposal;observation_digest:string;effect:str
 type Scope={scope_id:string;snapshot:Snapshot;app:string;bundle_id:string;pid:number};
 type Permission={accessibility:boolean;screen_capture:boolean;key_events:boolean};
 type Capture={image_base64:string;ocr:string;window:string};
-type Response={snapshot?:Snapshot;scope_id?:string;app?:string;bundle_id?:string;windows?:{index:number;title:string}[];status?:string;actions?:number};
+type Response={snapshot?:Snapshot;scope_id?:string;app?:string;bundle_id?:string;windows?:{index:number;title:string;number?:number}[];status?:string;actions?:number};
 const rpc=<T,>(request:Record<string,unknown>)=>invoke<T>('automation_ipc',{request});
 
 export function AutomationReview({plan,snapshot,busy,approve}:{plan:Plan;snapshot:Snapshot;busy:boolean;approve:()=>void}){
@@ -26,7 +26,7 @@ export function AutomationReview({plan,snapshot,busy,approve}:{plan:Plan;snapsho
 
 export function MacAutomation({close}:{close:()=>void}){
   const [permission,setPermission]=useState<Permission|null>(null),[apps,setApps]=useState<Application[]>([]);
-  const [pid,setPid]=useState(''),[windows,setWindows]=useState<{index:number;title:string}[]>([]),[windowIndex,setWindowIndex]=useState(0);
+  const [pid,setPid]=useState(''),[windows,setWindows]=useState<{index:number;title:string;number?:number}[]>([]),[windowIndex,setWindowIndex]=useState(0);
   const [readConsent,setReadConsent]=useState(false),[modelConsent,setModelConsent]=useState(false),[captureConsent,setCaptureConsent]=useState(false);
   const [scope,setScope]=useState<Scope|null>(null),[plan,setPlan]=useState<Plan|null>(null),[capture,setCapture]=useState<Capture|null>(null);
   const [goal,setGoal]=useState(''),[model,setModel]=useState('qwen3.5:9b'),[busy,setBusy]=useState(''),[error,setError]=useState(''),[receipt,setReceipt]=useState('');
@@ -95,7 +95,8 @@ export function MacAutomation({close}:{close:()=>void}){
           const listed=windows[windowIndex];
           const fresh=(await rpc<Response>({op:'windows',pid:Number(pid),confirmed:true})).windows||[];
           if(!windowStillMatches(listed,fresh,windowIndex))throw new Error(windowMismatchReason(listed,fresh,windowIndex));
-          return rpc<Scope>({op:'begin',pid:Number(pid),window_index:windowIndex,window_title:listed!.title,confirmed:true});
+          return rpc<Scope>({op:'begin',pid:Number(pid),window_index:windowIndex,window_title:listed!.title,
+            ...(listed!.number!==undefined?{window_number:listed!.number}:{}),confirmed:true});
         },r=>{setScope(r);setPlan(null);setCapture(null);setModelConsent(false);setCaptureConsent(false);setEvents([]);})}>Start window scope</button></>}</div>
     {scope&&<><div className="automation-scope"><strong>{scope.app} · {scope.snapshot.window}</strong>{scope.snapshot.origin&&<code>{scope.snapshot.origin}</code>}<small>Scope {scope.scope_id.slice(0,8)} · expires after ten minutes or 32 actions</small></div>
       <button disabled={!!busy} onClick={()=>void action('Refreshing selected window…',()=>rpc<Response>({op:'observe',scope_id:scope.scope_id}),r=>{if(r.snapshot)updateSnapshot(r.snapshot);})}>Refresh window controls</button>

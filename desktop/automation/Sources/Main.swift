@@ -45,14 +45,18 @@ func emit(_ value: [String: Any]) {
                   let app = NSRunningApplication(processIdentifier: pid_t(pid)), let bundle = app.bundleIdentifier,
                   AutomationPolicy.permittedApp(bundle) else { throw AutomationError.permissionRequired }
             let ax = AXUIElementCreateApplication(pid_t(pid)); AXUIElementSetMessagingTimeout(ax, 0.35)
-            return ["windows": axElements(ax, kAXWindowsAttribute, max: 20).enumerated().map {
-                ["index": $0.offset, "title": String(axString($0.element, kAXTitleAttribute).prefix(200))] as [String: Any]
+            return ["windows": axElements(ax, kAXWindowsAttribute, max: 20).enumerated().map { position, window -> [String: Any] in
+                var entry: [String: Any] = ["index": position, "title": String(axString(window, kAXTitleAttribute).prefix(200))]
+                // A stable identity across reordering; the title alone is not. Omitted when unavailable.
+                if let number = axInt(window, "AXWindowNumber") { entry["number"] = number }
+                return entry
             }]
         case "begin":
             session = nil
             guard request["confirmed"] as? Bool == true, let pid = request["pid"] as? Int, let index = request["window_index"] as? Int else { throw AutomationError.actionNotConfirmed }
             // The caller's listed title is carried through so a shifted index is refused, not obeyed.
-            let driver = try NativeDriver(pid: pid_t(pid), windowIndex: index, expectedTitle: request["window_title"] as? String)
+            let driver = try NativeDriver(pid: pid_t(pid), windowIndex: index, expectedTitle: request["window_title"] as? String,
+                                          expectedNumber: request["window_number"] as? Int)
             let selected = AutomationSession(driver: driver); session = selected
             return ["scope_id": selected.id, "snapshot": try encoded(selected.observe()), "expires_in_seconds": 600,
                     "app": driver.app.localizedName ?? "Application", "bundle_id": driver.identifier, "pid": driver.app.processIdentifier]
