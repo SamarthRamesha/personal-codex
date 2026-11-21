@@ -6,6 +6,19 @@ Updated 21 November 2026. Continue the same active mission on `personal-codex/ma
 
 Read README.md, PROJECT_STATUS.md, docs/MAC_AUTOMATION.md, docs/IMPLEMENTATION_MATRIX.md, SECURITY.md and current Git status/log. Preserve all prior source, profiles, bundles, task worktrees and local model caches. Never read, stage, modify or archive the protected untracked personal-codex-diagnostic.txt. Private deployment/permission/check receipts belong in the chat workspace, not public Git.
 
+## Latest session (21 November 2026)
+
+The last session ran in a Linux workspace with no macOS SDK, no Swift/cargo and no JARVIS route,
+so it produced source changes and Linux-executable evidence only. Current feature head contains:
+scrollbar fix (fixture `.legacy` scrollers plus bounded `AXVerticalScrollBar`/`AXHorizontalScrollBar`
+traversal), window-identity fix (title-carrying `begin`, re-list before scoping, `targetChanged` on
+a shifted index), and `Store.close()` under the shared RLock with a deterministic regression test
+for the intermittent suite segfault.
+
+Verified: backend 378 tests OK (skipped=55) three times on the previously crashing verbose path;
+desktop typecheck clean; 18 frontend checks pass. Unverified: any Swift compilation and every native
+rerun, including the scrollbar check itself, capture/OCR and the browser workflow.
+
 ## Current first priority
 
 Implement and accept general Mac automation before advancing to any later priority. The branch adds a Swift helper using public Accessibility/ScreenCaptureKit/Vision, a bounded private stdio Rust broker and a separate React panel. Supported actions are reviewed set_text/press/Enter/Tab/Escape/AX scrolling. Scope lasts ten minutes/32 actions; a proposal lasts two minutes and is consumed once. Recheck target/focus/permissions and action safety after every step; stop on stale or ambiguous state without retrying completed actions. Natural-language planning uses only existing local 9B/14B Ollama after text consent; no downloads or cloud fallback.

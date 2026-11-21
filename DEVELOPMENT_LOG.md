@@ -291,3 +291,33 @@ The first hosted preview run passed backend tests but exposed undeclared Node fi
 The owner screenshot confirmed all three product permissions available. The first product synthetic self-check stopped with targetChanged; no actual action acceptance was claimed. Raising a window alone does not establish key focus. The driver now requests main/focused state on the exact bound window, waits for both the selected app and selected window, and retains its per-action target/focus guards. The fixture selects its primary key window and launches activated. The helper initializes AppKit. This is a proposed correction, pending actual rerun. Self-check failures now preserve stage, completed action count and bounded synthetic target metadata before terminating the owned fixture. No typed values or personal windows are logged. Apple references: https://developer.apple.com/documentation/appkit/nsrunningapplication/activate(options:) and installed AXAttributeConstants.h (AXMain does not imply key focus). No OS permission database, server or browser settings changed.
 
 The first focus-revision headless check aborted because AppKit was initialized before selecting the in-memory self-test path. AppKit initialization is now restricted to permission-checked native paths; all 31 helper checks pass again. No owner OS grant was changed. The actual focus correction still awaits product rerun.
+
+
+## 21 November 2026 — scrollbar diagnosis, window identity and the suite segfault
+
+Environment: Linux cloud workspace. No macOS SDK, no Swift or cargo toolchain, no route to JARVIS
+(100.117.60.12 timed out; no SSH identity present). Nothing was built, signed, installed or run on
+the Mac, and no permission, TCC, server or family-service change was made. The installed
+permission-approved preview was not touched because it is not reachable from here.
+
+Diagnosed `native_scrollbar_result` from source: the fixture's `NSScrollView` kept the default
+overlay scroller style, which hides the scroller until the user scrolls, so an `AXChildren` walk
+cannot observe an `AXScrollBar`; the check failed before attempting a scroll. Fix: the fixture uses
+`.legacy` scrollers, and the reader also walks the `AXVerticalScrollBar`/`AXHorizontalScrollBar`
+relationships of `AXScrollArea` nodes under the existing bounds and inside the bound window.
+
+Window identity: `begin` now carries the listed window title, the driver refuses a shifted index
+with `targetChanged`, and the panel re-lists and compares titles before scoping.
+
+Suite crash: intermittent SIGSEGV (exit 139, roughly one in eight verbose runs) reproduced under
+`faulthandler` as a streamed-response thread inside `Store.rows()` while a teardown closed the
+shared connection. `Store.close()` now closes under the store's RLock, teardowns use it, and
+`test_close_waits_for_a_query_that_is_still_running` asserts the blocking behaviour.
+
+Verified here: backend 378 tests OK (skipped=55), three consecutive verbose runs clean on the
+previously crashing path; desktop `tsc -b` clean; 18 frontend checks pass. The skip count differs
+from the historical 5 because loopback HTTP, the pinned gateway package and the disposable syscall
+test are gated in this environment; they are consent/environment gates, not new failures.
+
+Not verified: Swift compilation, native rerun, capture/OCR, browser workflow, and JARVIS access.
+Priority 1 remains incomplete.

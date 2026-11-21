@@ -67,3 +67,32 @@ Private logs retain failed model trials and the corrected local 9B pass (two syn
 5. Complete production operations, isolation, recovery and distribution.
 
 Do not advance to a later priority while the first remains unaccepted.
+
+## Scrollbar observability and window identity (21 November 2026)
+
+The synthetic check's `native_scrollbar_result` failure had a specific cause: the fixture's
+`NSScrollView` used the default overlay scroller style. Overlay scrollers stay hidden until the
+user scrolls, so a walk over `AXChildren` never sees an `AXScrollBar` and the check recorded
+false without ever attempting a scroll. Two source changes address it:
+
+- The fixture now uses `.legacy` scrollers, which are always present and exposed.
+- The reader additionally walks `AXVerticalScrollBar` and `AXHorizontalScrollBar` for
+  `AXScrollArea` nodes. Apple exposes scrollers through those relationships even when they are
+  not children. The new traversal inherits the existing 240-control, depth-12, 20 kB and 3-second
+  bounds and runs only inside the already-bound window, so it cannot widen the read scope.
+
+Window selection no longer relies on a mutable index alone. The panel re-lists windows and compares
+the title before starting a scope, `begin` carries that title, and the driver refuses with
+`targetChanged` when the window at that index is no longer the listed one.
+
+These changes are source-level only. They were written in a Linux environment without a macOS SDK
+or Swift toolchain, so they have not been compiled, and no native rerun has been performed. Treat
+the scrollbar check as still unaccepted until an owner-run self-check reports it.
+
+## Store shutdown while a stream is active
+
+The backend suite intermittently died with a segmentation fault. Reproduced under `faulthandler`,
+a streamed-response thread was inside `Store.rows()` while a test teardown closed the shared SQLite
+connection, freeing the handle mid-query. `Store.close()` now closes under the same re-entrant lock
+that every reader and writer takes, teardowns call it, and a regression test asserts that close
+blocks until an in-flight query finishes.
