@@ -26,8 +26,8 @@ describe('scoped Mac automation',()=>{
     expect(rust).toContain('confirmed: bool');expect(ui).toContain('confirmed:modelConsent');
     expect(swift).toContain('request["window_index"]');expect(ui).toContain('window_index:windowIndex');
     expect(rust).toContain('if result.is_err() { guard.take();');
-    expect(ui).toContain('window_title:listed.title');expect(swift).toContain('expectedTitle: request["window_title"]');
-    expect(ui).toContain('That window moved, closed or changed');
+    expect(ui).toContain('window_title:listed!.title');expect(swift).toContain('expectedTitle: request["window_title"]');
+    expect(ui).toContain('windowStillMatches(listed');expect(ui).toContain('windowMismatchReason(');
   });
   it('reads scrollers through the relationships the accessibility tree exposes',()=>{
     // Overlay scrollers are hidden until scrolling, so the child walk alone can never see one.
