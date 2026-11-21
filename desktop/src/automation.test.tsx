@@ -42,4 +42,11 @@ describe('scoped Mac automation',()=>{
     // The self-check must exercise the identity guard, not only the happy path.
     expect(acceptance).toContain('window_identity_refused');expect(acceptance).toContain('expectedNumber: axInt(windows[primary], "AXWindowNumber")');
   });
+  it('does not let an unrelated error prove the one-use refusal',()=>{
+    // Catching every error would report one-use enforcement as proven even when execution failed for
+    // an unrelated reason, so the check must name the refusal it expects.
+    expect(acceptance).toContain('catch AutomationError.actionNotConfirmed { record("approval_is_one_use", true) }');
+    // The stronger identity must be exercised natively, not only read in review.
+    expect(acceptance).toContain('window_number_identity_refused');
+  });
 });

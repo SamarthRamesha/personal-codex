@@ -71,11 +71,24 @@ import CoreGraphics
     catch AutomationError.targetChanged { identityRefused = true }
     catch { }
     record("window_identity_refused", identityRefused)
+    // The window number is the stronger identity, so exercise it too when the fixture exposes one.
+    if let number = axInt(windows[primary], "AXWindowNumber") {
+        var numberRefused = false
+        do { _ = try NativeDriver(pid: app.processIdentifier, windowIndex: primary,
+                                  expectedTitle: axString(windows[primary], kAXTitleAttribute),
+                                  expectedNumber: number + 1) }
+        catch AutomationError.targetChanged { numberRefused = true }
+        catch { }
+        record("window_number_identity_refused", numberRefused)
+    }
     stage = "execute_native_text_and_press"
     let run = try session.execute(id: key, confirmed: true)
     record("native_text_and_press_result", run["status"] as? String == "verified")
+    // A consumed approval must be refused for that reason; any other error is reported as a failure
+    // so an unrelated fault cannot make one-use enforcement look proven.
     do { _ = try session.execute(id: key, confirmed: true); record("approval_is_one_use", false) }
-    catch { record("approval_is_one_use", true) }
+    catch AutomationError.actionNotConfirmed { record("approval_is_one_use", true) }
+    catch { record("approval_is_one_use", false) }
     stage = "native_checkbox"
     let observed = try session.observe()
     let checkbox = try find(observed, label: "Uppercase", role: "AXCheckBox")
