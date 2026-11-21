@@ -4,6 +4,7 @@ import rust from '../src-tauri/src/automation.rs?raw';
 import swift from '../automation/Sources/Main.swift?raw';
 import driver from '../automation/Sources/NativeDriver.swift?raw';
 import fixture from '../automation/Fixtures/Fixture.swift?raw';
+import acceptance from '../automation/Sources/Acceptance.swift?raw';
 import ui from './MacAutomation.tsx?raw';
 import {AutomationReview,MacAutomation} from './MacAutomation';
 
@@ -34,5 +35,8 @@ describe('scoped Mac automation',()=>{
     expect(driver).toContain('AXVerticalScrollBar');expect(driver).toContain('AXHorizontalScrollBar');
     expect(driver).toContain('if role == "AXScrollArea"');
     expect(fixture).toContain('scrollerStyle = .legacy');
+    // A scroll area can expose both bars; the check must pick the vertical one deterministically.
+    expect(acceptance).toContain('hasSuffix(".scrollV")');
+    expect(acceptance).toContain('no editable scrollbar with a value was observed');
   });
 });

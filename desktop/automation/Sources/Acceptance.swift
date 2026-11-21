@@ -76,13 +76,22 @@ import CoreGraphics
     record("native_checkbox_and_result", try session.execute(id: upperKey, confirmed: true)["status"] as? String == "verified")
     stage = "native_scrollbar"
     let fresh = try session.observe()
-    if let bar = fresh.controls.first(where: { $0.role == "AXScrollBar" && $0.editable && $0.value != nil }) {
+    let bars = fresh.controls.filter { $0.role == "AXScrollBar" && $0.editable && $0.value != nil }
+    // A scroll area can expose both bars. The synthetic list scrolls vertically, and a horizontal bar
+    // can be present but immovable, so prefer the vertical one deterministically instead of whichever
+    // the traversal reached first. Paths from the relationship walk end in .scrollV / .scrollH.
+    let bar = bars.first(where: { $0.id.hasSuffix(".scrollV") }) ?? bars.first
+    if let bar {
         let destination = bar.value == "1.0000" ? "start" : "end"
         let scroll = Proposal(summary: "Scroll the synthetic list", steps: [Step(operation: "scroll", target: bar.id, text: destination)],
             expected: Expected(target: bar.id, attribute: "value", equals: destination == "end" ? "1.0000" : "0.0000"))
         let scrollKey = try session.prepare(scroll, digest: fresh.digest)
         record("native_scrollbar_result", try session.execute(id: scrollKey, confirmed: true)["status"] as? String == "verified")
-    } else { record("native_scrollbar_result", false) }
+    } else {
+        // Report why, so an owner-run failure can be diagnosed without guessing.
+        checks.append(["name": "native_scrollbar_result", "passed": false,
+                       "detail": bars.isEmpty ? "no editable scrollbar with a value was observed" : "ambiguous scrollbar selection"])
+    }
     stage = "stale_approval_check"
     let stale = try session.observe()
     var changed = plan; changed.expected.equals = "Preview: new"
