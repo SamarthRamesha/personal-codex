@@ -51,7 +51,8 @@ func emit(_ value: [String: Any]) {
         case "begin":
             session = nil
             guard request["confirmed"] as? Bool == true, let pid = request["pid"] as? Int, let index = request["window_index"] as? Int else { throw AutomationError.actionNotConfirmed }
-            let driver = try NativeDriver(pid: pid_t(pid), windowIndex: index)
+            // The caller's listed title is carried through so a shifted index is refused, not obeyed.
+            let driver = try NativeDriver(pid: pid_t(pid), windowIndex: index, expectedTitle: request["window_title"] as? String)
             let selected = AutomationSession(driver: driver); session = selected
             return ["scope_id": selected.id, "snapshot": try encoded(selected.observe()), "expires_in_seconds": 600,
                     "app": driver.app.localizedName ?? "Application", "bundle_id": driver.identifier, "pid": driver.app.processIdentifier]

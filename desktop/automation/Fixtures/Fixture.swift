@@ -25,6 +25,9 @@ import WebKit
         output.frame = NSRect(x: 28, y: 230, width: 570, height: 36); output.font = .systemFont(ofSize: 22)
         output.setAccessibilityLabel("Result"); output.setAccessibilityIdentifier("fixture-result")
         let scroll = NSScrollView(frame: NSRect(x: 28, y: 20, width: 570, height: 180)); scroll.hasVerticalScroller = true
+        // Overlay scrollers stay hidden until the user scrolls, so a synthetic check could never observe one.
+        // Legacy style keeps a real, always-present scroller that the accessibility tree exposes.
+        scroll.scrollerStyle = .legacy
         scroll.setAccessibilityLabel("Synthetic list")
         let document = NSView(frame: NSRect(x: 0, y: 0, width: 540, height: 900))
         for index in 0..<15 {

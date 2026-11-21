@@ -2,6 +2,8 @@ import {describe,it,expect} from 'vitest';
 import {renderToStaticMarkup} from 'react-dom/server';
 import rust from '../src-tauri/src/automation.rs?raw';
 import swift from '../automation/Sources/Main.swift?raw';
+import driver from '../automation/Sources/NativeDriver.swift?raw';
+import fixture from '../automation/Fixtures/Fixture.swift?raw';
 import ui from './MacAutomation.tsx?raw';
 import {AutomationReview,MacAutomation} from './MacAutomation';
 
@@ -24,5 +26,13 @@ describe('scoped Mac automation',()=>{
     expect(rust).toContain('confirmed: bool');expect(ui).toContain('confirmed:modelConsent');
     expect(swift).toContain('request["window_index"]');expect(ui).toContain('window_index:windowIndex');
     expect(rust).toContain('if result.is_err() { guard.take();');
+    expect(ui).toContain('window_title:listed.title');expect(swift).toContain('expectedTitle: request["window_title"]');
+    expect(ui).toContain('That window moved, closed or changed');
+  });
+  it('reads scrollers through the relationships the accessibility tree exposes',()=>{
+    // Overlay scrollers are hidden until scrolling, so the child walk alone can never see one.
+    expect(driver).toContain('AXVerticalScrollBar');expect(driver).toContain('AXHorizontalScrollBar');
+    expect(driver).toContain('if role == "AXScrollArea"');
+    expect(fixture).toContain('scrollerStyle = .legacy');
   });
 });

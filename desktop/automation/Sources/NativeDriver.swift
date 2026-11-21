@@ -15,6 +15,10 @@ func axElements(_ element: AXUIElement, _ attribute: String, max: Int) -> [AXUIE
           let values = array as? [AXUIElement] else { return [] }
     return values
 }
+func axElementValue(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+    guard let value = axValue(element, attribute), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+    return unsafeBitCast(value, to: AXUIElement.self)
+}
 func rect(_ element: AXUIElement) -> CGRect? {
     guard let position = axValue(element, kAXPositionAttribute), let size = axValue(element, kAXSizeAttribute),
           CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
@@ -34,7 +38,7 @@ func rect(_ element: AXUIElement) -> CGRect? {
     var sensitivePresent = false
     var scopedOrigin: String?
     var browser: Bool { browserIdentifiers.contains(identifier) }
-    init(pid: pid_t, windowIndex: Int) throws {
+    init(pid: pid_t, windowIndex: Int, expectedTitle: String? = nil) throws {
         guard AXIsProcessTrusted() else { throw AutomationError.permissionRequired }
         _ = NSApplication.shared
         guard let app = NSRunningApplication(processIdentifier: pid), let identifier = app.bundleIdentifier,
@@ -43,8 +47,12 @@ func rect(_ element: AXUIElement) -> CGRect? {
         AXUIElementSetMessagingTimeout(application, 0.35)
         let windows = axElements(application, kAXWindowsAttribute, max: 20)
         guard windows.indices.contains(windowIndex) else { throw AutomationError.invalidRequest }
+        let selected = windows[windowIndex]
+        // A window index is only a position. Refuse when the window now at that position is not the one
+        // the caller listed, instead of silently controlling a different window.
+        if let expectedTitle, axString(selected, kAXTitleAttribute) != expectedTitle { throw AutomationError.targetChanged }
         self.app = app; self.launched = app.launchDate; self.identifier = identifier
-        self.application = application; self.window = windows[windowIndex]
+        self.application = application; self.window = selected
     }
     func permitted() -> Bool { AXIsProcessTrusted() }
     func targetValid() -> Bool {
@@ -136,6 +144,18 @@ func rect(_ element: AXUIElement) -> CGRect? {
                 pressable: pressable && !clipped, sensitive: sensitive, href: sensitive ? nil : href, clipped: clipped)
             controls.append(node); references[path] = element; bytes += label.utf8.count + (value?.utf8.count ?? 0)
             if !sensitive {
+                if role == "AXScrollArea" {
+                    // macOS overlay scrollers are not reliably children of the scroll area until they are
+                    // revealed; Apple also exposes them through dedicated relationships. Each is walked with
+                    // the same bounds, deadline and window: everything here is inside the bound window.
+                    for (suffix, attribute) in [("scrollV", "AXVerticalScrollBar"), ("scrollH", "AXHorizontalScrollBar")] {
+                        guard controls.count < 240, depth + 1 <= 12, bytes < 20_000,
+                              ProcessInfo.processInfo.systemUptime < deadline else { truncated = true; break }
+                        if let scroller = axElementValue(element, attribute) {
+                            walk(scroller, path: path + "." + suffix, depth: depth + 1)
+                        }
+                    }
+                }
                 var count: CFIndex = 0
                 if AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count) == .success && count > 80 { truncated = true }
                 for (index, child) in axElements(element, kAXChildrenAttribute, max: 80).enumerated() { walk(child, path: path + "." + String(index), depth: depth + 1) }

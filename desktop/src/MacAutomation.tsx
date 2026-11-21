@@ -90,7 +90,14 @@ export function MacAutomation({close}:{close:()=>void}){
     <label className="automation-consent"><input type="checkbox" checked={readConsent} disabled={!!busy} onChange={event=>{setReadConsent(event.target.checked);if(!event.target.checked)discardScope();}}/>Allow local reading of this app's selected window for up to ten minutes.</label>
     <div className="button-row"><button disabled={!!busy||!pid||!readConsent||!permission?.accessibility} onClick={()=>void action('Reading window list…',()=>rpc<Response>({op:'windows',pid:Number(pid),confirmed:true}),r=>{setWindows(r.windows||[]);setWindowIndex(0);})}>List this app's windows</button>
       {windows.length>0&&<><select aria-label="Window to control" value={windowIndex} disabled={!!busy} onChange={e=>{discardScope();setWindowIndex(Number(e.target.value));}}>{windows.map(w=><option key={w.index} value={w.index}>{w.title||`Window ${w.index+1}`}</option>)}</select>
-        <button disabled={!!busy||!readConsent} onClick={()=>void action('Starting selected-window scope…',()=>rpc<Scope>({op:'begin',pid:Number(pid),window_index:windowIndex,confirmed:true}),r=>{setScope(r);setPlan(null);setCapture(null);setModelConsent(false);setCaptureConsent(false);setEvents([]);})}>Start window scope</button></>}</div>
+        <button disabled={!!busy||!readConsent} onClick={()=>void action('Starting selected-window scope…',async()=>{
+          const listed=windows[windowIndex];
+          if(!listed)throw new Error('Choose a window to control.');
+          const fresh=await rpc<Response>({op:'windows',pid:Number(pid),confirmed:true});
+          const current=(fresh.windows||[])[windowIndex];
+          if(!current||current.title!==listed.title)throw new Error('That window moved, closed or changed since it was listed. List this app\'s windows again before starting a scope.');
+          return rpc<Scope>({op:'begin',pid:Number(pid),window_index:windowIndex,window_title:listed.title,confirmed:true});
+        },r=>{setScope(r);setPlan(null);setCapture(null);setModelConsent(false);setCaptureConsent(false);setEvents([]);})}>Start window scope</button></>}</div>
     {scope&&<><div className="automation-scope"><strong>{scope.app} · {scope.snapshot.window}</strong>{scope.snapshot.origin&&<code>{scope.snapshot.origin}</code>}<small>Scope {scope.scope_id.slice(0,8)} · expires after ten minutes or 32 actions</small></div>
       <button disabled={!!busy} onClick={()=>void action('Refreshing selected window…',()=>rpc<Response>({op:'observe',scope_id:scope.scope_id}),r=>{if(r.snapshot)updateSnapshot(r.snapshot);})}>Refresh window controls</button>
       {scope.snapshot.truncated&&<p className="notice">The control list is bounded and was clipped. Plans can use only the controls shown; screenshot capture is refused for an incomplete safety view.</p>}
