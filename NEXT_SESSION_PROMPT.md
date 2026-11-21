@@ -8,8 +8,9 @@ Read README.md, PROJECT_STATUS.md, docs/MAC_AUTOMATION.md, docs/IMPLEMENTATION_M
 
 ## Latest session (21 November 2026)
 
-Feature head is now **published**: `personal-codex/mac-automation` is at `54a11bd` on origin
-(fast-forward `a6090d7..bbcc62e`, then `54a11bd`). Publishing had been failing because the push tool
+Feature head is now **published**: `personal-codex/mac-automation` on origin carries every commit on
+this branch, starting with the fast-forward `a6090d7..bbcc62e`. Check the tip with
+`git log --oneline -3 origin/personal-codex/mac-automation`. Publishing had been failing because the push tool
 sends the chat checkout's HEAD, which is the stable branch and behind its remote; re-pointing only
 that HEAD with `git symbolic-ref`, pushing, and restoring it left every file byte-identical
 (`web/style.css` hash and `git status` matched before and after). A verified bundle also sits in the
