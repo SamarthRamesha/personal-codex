@@ -1,0 +1,98 @@
+import AppKit
+import ApplicationServices
+import CoreGraphics
+
+/// Exercises the production driver against an owned disposable app. Never selects a personal app.
+@MainActor func actualUISelfCheck(includeCapture: Bool) async throws -> [String: Any] {
+    guard AXIsProcessTrusted() else {
+        return ["status": "permission_required", "actual_ui_exercised": false,
+                "reason": "Grant Accessibility manually to this application, then run the self-check again."]
+    }
+    let identifier = "local.personalcodex.automation.fixture"
+    guard !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == identifier }),
+          let resources = Bundle.main.resourceURL else { throw AutomationError.unsafeTarget }
+    let fixtureURL = resources.appendingPathComponent("Fixtures/Personal Codex Automation Fixture.app")
+    guard FileManager.default.fileExists(atPath: fixtureURL.appendingPathComponent("Contents/MacOS/automation-fixture").path) else { throw AutomationError.unsupported }
+    let options = NSWorkspace.OpenConfiguration(); options.activates = false; options.createsNewApplicationInstance = true
+    let app = try await NSWorkspace.shared.openApplication(at: fixtureURL, configuration: options)
+    // Terminate only the exact new fixture instance launched here. It contains no user documents.
+    defer { if app.bundleIdentifier == identifier && !app.isTerminated { app.terminate() } }
+    guard app.bundleIdentifier == identifier else { throw AutomationError.unsafeTarget }
+    let application = AXUIElementCreateApplication(app.processIdentifier)
+    AXUIElementSetMessagingTimeout(application, 0.35)
+    let deadline = ProcessInfo.processInfo.systemUptime + 3
+    var windows: [AXUIElement] = []
+    while ProcessInfo.processInfo.systemUptime < deadline {
+        windows = axElements(application, kAXWindowsAttribute, max: 20)
+        if windows.count == 2 { break }
+        try await Task.sleep(nanoseconds: 30_000_000)
+    }
+    guard let primary = windows.firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Automation Fixture" }),
+          let protected = windows.firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Protected Fixture" }) else { throw AutomationError.verificationFailed }
+    let driver = try NativeDriver(pid: app.processIdentifier, windowIndex: primary)
+    let session = AutomationSession(driver: driver)
+    let initial = try session.observe()
+    func find(_ snapshot: Observation, label: String, role: String) throws -> Control {
+        guard let node = snapshot.controls.first(where: { $0.label == label && $0.role == role }) else { throw AutomationError.verificationFailed }
+        return node
+    }
+    let input = try find(initial, label: "Message", role: "AXTextField")
+    let button = try find(initial, label: "Preview", role: "AXButton")
+    let result = try find(initial, label: "Result", role: "AXStaticText")
+    let plan = Proposal(summary: "Preview synthetic text in the disposable fixture",
+        steps: [Step(operation: "set_text", target: input.id, text: "hello"), Step(operation: "press", target: button.id)],
+        expected: Expected(target: result.id, attribute: "value", equals: "Preview: hello"))
+    let key = try session.prepare(plan, digest: initial.digest)
+    var checks: [[String: Any]] = []
+    func record(_ name: String, _ pass: Bool) { checks.append(["name": name, "passed": pass]) }
+    record("prepare_is_read_only", try session.observe().digest == initial.digest)
+    let run = try session.execute(id: key, confirmed: true)
+    record("native_text_and_press_result", run["status"] as? String == "verified")
+    do { _ = try session.execute(id: key, confirmed: true); record("approval_is_one_use", false) }
+    catch { record("approval_is_one_use", true) }
+    let observed = try session.observe()
+    let checkbox = try find(observed, label: "Uppercase", role: "AXCheckBox")
+    let uppercase = Proposal(summary: "Preview uppercase synthetic text",
+        steps: [Step(operation: "press", target: checkbox.id), Step(operation: "press", target: button.id)],
+        expected: Expected(target: result.id, attribute: "value", equals: "Preview: HELLO"))
+    let upperKey = try session.prepare(uppercase, digest: observed.digest)
+    record("native_checkbox_and_result", try session.execute(id: upperKey, confirmed: true)["status"] as? String == "verified")
+    let fresh = try session.observe()
+    if let bar = fresh.controls.first(where: { $0.role == "AXScrollBar" && $0.editable && $0.value != nil }) {
+        let destination = bar.value == "1.0000" ? "start" : "end"
+        let scroll = Proposal(summary: "Scroll the synthetic list", steps: [Step(operation: "scroll", target: bar.id, text: destination)],
+            expected: Expected(target: bar.id, attribute: "value", equals: destination == "end" ? "1.0000" : "0.0000"))
+        let scrollKey = try session.prepare(scroll, digest: fresh.digest)
+        record("native_scrollbar_result", try session.execute(id: scrollKey, confirmed: true)["status"] as? String == "verified")
+    } else { record("native_scrollbar_result", false) }
+    let stale = try session.observe()
+    var changed = plan; changed.expected.equals = "Preview: new"
+    changed.steps[0].text = "new"
+    let staleKey = try session.prepare(changed, digest: stale.digest)
+    // Simulate a concurrent user edit only inside our own fixture.
+    try driver.activate(); try driver.perform(Step(operation: "set_text", target: input.id, text: "external fixture edit"), control: input)
+    do { _ = try session.execute(id: staleKey, confirmed: true); record("stale_window_refused", false) }
+    catch AutomationError.staleObservation { record("stale_window_refused", true) }
+    let secure = try NativeDriver(pid: app.processIdentifier, windowIndex: protected)
+    let secureSnapshot = try secure.observe(scope: "disposable-secure-check")
+    let serialized = try JSONEncoder().encode(secureSnapshot)
+    record("secure_control_omitted", secureSnapshot.controls.contains(where: { $0.sensitive })
+        && !String(decoding: serialized, as: UTF8.self).contains("DISPOSABLE-SYNTHETIC-SECRET"))
+    record("selected_window_isolation", !initial.controls.contains(where: { $0.sensitive }) && initial.window != secureSnapshot.window)
+    if includeCapture {
+        if CGPreflightScreenCaptureAccess() {
+            let capture = try await driver.capture(scope: session.id)
+            record("selected_window_capture_and_ocr", capture["window"] as? String == initial.window
+                && (capture["ocr"] as? String ?? "").contains("AMBER") && capture["image_base64"] != nil)
+            do { _ = try await secure.capture(scope: "disposable-secure-check"); record("secure_window_capture_refused", false) }
+            catch AutomationError.unsafeTarget { record("secure_window_capture_refused", true) }
+        } else { record("selected_window_capture_and_ocr", false) }
+    }
+    session.cancelled = true
+    do { _ = try session.observe(); record("cancelled_scope_refused", false) }
+    catch AutomationError.cancelled { record("cancelled_scope_refused", true) }
+    return ["status": checks.allSatisfy { $0["passed"] as? Bool == true } ? "passed" : "needs_review",
+            "actual_ui_exercised": true, "target": identifier, "checks": checks,
+            "capture_requested": includeCapture, "browser_exercised": false,
+            "meaning": "Only these synthetic native-window checks; not universal app compatibility or visual product acceptance."]
+}

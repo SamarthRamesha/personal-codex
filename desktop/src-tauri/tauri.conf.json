@@ -4,9 +4,9 @@
   "version": "0.2.0",
   "identifier": "local.personalcodex.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "python3 ../scripts/build_mac_automation.py && npm run dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "python3 ../scripts/build_mac_automation.py && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -27,6 +27,7 @@
   },
   "bundle": {
     "active": true,
+    "resources": {"../automation/.build/Personal Codex Automation.app/": "automation/Personal Codex Automation.app/"},
     "targets": [
       "app"
     ],

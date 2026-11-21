@@ -1,26 +1,27 @@
 # Project status
 
-Updated 20 November 2026. **The project is partially complete; JARVIS is not deployed.**
+Updated 21 November 2026. **Partially complete. Mac automation is a preview; JARVIS is not deployed.**
 
-## Ready locally
+The active branch is `personal-codex/mac-automation`, based on the preserved stable source `64189ef30177922481d17da242d11a90baf3c599`. The stable launcher/profile has not been replaced by this preview.
 
-Native chat/history/streaming, existing local models, reviewed coding tasks, isolated worktrees, repair/checks/delivery, explicit resume, memory integrity, attributed document search and bounded exact proposal-cycle detection.
+## Current priority: general Mac automation
 
-## Implemented, acceptance still limited
+Implemented selected-window Accessibility reading, reviewed text/press/key/scroll actions, optional window capture/OCR, local Ollama proposals, browser new-window scoping and bounded cancellation. A disposable synthetic app and native self-check are bundled. The self-check correctly reports permission required before touching any UI.
 
-Mac actions can request installed-app/document opening and Finder reveal through exact one-use native review. Native tests/build passed; visual opening acceptance is blocked. General cross-app automation is not implemented.
+31 helper checks, 13 Rust checks and 17 frontend checks pass. The optimized preview builds. One installed local 9B trial passed the actual policy with an in-memory driver after an earlier fixture mismatch was corrected; it did not act on a real window. Actual native, browser, capture/OCR and natural-language-to-real-UI acceptance remain pending. [Behavior and limits](docs/MAC_AUTOMATION.md).
 
-The outbound Mac inference worker and restricted backend profile are implemented and locally tested. The exact backend source passed 17 disposable-Linux container checks, not target deployment acceptance.
+## Preserved local functionality
 
-## Verification
+Native chat/history/streaming, existing local models, reviewed coding tasks, worktrees, repair/checks/delivery, explicit resume, memory integrity, attributed document search, bounded exact proposal-cycle detection and the previous reviewed opening actions remain in source. The previous backend result was 372 passed / 5 skipped / 377 discovered. Backend source is unchanged by this preview and was not re-certified as a JARVIS deployment.
 
-| Check | Result |
-|---|---|
-| Local backend | 372 passed / 5 skipped / 377 discovered |
-| Frontend | 14 passed, TypeScript/Vite build passed |
-| Native | 7 Rust tests passed, optimized app built, strict ad-hoc signature verified |
-| Current API container | 17 checks passed; clean stop/restart persistence |
-| New Mac actions UI | Blocked by UI connector; no visual success claim |
-| JARVIS | Dashboard TCP reachable; HTTPS443 and backend8787 refuse; remote acceptance incomplete |
+## Remaining order
 
-See [implementation matrix](docs/IMPLEMENTATION_MATRIX.md), [remaining work](TASKS.md), [getting started](docs/GETTING_STARTED.md) and [continuation](NEXT_SESSION_PROMPT.md). Both GitHub branches were fast-forwarded to f2ea8e7. All three hosted jobs passed on that source: Linux backend (363 passed / 14 optional or platform skips), frontend and macOS native. [Verified run](https://github.com/SamarthRamesha/personal-codex/actions/runs/44749454322). The original failed readiness fixture and its test-only correction are recorded in the development log. Recheck current remote state on continuation.
+1. Actual general Mac automation acceptance and fixes.
+2. Visual acceptance of the earlier opening panel.
+3. JARVIS HTTPS/backend deployment, image/import/ownership and family-access review with exact approvals.
+4. Broader development workflows.
+5. Production isolation, encrypted recovery at larger scale, hard quotas and notarized distribution.
+
+Do not advance past priority 1 while it is incomplete. No server, Docker, networking, Tailscale policy or family-data changes were made in this phase. Local OS permissions require the owner; no authentication bypass is permitted.
+
+This preview branch has its own hosted checks. Historical green stable runs do not certify its new UI. See [continuation](NEXT_SESSION_PROMPT.md) and the private checkpoint for current commit/build/check receipts.

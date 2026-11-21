@@ -4,12 +4,13 @@
 
 A local-first AI development workspace for your Mac, with a native application, reviewed coding actions, persistent history and a prepared private home-server backend.
 
-**Current status — 20 November 2026:** the Mac coding workflow works locally. Document search, bounded repair loops and a first set of local Mac opening actions are implemented. The JARVIS deployment is **not live**; private HTTPS, remote inference and family-access preservation still need target verification and exact deployment approvals.
+**Current status — 21 November 2026:** the Mac coding workflow works locally. Document search, bounded repair loops and a first set of local Mac opening actions are implemented. The JARVIS deployment is **not live**; private HTTPS, remote inference and family-access preservation still need target verification and exact deployment approvals.
 
 ## Start here
 
 - [Getting started](docs/GETTING_STARTED.md) — run the prepared Mac app or build from source.
 - [What works and what remains](docs/IMPLEMENTATION_MATRIX.md) — current evidence and limits.
+- [Mac automation preview](docs/MAC_AUTOMATION.md) — reviewed cross-app controls; actual UI acceptance pending.
 - [Mac actions](docs/MAC_ACTIONS.md) — applications, documents and Finder, with one-use review.
 - [Home-server integration](DEPLOYMENT.md) — architecture, required controls and deployment gates.
 - [Documentation index](docs/README.md) — developer, security and operations guides.
@@ -26,7 +27,7 @@ A local-first AI development workspace for your Mac, with a native application, 
 | Local inference | Existing Ollama models; no silent cloud fallback or automatic model downloads |
 | Home-server backend | Worker protocol and restricted deployment profile implemented; actual JARVIS installation pending |
 
-Mac actions currently open destinations. They do **not** click through arbitrary applications, read your screen, type into other apps, run arbitrary system commands or autonomously operate every Mac workflow. Those are separate capabilities, not implied by the opening panel.
+Mac actions currently open destinations. They do **not** click through arbitrary applications, read your screen, type into other apps, run arbitrary system commands or autonomously operate every Mac workflow. The separate [Mac automation preview](docs/MAC_AUTOMATION.md) now implements bounded native controls and local plan review, but real UI acceptance is still pending. Those capabilities are not implied by the opening panel.
 
 ## Run on the prepared Mac
 

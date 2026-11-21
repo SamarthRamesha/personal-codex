@@ -11,3 +11,4 @@ desktop/src-tauri/target/
 work/
 *.tsbuildinfo
 desktop/src-tauri/gen/
+desktop/automation/.build/
