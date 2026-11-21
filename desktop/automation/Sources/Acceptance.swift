@@ -100,7 +100,7 @@ import CoreGraphics
     } else {
         // Report why, so an owner-run failure can be diagnosed without guessing.
         checks.append(["name": "native_scrollbar_result", "passed": false,
-                       "detail": bars.isEmpty ? "no editable scrollbar with a value was observed" : "ambiguous scrollbar selection"])
+                       "detail": "no editable scrollbar with a value was observed"])
     }
     stage = "stale_approval_check"
     let stale = try session.observe()
