@@ -5,6 +5,7 @@ import swift from '../automation/Sources/Main.swift?raw';
 import driver from '../automation/Sources/NativeDriver.swift?raw';
 import fixture from '../automation/Fixtures/Fixture.swift?raw';
 import acceptance from '../automation/Sources/Acceptance.swift?raw';
+import browser from '../automation/Sources/Browser.swift?raw';
 import ui from './MacAutomation.tsx?raw';
 import {AutomationReview,MacAutomation} from './MacAutomation';
 
@@ -48,5 +49,11 @@ describe('scoped Mac automation',()=>{
     expect(acceptance).toContain('catch AutomationError.actionNotConfirmed { record("approval_is_one_use", true) }');
     // The stronger identity must be exercised natively, not only read in review.
     expect(acceptance).toContain('window_number_identity_refused');
+  });
+  it('binds a created browser window by identity, not by position alone',()=>{
+    // Creating a window reorders the accessibility list, so binding the index alone could control a
+    // different window than the one just created and focused.
+    expect(browser).toContain('expectedTitle: observedTitle.isEmpty ? nil : observedTitle');
+    expect(browser).toContain('expectedNumber: axInt(window, "AXWindowNumber")');
   });
 });

@@ -52,7 +52,12 @@ func permittedBrowserURL(_ raw: String) -> Bool {
         try await Task.sleep(nanoseconds: 30_000_000)
     }
     guard let (index, window) = created, focusedWindow(application, equals: window) else { throw AutomationError.targetChanged }
-    let driver = try NativeDriver(pid: app.processIdentifier, windowIndex: index)
+    // NativeDriver re-lists the windows to bind. Creating a window reorders that list, so an index
+    // alone could bind a different window; carry the identity just observed and let it be refused.
+    let observedTitle = axString(window, kAXTitleAttribute)
+    let driver = try NativeDriver(pid: app.processIdentifier, windowIndex: index,
+                                  expectedTitle: observedTitle.isEmpty ? nil : observedTitle,
+                                  expectedNumber: axInt(window, "AXWindowNumber"))
     try browserKey(app.processIdentifier, code: 37, command: true)
     try await Task.sleep(nanoseconds: 80_000_000)
     guard focusedWindow(application, equals: window), let focus = axValue(application, kAXFocusedUIElementAttribute),
