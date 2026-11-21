@@ -2,6 +2,7 @@
 import http.client
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import threading
@@ -164,3 +165,60 @@ class AuthHttpTests(unittest.TestCase):
         for path in ('.env','private.txt','link.py','../outside.py'):
             self.assertNotIn(path,files)
             self.assertEqual(self.request('GET',f'/api/projects/{pid}/file?path={path}',headers=auth)[0],403)
+
+
+class AutomationBoundaryTests(unittest.TestCase):
+    """Native Mac automation is reachable only from the desktop IPC bridge, never over HTTP."""
+
+    # Names that exist only in the native helper protocol. Generic words such as "execute",
+    # "observe" or "capture" also appear in the coding-task API, so they are not used here.
+    PROTOCOL = ("automation_ipc", "self_check", "new_browser", "window_index", "window_title",
+                "synthetic_observation", "validate-synthetic-plan")
+
+    def setUp(self):
+        self.root = Path(__file__).resolve().parent.parent
+        self.server_source = (self.root / "app" / "server.py").read_text()
+        self.rust_source = (self.root / "desktop" / "src-tauri" / "src" / "automation.rs").read_text()
+
+    def routes(self):
+        return set(re.findall(r'route ?== ?"(/[^"]*)"', self.server_source))
+
+    def broker_operations(self):
+        match = re.search(r"fn allowed_operation\(op: &str\) -> bool \{(.*?)\}\n", self.rust_source, re.S)
+        self.assertIsNotNone(match, "the broker operation allowlist moved")
+        return set(re.findall(r'"([a-z_]+)"', match.group(1)))
+
+    def test_no_http_route_reaches_the_native_automation_broker(self):
+        operations = self.broker_operations()
+        self.assertIn("self_check", operations)
+        self.assertIn("execute", operations)
+        self.assertIn("begin", operations)
+        routes = self.routes()
+        self.assertTrue(any(route.startswith("/api/") for route in routes), "route extraction stopped working")
+        forbidden = ("automation", "accessibility", "screen_capture", "tcc", "ax_element", "native_control")
+        for route in routes:
+            for term in forbidden:
+                self.assertFalse(term in route.lower(), f"{route} exposes a native automation surface over HTTP")
+        for operation in operations:
+            # An operation may sit inside a longer coding route (e.g. ".../round/execute"), but it must
+            # never become its own endpoint.
+            self.assertNotIn(f"/api/{operation}", routes, f"{operation} is addressable over HTTP")
+
+    def test_backend_never_drives_the_native_helper_or_the_permission_database(self):
+        forbidden = ("personal-codex-automation", "AXUIElement", "CGEvent", "tccutil", "TCC.db", "osascript")
+        for source in sorted((self.root / "app").glob("*.py")):
+            text = source.read_text()
+            for term in forbidden:
+                self.assertFalse(term in text, f"{source.name} reaches into native automation ({term})")
+
+    def test_backend_and_scripts_do_not_speak_the_helper_protocol(self):
+        for directory in ("app", "scripts"):
+            for source in sorted((self.root / directory).glob("*.py")):
+                text = source.read_text()
+                for marker in self.PROTOCOL:
+                    self.assertFalse(marker in text, f"{source.name} speaks the native helper protocol ({marker})")
+
+    def test_desktop_bridge_is_the_only_caller_of_the_automation_command(self):
+        callers = [path.name for path in (self.root / "desktop" / "src").glob("*.tsx")
+                   if "automation_ipc" in path.read_text()]
+        self.assertEqual(callers, ["MacAutomation.tsx"], "automation IPC must stay inside the dedicated panel")
