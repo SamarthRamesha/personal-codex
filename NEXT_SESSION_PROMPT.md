@@ -13,11 +13,12 @@ Feature head is `6dbf894` on `personal-codex/mac-automation`, six commits ahead 
 and switching that checkout would discard the owner's uncommitted `web/style.css`. Push is a plain
 fast-forward once the owner does it from the Mac checkout.
 
-Linux-verified this session: backend 382 tests OK (skipped=55); frontend 26 tests pass; `tsc -b`
+Linux-verified this session: backend 382 tests OK (skipped=55); frontend 33 tests pass; `tsc -b`
 clean; `npm run build` clean. Added an automation-boundary test group (mutation-tested), extracted
 the window-identity check into unit-tested `automationWindow.ts`, bound scopes to `AXWindowNumber`
 in addition to the title, and made the scrollbar acceptance check prefer the vertical bar with a
-recorded reason when none is usable.
+recorded reason when none is usable. The panel now summarises the self-check report and names
+which check failed, instead of leaving the owner to read raw JSON.
 
 Still unverified and requiring the Mac: every Swift compile, the 31 helper self-tests, the synthetic
 self-check including the scrollbar, capture/OCR and protected-window refusal, the new-window browser

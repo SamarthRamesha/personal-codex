@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 import {X,Square,RefreshCw} from 'lucide-react';
 import {windowStillMatches,windowMismatchReason} from './automationWindow';
+import {summarizeSelfCheck} from './automationReport';
 
 type Application={pid:number;name:string;bundle_id:string;allowed:boolean};
 export type Control={id:string;role:string;label:string;value?:string;enabled:boolean;editable:boolean;pressable:boolean;sensitive:boolean;clipped?:boolean};
@@ -34,7 +35,7 @@ export function MacAutomation({close}:{close:()=>void}){
   const [expectedId,setExpectedId]=useState(''),[attribute,setAttribute]=useState('value'),[expectedText,setExpectedText]=useState('');
   const [events,setEvents]=useState<{stage:string;index:number;operation:string}[]>([]);
   const [browser,setBrowser]=useState('com.apple.Safari'),[browserURL,setBrowserURL]=useState('https://example.com'),[browserConsent,setBrowserConsent]=useState(false);
-  const [checkConsent,setCheckConsent]=useState(false),[checkCapture,setCheckCapture]=useState(false),[checkReport,setCheckReport]=useState('');
+  const [checkConsent,setCheckConsent]=useState(false),[checkCapture,setCheckCapture]=useState(false),[checkReport,setCheckReport]=useState<unknown>(null);
   const epoch=useRef(0);
   function discardScope(){epoch.current++;setBusy('');setScope(null);setPlan(null);setCapture(null);void invoke('stop_mac_automation').catch(()=>{});}
   function updatePermission(value:Permission){setPermission(previous=>({...previous,...value}));}
@@ -62,6 +63,7 @@ export function MacAutomation({close}:{close:()=>void}){
   }
   function updateSnapshot(snapshot:Snapshot){setScope(old=>old?{...old,snapshot}:null);setPlan(null);setCapture(null);}
   const controls=scope?.snapshot.controls||[];
+  const checkSummary=checkReport!==null?summarizeSelfCheck(checkReport):null;
   return <div className="modal-backdrop"><section className="settings-modal mac-automation" role="dialog" aria-modal="true" aria-label="Mac automation">
     <div className="modal-title"><div><p className="eyebrow">LOCAL · WINDOW-SCOPED</p><h2>Mac automation</h2></div>
       <div className="button-row"><button onClick={()=>void stop()}><Square size={15}/>Stop automation</button><button title="Close Mac automation" onClick={()=>{void stop();close();}}><X size={18}/></button></div></div>
@@ -75,8 +77,10 @@ export function MacAutomation({close}:{close:()=>void}){
       <p>The check opens and focuses synthetic windows, types a test message, presses Preview, checks scrolling and secure-field omission, then closes its own test app. It does not use your personal windows. Your current automation scope will end.</p>
       <label className="automation-consent"><input type="checkbox" checked={checkConsent} disabled={!!busy} onChange={e=>setCheckConsent(e.target.checked)}/>Run these synthetic checks through the native automation driver.</label>
       <label className="automation-consent"><input type="checkbox" checked={checkCapture} disabled={!!busy} onChange={e=>setCheckCapture(e.target.checked)}/>Also check capture and OCR of the synthetic window. Requires screen capture permission.</label>
-      <button disabled={!!busy||!checkConsent||!permission?.accessibility||(checkCapture&&!permission?.screen_capture)} onClick={()=>{setScope(null);setPlan(null);setCapture(null);setCheckReport('');void action('Checking the disposable test app…',()=>rpc<Record<string,unknown>>({op:'self_check',confirmed:checkConsent,capture:checkCapture}),r=>setCheckReport(JSON.stringify(r,null,2)));}}>Run synthetic Mac check</button>
-      {checkReport&&<pre role="status">{checkReport}</pre>}
+      <button disabled={!!busy||!checkConsent||!permission?.accessibility||(checkCapture&&!permission?.screen_capture)} onClick={()=>{setScope(null);setPlan(null);setCapture(null);setCheckReport(null);void action('Checking the disposable test app…',()=>rpc<Record<string,unknown>>({op:'self_check',confirmed:checkConsent,capture:checkCapture}),r=>setCheckReport(r));}}>Run synthetic Mac check</button>
+      {checkSummary&&<><p role="status" className={checkSummary.failed>0||checkSummary.status!=='passed'?'message-error':'muted small'}>{checkSummary.headline}</p>
+        {checkSummary.failures.map(failure=><p className="muted small" key={failure.name}>{failure.name}{failure.detail?` · ${failure.detail}`:''}</p>)}
+        <pre>{JSON.stringify(checkReport,null,2)}</pre></>}
     </details>
     <details><summary>Start a fresh browser window</summary><label>Browser<select value={browser} disabled={!!busy} onChange={e=>setBrowser(e.target.value)}>
       <option value="com.apple.Safari">Safari</option><option value="com.google.Chrome">Chrome</option><option value="org.mozilla.firefox">Firefox</option><option value="app.zen-browser.zen">Zen</option><option value="com.microsoft.edgemac">Edge</option></select></label>
