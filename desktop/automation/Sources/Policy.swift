@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 enum AutomationError: String, Error { case invalidRequest, permissionRequired, scopeExpired, targetChanged, unsupported,
-    unsafeTarget, staleObservation, actionNotConfirmed, invalidPlan, cancelled, verificationFailed, capturePermissionRequired }
+    unsafeTarget, activationDenied, windowNotFocused, staleObservation, actionNotConfirmed, invalidPlan, cancelled, verificationFailed, capturePermissionRequired }
 
 struct Control: Codable, Equatable {
     var id: String

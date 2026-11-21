@@ -36,6 +36,7 @@ func rect(_ element: AXUIElement) -> CGRect? {
     var browser: Bool { browserIdentifiers.contains(identifier) }
     init(pid: pid_t, windowIndex: Int) throws {
         guard AXIsProcessTrusted() else { throw AutomationError.permissionRequired }
+        _ = NSApplication.shared
         guard let app = NSRunningApplication(processIdentifier: pid), let identifier = app.bundleIdentifier,
               AutomationPolicy.permittedApp(identifier), !app.isTerminated else { throw AutomationError.unsafeTarget }
         let application = AXUIElementCreateApplication(pid)
@@ -51,15 +52,31 @@ func rect(_ element: AXUIElement) -> CGRect? {
               current.bundleIdentifier == identifier, current.launchDate == launched else { return false }
         return axElements(application, kAXWindowsAttribute, max: 20).contains { CFEqual($0, window) }
     }
+    func diagnostics() -> [String: Bool] {
+        let current = NSRunningApplication(processIdentifier: app.processIdentifier)
+        return ["permission_available": permitted(), "process_present": current != nil && current?.isTerminated == false,
+                "bundle_matches": current?.bundleIdentifier == identifier, "launch_matches": current?.launchDate == launched,
+                "selected_window_present": axElements(application, kAXWindowsAttribute, max: 20).contains { CFEqual($0, window) },
+                "frontmost_target": NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier,
+                "focused_window_matches": focusedWindow(application, equals: window)]
+    }
     func activate() throws {
-        guard targetValid(), app.activate(options: []) else { throw AutomationError.targetChanged }
+        guard permitted(), targetValid() else { throw AutomationError.targetChanged }
+        let requested = app.activate(options: [])
+        let frontmost = AXUIElementSetAttributeValue(application, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        guard requested || frontmost == .success else { throw AutomationError.activationDenied }
+        // Raising a window does not by itself establish key focus. Request focus only for this bound window.
+        _ = AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        _ = AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         guard AXUIElementPerformAction(window, kAXRaiseAction as CFString) == .success else { throw AutomationError.unsupported }
-        // Activation is asynchronous. Wait only for this exact application's activation.
-        let deadline = Date().addingTimeInterval(1)
-        while NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier && Date() < deadline {
+        let deadline = ProcessInfo.processInfo.systemUptime + 1.5
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            guard targetValid() else { throw AutomationError.targetChanged }
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier,
+               focusedWindow(application, equals: window) { return }
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else { throw AutomationError.targetChanged }
+        throw AutomationError.windowNotFocused
     }
     func observe(scope: String) throws -> Observation {
         guard permitted(), targetValid() else { throw AutomationError.targetChanged }

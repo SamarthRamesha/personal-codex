@@ -41,6 +41,7 @@ import WebKit
         let password = NSSecureTextField(string: "DISPOSABLE-SYNTHETIC-SECRET")
         password.frame = NSRect(x: 25, y: 330, width: 560, height: 32); password.setAccessibilityLabel("Password")
         protected.contentView?.addSubview(label); protected.contentView?.addSubview(password); protected.orderBack(nil)
+        primary.makeKeyAndOrderFront(nil)
     }
     @objc func preview() {
         let value = uppercase.state == .on ? input.stringValue.uppercased() : input.stringValue

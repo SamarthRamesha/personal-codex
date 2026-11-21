@@ -6,7 +6,7 @@ The active branch is `personal-codex/mac-automation`, based on the preserved sta
 
 ## Current priority: general Mac automation
 
-Implemented selected-window Accessibility reading, reviewed text/press/key/scroll actions, optional window capture/OCR, local Ollama proposals, browser new-window scoping and bounded cancellation. A disposable synthetic app and native self-check are bundled. The self-check correctly reports permission required before touching any UI.
+Implemented selected-window Accessibility reading, reviewed text/press/key/scroll actions, optional window capture/OCR, local Ollama proposals, browser new-window scoping and bounded cancellation. A disposable synthetic app and native self-check are bundled. The owner granted product permissions; the first actual native self-check stopped with targetChanged. A focus-handling revision and stage diagnostics are prepared for rerun.
 
 31 helper checks, 13 Rust checks and 17 frontend checks pass. The optimized preview builds. One installed local 9B trial passed the actual policy with an in-memory driver after an earlier fixture mismatch was corrected; it did not act on a real window. Actual native, browser, capture/OCR and natural-language-to-real-UI acceptance remain pending. [Behavior and limits](docs/MAC_AUTOMATION.md).
 

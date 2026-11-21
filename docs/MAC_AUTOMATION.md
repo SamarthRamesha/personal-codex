@@ -54,7 +54,7 @@ macOS permissions are broader than this application's window scope. They let the
 
 ## Checks and evidence
 
-The source contains 31 helper policy checks, 13 passing Rust checks (plus one explicit installed-model test ignored by normal CI), and 17 frontend checks. These test invariants and contracts, not universal app compatibility. The optimized preview build passes. The native self-check currently reports `permission_required` with `actual_ui_exercised: false`; no personal app was used.
+The source contains 31 helper policy checks, 13 passing Rust checks (plus one explicit installed-model test ignored by normal CI), and 17 frontend checks. These test invariants and contracts, not universal app compatibility. The optimized preview build passes. The owner granted all three product permissions. The first actual native self-check stopped with `targetChanged`; it did not pass. The focus-handling revision requests the exact bound window as main/focused and waits for both app and window focus without weakening the pre-action checks. It also returns the failed stage and bounded synthetic target metadata before cleanup. A real UI rerun is required; no personal app was used.
 
 Private logs retain failed model trials and the corrected local 9B pass (two synthetic actions, exact result matched). Do not treat a later pass as proof that every natural-language request works. Hosted CI runs policy/build checks without UI grants, personal files, local models or JARVIS credentials.
 
