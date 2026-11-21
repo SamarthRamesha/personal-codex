@@ -42,7 +42,10 @@ import CoreGraphics
     }
     guard let primary = windows.firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Automation Fixture" }),
           let protected = windows.firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Protected Fixture" }) else { throw AutomationError.verificationFailed }
-    let driver = try NativeDriver(pid: app.processIdentifier, windowIndex: primary)
+    // Bind with the identity the listing reported, so the guarded path is the one under test.
+    let driver = try NativeDriver(pid: app.processIdentifier, windowIndex: primary,
+                                  expectedTitle: axString(windows[primary], kAXTitleAttribute),
+                                  expectedNumber: axInt(windows[primary], "AXWindowNumber"))
     let session = AutomationSession(driver: driver)
     targetState = { driver.diagnostics() }; actionCount = { session.completedActions }
     stage = "read_primary_window"
@@ -61,6 +64,13 @@ import CoreGraphics
     let key = try session.prepare(plan, digest: initial.digest)
     func record(_ name: String, _ pass: Bool) { checks.append(["name": name, "passed": pass]) }
     record("prepare_is_read_only", try session.observe().digest == initial.digest)
+    stage = "window_identity_check"
+    // A wrong identity must be refused rather than silently controlling this window.
+    var identityRefused = false
+    do { _ = try NativeDriver(pid: app.processIdentifier, windowIndex: primary, expectedTitle: "Not this window") }
+    catch AutomationError.targetChanged { identityRefused = true }
+    catch { }
+    record("window_identity_refused", identityRefused)
     stage = "execute_native_text_and_press"
     let run = try session.execute(id: key, confirmed: true)
     record("native_text_and_press_result", run["status"] as? String == "verified")

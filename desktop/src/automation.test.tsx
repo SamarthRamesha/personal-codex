@@ -39,5 +39,7 @@ describe('scoped Mac automation',()=>{
     // A scroll area can expose both bars; the check must pick the vertical one deterministically.
     expect(acceptance).toContain('hasSuffix(".scrollV")');
     expect(acceptance).toContain('no editable scrollbar with a value was observed');
+    // The self-check must exercise the identity guard, not only the happy path.
+    expect(acceptance).toContain('window_identity_refused');expect(acceptance).toContain('expectedNumber: axInt(windows[primary], "AXWindowNumber")');
   });
 });
