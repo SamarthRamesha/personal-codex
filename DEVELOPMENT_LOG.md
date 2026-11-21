@@ -321,3 +321,28 @@ test are gated in this environment; they are consent/environment gates, not new 
 
 Not verified: Swift compilation, native rerun, capture/OCR, browser workflow, and JARVIS access.
 Priority 1 remains incomplete.
+
+## 21 November 2026 — automation boundary, tested window identity, deterministic scrollbar
+
+Continued priority 1 from a Linux workspace (no macOS SDK, no cargo, no JARVIS route). Publishing
+remained blocked: the push tool transmits the primary checkout's HEAD, and switching that checkout
+to this branch would overwrite the owner's uncommitted `web/style.css`. No force-push attempted.
+
+Added `AutomationBoundaryTests`: the broker's operation allowlist is read from the Rust source, the
+HTTP route table is rejected if any automation-shaped path appears, and no Python module may drive
+the helper or speak its protocol. The guard was proven non-vacuous by injecting an
+`/api/automation/execute` route, observing the failure, and restoring the tree.
+
+Extracted the pre-scope window check into `automationWindow.ts` with unit tests (replaced window,
+closed window, reordered list, untitled window refused as unidentifiable, no title leaking in
+messages). Extended the binding to `AXWindowNumber`: the list reports it, the panel sends title and
+number, and the driver refuses a mismatch, degrading to the title check when unavailable.
+
+Found a defect created by the previous session's relationship traversal: a scroll area can expose
+both bars, and the acceptance check took whichever came first, so an immovable horizontal bar could
+make a working scroll look broken. It now prefers the vertical bar and records why no bar was usable.
+
+Verified on Linux: backend 382 tests OK (skipped=55); backend with `PERSONAL_CODEX_HTTP_TESTS=1`
+378 tests OK (skipped=4) before the boundary tests were added; frontend 26 tests pass; `tsc -b` clean;
+`npm run build` (tsc + vite) clean. Not verified: any Swift compilation, every native rerun, capture
+and OCR, the browser workflow, and the local-model end-to-end path.

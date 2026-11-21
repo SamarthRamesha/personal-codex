@@ -96,3 +96,37 @@ a streamed-response thread was inside `Store.rows()` while a test teardown close
 connection, freeing the handle mid-query. `Store.close()` now closes under the same re-entrant lock
 that every reader and writer takes, teardowns call it, and a regression test asserts that close
 blocks until an in-flight query finishes.
+
+## Window identity: title and window number (21 November 2026)
+
+An index alone is not an identity, so a scope is now bound to more than a position:
+
+- Listing windows returns each title and, when the app exposes it, `AXWindowNumber`.
+- Before a scope starts, the panel lists again and compares both; the refusals distinguish a
+  closed window, an untitled window that cannot be identified, a reordered list, and a window
+  that was replaced by a different window carrying the same title.
+- `begin` carries `window_title` and `window_number`, and the native driver repeats the same
+  comparison before binding. Both fields are optional and degrade to the title check, so apps
+  that expose no window number are not excluded.
+
+The comparison itself is a pure function with unit tests, rather than an inline condition.
+
+## Scrollbar selection
+
+A scroll area can expose both a vertical and a horizontal bar. The synthetic check now prefers
+the vertical bar deterministically instead of whichever the traversal reached first, and records
+why no bar was usable (`no editable scrollbar with a value was observed`) so an owner-run failure
+does not require guessing.
+
+## What is verified where
+
+| Check | Runs on | Current state |
+|---|---|---|
+| Automation boundary: no HTTP route reaches the helper | Linux, every push | 4 checks, mutation-tested |
+| Window identity logic | Linux, every push | unit tests |
+| Hosted CI: Swift compile + 31 helper self-tests | macOS CI runner | pending your push |
+| Native self-check, scrollbar, capture/OCR, browser | needs a Mac session | not run |
+
+The Linux session that produced these changes had no macOS SDK, so the Swift edits have not been
+compiled locally. The macOS CI job builds the helper and runs its self-tests, which is the first
+place a compile error would appear.

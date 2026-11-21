@@ -8,16 +8,22 @@ Read README.md, PROJECT_STATUS.md, docs/MAC_AUTOMATION.md, docs/IMPLEMENTATION_M
 
 ## Latest session (21 November 2026)
 
-The last session ran in a Linux workspace with no macOS SDK, no Swift/cargo and no JARVIS route,
-so it produced source changes and Linux-executable evidence only. Current feature head contains:
-scrollbar fix (fixture `.legacy` scrollers plus bounded `AXVerticalScrollBar`/`AXHorizontalScrollBar`
-traversal), window-identity fix (title-carrying `begin`, re-list before scoping, `targetChanged` on
-a shifted index), and `Store.close()` under the shared RLock with a deterministic regression test
-for the intermittent suite segfault.
+Feature head is `6dbf894` on `personal-codex/mac-automation`, six commits ahead of the published
+`a6090d7`; **publishing is still blocked** because the push tool sends the primary checkout's HEAD
+and switching that checkout would discard the owner's uncommitted `web/style.css`. Push is a plain
+fast-forward once the owner does it from the Mac checkout.
 
-Verified: backend 378 tests OK (skipped=55) three times on the previously crashing verbose path;
-desktop typecheck clean; 18 frontend checks pass. Unverified: any Swift compilation and every native
-rerun, including the scrollbar check itself, capture/OCR and the browser workflow.
+Linux-verified this session: backend 382 tests OK (skipped=55); frontend 26 tests pass; `tsc -b`
+clean; `npm run build` clean. Added an automation-boundary test group (mutation-tested), extracted
+the window-identity check into unit-tested `automationWindow.ts`, bound scopes to `AXWindowNumber`
+in addition to the title, and made the scrollbar acceptance check prefer the vertical bar with a
+recorded reason when none is usable.
+
+Still unverified and requiring the Mac: every Swift compile, the 31 helper self-tests, the synthetic
+self-check including the scrollbar, capture/OCR and protected-window refusal, the new-window browser
+workflow, and the local-model plan against a real synthetic window. The macOS CI job
+(`scripts/build_mac_automation.py --self-test` plus `cargo test`) compiles and self-tests the helper
+on push, so run it first and read its failure stage before touching the panel.
 
 ## Current first priority
 
