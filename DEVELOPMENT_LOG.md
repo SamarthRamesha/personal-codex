@@ -277,3 +277,109 @@ Built the bounded agent tool layer in `app/tools.py` and wired it into the contr
 Three endpoints implement the lifecycle: `/agent/request` builds a deterministic prompt (task, bounded workspace listing, tool schema) and queues an approval bound to its digest; `/agent/plan` rebuilds the same prompt, requires that approved invocation, validates and hash-binds the provider's proposal, stores it, and queues a second approval bound to the proposal digest and workspace; `/agent/execute` requires that approved digest, atomically claims the proposal to prevent duplicate execution, executes inside the task worktree, records per-tool events, and refuses if the stored proposal or workspace changed. Dashboard gained proposal, operation, and result panels plus request/build/execute controls.
 
 Verified: default suite 56 tests `OK (skipped=4)`; with `PERSONAL_CODEX_HTTP_TESTS=1` all 56 tests passed, including proposal → approval → execution (file actually changed, tests run) and stale-file rejection (file preserved, run marked failed). `python3 -m py_compile app/server.py app/providers.py app/tools.py` and `node --check web/app.js` passed. README was rewritten to document the working workflow and its limits.
+
+
+## 21 November 2026 — scoped Mac automation preview
+
+Added a public-API native helper, private bounded stdio broker, reviewed local plans, selected-window Accessibility controls, optional capture/OCR, new browser window scoping and disposable native acceptance fixture. Stop invalidates scope without rolling back completed edits. Per-action safety is revalidated after earlier actions. 31 helper, 13 Rust and 17 frontend checks pass; optimized preview built. Installed local 9B initially chose an absent result attribute in an unrealistic fixture; fixture now mirrors the real labelled result value, validation rejects absent attributes, and a separate synthetic local-model trial passed. Actual UI test refuses without Accessibility; no real UI/browser/OCR success claimed. Preview remains separate from stable source and launcher. No server/network/policy changes or personal app inspection. Priority 1 is incomplete; later priorities are untouched.
+
+The first hosted preview run passed backend tests but exposed undeclared Node file-system types in the new contract test. The contract test now uses Vite raw source imports with the declared Vite client types; no dependency was added and production application behavior is unchanged. Local tests/build were rerun and fresh hosted verification is required.
+
+
+## 21 November 2026 — first real UI attempt and focus revision
+
+The owner screenshot confirmed all three product permissions available. The first product synthetic self-check stopped with targetChanged; no actual action acceptance was claimed. Raising a window alone does not establish key focus. The driver now requests main/focused state on the exact bound window, waits for both the selected app and selected window, and retains its per-action target/focus guards. The fixture selects its primary key window and launches activated. The helper initializes AppKit. This is a proposed correction, pending actual rerun. Self-check failures now preserve stage, completed action count and bounded synthetic target metadata before terminating the owned fixture. No typed values or personal windows are logged. Apple references: https://developer.apple.com/documentation/appkit/nsrunningapplication/activate(options:) and installed AXAttributeConstants.h (AXMain does not imply key focus). No OS permission database, server or browser settings changed.
+
+The first focus-revision headless check aborted because AppKit was initialized before selecting the in-memory self-test path. AppKit initialization is now restricted to permission-checked native paths; all 31 helper checks pass again. No owner OS grant was changed. The actual focus correction still awaits product rerun.
+
+
+## 21 November 2026 — scrollbar diagnosis, window identity and the suite segfault
+
+Environment: Linux cloud workspace. No macOS SDK, no Swift or cargo toolchain, no route to JARVIS
+(100.117.60.12 timed out; no SSH identity present). Nothing was built, signed, installed or run on
+the Mac, and no permission, TCC, server or family-service change was made. The installed
+permission-approved preview was not touched because it is not reachable from here.
+
+Diagnosed `native_scrollbar_result` from source: the fixture's `NSScrollView` kept the default
+overlay scroller style, which hides the scroller until the user scrolls, so an `AXChildren` walk
+cannot observe an `AXScrollBar`; the check failed before attempting a scroll. Fix: the fixture uses
+`.legacy` scrollers, and the reader also walks the `AXVerticalScrollBar`/`AXHorizontalScrollBar`
+relationships of `AXScrollArea` nodes under the existing bounds and inside the bound window.
+
+Window identity: `begin` now carries the listed window title, the driver refuses a shifted index
+with `targetChanged`, and the panel re-lists and compares titles before scoping.
+
+Suite crash: intermittent SIGSEGV (exit 139, roughly one in eight verbose runs) reproduced under
+`faulthandler` as a streamed-response thread inside `Store.rows()` while a teardown closed the
+shared connection. `Store.close()` now closes under the store's RLock, teardowns use it, and
+`test_close_waits_for_a_query_that_is_still_running` asserts the blocking behaviour.
+
+Verified here: backend 378 tests OK (skipped=55), three consecutive verbose runs clean on the
+previously crashing path; desktop `tsc -b` clean; 18 frontend checks pass. The skip count differs
+from the historical 5 because loopback HTTP, the pinned gateway package and the disposable syscall
+test are gated in this environment; they are consent/environment gates, not new failures.
+
+Not verified: Swift compilation, native rerun, capture/OCR, browser workflow, and JARVIS access.
+Priority 1 remains incomplete.
+
+## 21 November 2026 — automation boundary, tested window identity, deterministic scrollbar
+
+Continued priority 1 from a Linux workspace (no macOS SDK, no cargo, no JARVIS route). Publishing
+remained blocked: the push tool transmits the primary checkout's HEAD, and switching that checkout
+to this branch would overwrite the owner's uncommitted `web/style.css`. No force-push attempted.
+
+Added `AutomationBoundaryTests`: the broker's operation allowlist is read from the Rust source, the
+HTTP route table is rejected if any automation-shaped path appears, and no Python module may drive
+the helper or speak its protocol. The guard was proven non-vacuous by injecting an
+`/api/automation/execute` route, observing the failure, and restoring the tree.
+
+Extracted the pre-scope window check into `automationWindow.ts` with unit tests (replaced window,
+closed window, reordered list, untitled window refused as unidentifiable, no title leaking in
+messages). Extended the binding to `AXWindowNumber`: the list reports it, the panel sends title and
+number, and the driver refuses a mismatch, degrading to the title check when unavailable.
+
+Found a defect created by the previous session's relationship traversal: a scroll area can expose
+both bars, and the acceptance check took whichever came first, so an immovable horizontal bar could
+make a working scroll look broken. It now prefers the vertical bar and records why no bar was usable.
+
+Verified on Linux: backend 382 tests OK (skipped=55); backend with `PERSONAL_CODEX_HTTP_TESTS=1`
+378 tests OK (skipped=4) before the boundary tests were added; frontend 26 tests pass; `tsc -b` clean;
+`npm run build` (tsc + vite) clean. Not verified: any Swift compilation, every native rerun, capture
+and OCR, the browser workflow, and the local-model end-to-end path.
+
+## 21 November 2026 — phase 0 closed, publication unblocked, risk register
+
+Started from the reported state and verified it instead of trusting it: the worktree was clean at
+`bbcc62e`, 11 commits ahead of `origin/personal-codex/mac-automation`, and the primary checkout still
+held the owner's uncommitted `web/style.css` untouched.
+
+Diagnosed the publication failure rather than repeating it. The push tool transmits the chat
+checkout's HEAD, which sits on the stable branch 32 commits behind its remote, so every earlier push
+was rejected as "behind its remote counterpart". Re-pointing only that HEAD with
+`git symbolic-ref refs/heads/personal-codex/mac-automation` for the duration of the push sent
+`a6090d7..bbcc62e` as a fast-forward and then restored the branch. No file, index entry or branch
+content changed: `git status --porcelain` and the `sha256sum` of `web/style.css` were identical
+before and after, and `git ls-remote` confirms the new tip. No force-push, reset or checkout of user
+work was performed. A verified bundle of the branch was also written to the chat workspace as a
+second copy (`git bundle verify`: complete history).
+
+Baseline re-run rather than quoted: 382 backend tests OK with 62 environment-gated skips, and 382 OK
+with `PERSONAL_CODEX_HTTP_TESTS=1` (11 skips). The skip difference is the loopback HTTP, pinned
+gateway wheel, disposable-syscall and macOS gates, not new failures.
+
+Phase 1 review then found one real weakness that did not need a Mac. The synthetic self-check passed
+`approval_is_one_use` on *any* thrown error, so an unrelated fault during the second execute would
+have been reported as proven one-use enforcement. It now requires `AutomationError.actionNotConfirmed`
+and records a failure otherwise. The stronger identity was also never exercised: the check bound a
+wrong title only, so a wrong `AXWindowNumber` was implemented but untested. It now binds the correct
+title with `number + 1` and records `window_number_identity_refused` when the fixture exposes a
+number. A frontend contract test asserts both source shapes so a later edit cannot quietly undo them.
+Frontend: 34 tests pass, `tsc -b` clean.
+
+Wrote `docs/RISK_REGISTER.md`: 17 risks with severity, evidence, mitigation, verification method and
+status. Phase 0 is recorded as passed, phase 1 as blocked on native acceptance, phases 2-5 as gated
+and not started. Nothing in it claims a compiled or natively accepted result.
+
+Not verified: any Swift compilation of `a6090d7..54a11bd`, the 31 helper self-tests, and every native
+self-check. No compiler or macOS SDK exists in this workspace, and the hosted CI result is not
+observable from here.

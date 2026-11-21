@@ -8,6 +8,8 @@ use url::Url;
 
 mod native_project;
 mod mac_actions;
+mod automation;
+use automation::{automation_ipc, stop_mac_automation, automation_activity, plan_mac_automation};
 use mac_actions::{mac_applications, prepare_mac_app, choose_mac_item, cancel_mac_action, execute_mac_action};
 use native_project::{attach_project_file, choose_project_folder, create_selected_project,
                      choose_full_attachments, import_full_attachments, open_full_destination};
@@ -15,7 +17,7 @@ use native_project::{attach_project_file, choose_project_folder, create_selected
 #[derive(Clone)]
 struct Connection { base: Url, token: String, client: reqwest::Client, generation: u64 }
 #[derive(Default)]
-struct Bridge { mac_actions: Mutex<mac_actions::Actions>, attachment_batch: Mutex<Option<native_project::AttachmentBatch>>, offline_base: Option<String>, dropped_file: Mutex<Option<(PathBuf, std::time::Instant)>>, native_grant: Option<String>, project_selection: Mutex<Option<native_project::Selection>>, offline_token_file: Option<PathBuf>, connection: Mutex<Option<Connection>>, generation: Mutex<u64>, cancel: Mutex<Option<(String, watch::Sender<bool>)>> }
+struct Bridge { automation: automation::Broker, mac_actions: Mutex<mac_actions::Actions>, attachment_batch: Mutex<Option<native_project::AttachmentBatch>>, offline_base: Option<String>, dropped_file: Mutex<Option<(PathBuf, std::time::Instant)>>, native_grant: Option<String>, project_selection: Mutex<Option<native_project::Selection>>, offline_token_file: Option<PathBuf>, connection: Mutex<Option<Connection>>, generation: Mutex<u64>, cancel: Mutex<Option<(String, watch::Sender<bool>)>> }
 #[derive(Serialize, Clone)]
 struct Reply { status: u16, body: String }
 #[derive(Serialize, Clone)]
@@ -219,7 +221,7 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![mac_applications, prepare_mac_app, choose_mac_item, cancel_mac_action, execute_mac_action, choose_full_attachments, import_full_attachments, open_full_destination, attach_project_file, choose_project_folder, create_selected_project, offline_session, connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
+        .invoke_handler(tauri::generate_handler![automation_ipc, stop_mac_automation, automation_activity, plan_mac_automation, mac_applications, prepare_mac_app, choose_mac_item, cancel_mac_action, execute_mac_action, choose_full_attachments, import_full_attachments, open_full_destination, attach_project_file, choose_project_folder, create_selected_project, offline_session, connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
         .run(tauri::generate_context!()).expect("Personal Codex could not start");
 }
 

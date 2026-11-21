@@ -258,7 +258,7 @@ class ProviderApiIntegrationTests(unittest.TestCase):
             app_server.shutdown()
             app_server.server_close()
             app_thread.join()
-            server.STORE.conn.close()
+            server.STORE.close()
             server.DATA, server.DB_PATH, server.STORE, server.PROVIDER_TRANSPORT = old
             stop_stub(httpd, thread)
             tmp.cleanup()

@@ -1,37 +1,61 @@
 # Personal Codex: current continuation
 
-Updated 20 November 2026. Continue the same master mission; it is active, not paused. The owner has authorized updating the public GitHub repository. No JARVIS installation or live policy/Serve change is authorized without the exact reviewed operations.
+Updated 21 November 2026. Continue the same active mission on `personal-codex/mac-automation`. Preserve stable source `64189ef30177922481d17da242d11a90baf3c599` and the existing default launcher/profile. GitHub updates are authorized; this unaccepted feature must remain isolated from stable main.
 
 ## Read first
 
-Read README.md, docs/IMPLEMENTATION_MATRIX.md, docs/GETTING_STARTED.md, SECURITY.md and the current Git status/log. Preserve every existing local commit, profile, app bundle, model cache and task worktree. The untracked personal-codex-diagnostic.txt must remain unread, unstaged, unchanged and excluded from archives.
+Read README.md, PROJECT_STATUS.md, docs/MAC_AUTOMATION.md, docs/IMPLEMENTATION_MATRIX.md, SECURITY.md and current Git status/log. Preserve all prior source, profiles, bundles, task worktrees and local model caches. Never read, stage, modify or archive the protected untracked personal-codex-diagnostic.txt. Private deployment/permission/check receipts belong in the chat workspace, not public Git.
 
-## Current implementation
+## Latest session (21 November 2026)
 
-- Native Mac chat, persistent history, model selection, streaming/stop/retry, scoped coding approvals/diffs and full-task repair/verified delivery.
-- Shared task lifecycle, bounded context, model metadata/timing, evidence-bound memory and opt-in attributed document search.
-- Exact proposal cycles of periods 1–3 stop without losing saved work; real content progress resets multi-step history. This is not semantic loop detection.
-- Existing-project real-model CLI/ML repair has independent tests, artifacts and frontend evidence. The ML scaffold was authored as a trusted benchmark; blank-project general generation is not accepted.
-- New native Mac actions: installed-app opening, Finder-selected supported-document opening and Finder reveal. Exact one-use in-memory review expires after two minutes. No backend route, file-content reader, arbitrary command/script or cross-app automation.
-- Launcher prefers data/mac-actions-app/Personal Codex.app, retaining all earlier bundles/profiles. It refuses occupied ports rather than stopping existing user services.
+Feature head `7125f25` is published on `personal-codex/mac-automation`; stable `main` and
+`personal-codex/stabilization` remain `64189ef` and were not touched. Draft PR #2 is still a draft
+and is not to be merged.
 
-## Evidence and limitations
+**CI is green for `7366121`**: workflow "Verify Personal Codex" run #19 (`44859571919`) completed
+successfully — backend, frontend, and the macOS `native` job (helper built with `--self-test`, 31
+checks; `cargo test --locked`, 13 tests). That retires the "never compiled" risk for that revision.
+It is not UI acceptance. `7125f25` has its own runs (push `44860058265`, PR `44860062647`): read the
+`native` job there before claiming that revision compiles.
 
-Latest local backend suite: 377 discovered / 372 passed / 5 skipped, 70.115 seconds. Frontend: 14 passed plus TypeScript/Vite. Native: 7 Rust tests plus optimized 13.35 MiB app build and strict ad-hoc signature check; not notarized. The new Mac actions visual test was blocked by an expired UI connector despite a requested timeout. Do not claim actual opening through that panel was verified or repeatedly use the stalled connection.
+The publication problem is solved: pushes failed because the push tool sends the chat checkout's
+HEAD, which sits on the stable branch. Re-pointing only that HEAD with `git symbolic-ref`, pushing,
+and restoring it left every file byte-identical (`web/style.css` hash and `git status` matched). A
+verified bundle sits in the chat workspace at `.safety/mac-automation.bundle`.
 
-Exact API source 282b90d759c2cf76e3306fe87ee6a1f74f7922f2 passed 17 checks in a dedicated disposable Linux guest: auth/worker separation, no-connect/disabled execution, resource/mount/read-only/nonroot controls, document retrieval/removal, cycle guard and restart persistence. Guest container exited cleanly and VM is snapshotted/stopped. Desktop/documentation changes after that commit do not alter the accepted API context. This does not certify JARVIS or an isolated coding executor.
+Changes this session: `approval_is_one_use` now requires `AutomationError.actionNotConfirmed` (any
+error used to count as proof); the self-check exercises a wrong `AXWindowNumber`
+(`window_number_identity_refused`); `newBrowserWindow` binds the created window by title/number
+instead of its index, which creating a window can reorder. Frontend 35 tests pass, `tsc -b` clean,
+backend suite unchanged by these edits (382 OK, 62 environment-gated skips; 382 OK with
+`PERSONAL_CODEX_HTTP_TESTS=1`, 11 skips).
 
-JARVIS read-only reachability: private DNS resolves, dashboard port 80 accepts TCP, ports 443 and 8787 refuse. No HTTP/inference request, credentials or target commands were sent in that check. Existing SSH agent has no identities. Do not ask again for the unknown passphrase, extract/reset credentials, use sudo/group/socket/API workarounds or revive either declined transient probe.
+New documents: `docs/RISK_REGISTER.md` (17 risks with statuses) and `docs/MAC_ACCEPTANCE_RUNBOOK.md`
+(stages 0-7 with exact commands and the evidence each stage must produce).
 
-Existing authenticated ZimaOS 1.6.2 dashboard showed the owner's role and Custom App import route. Only blank forms were inspected; no Submit/Install, upload or service setting changed. Installed-version field preservation, supported image delivery, mapped ownership, exact protected-parent/free-space facts and family access dependencies are unresolved. Private receipts/review/checkpoints are outside Git in the current chat's outputs. Do not publish their private addresses, tokens, access policy or personal contents.
+Still unverified and requiring the Mac: every real-UI check — the synthetic self-check including
+scrollbar and both identity guards, capture/OCR with protected-window refusal, cancellation and
+expiry, the new-window browser workflow, and the local-model plan. Phase 1's gate is only 
+"partially verified" until those runs happen.
+
+## Current first priority
+
+Implement and accept general Mac automation before advancing to any later priority. The branch adds a Swift helper using public Accessibility/ScreenCaptureKit/Vision, a bounded private stdio Rust broker and a separate React panel. Supported actions are reviewed set_text/press/Enter/Tab/Escape/AX scrolling. Scope lasts ten minutes/32 actions; a proposal lasts two minutes and is consumed once. Recheck target/focus/permissions and action safety after every step; stop on stale or ambiguous state without retrying completed actions. Natural-language planning uses only existing local 9B/14B Ollama after text consent; no downloads or cloud fallback.
+
+31 helper policy checks, 13 Rust checks and 34 frontend checks pass. An optimized separate preview builds. A local 9B proposal passed the actual helper policy and synthetic in-memory driver; earlier failure and correction are retained privately. These are not real UI acceptance. The owner has granted the product permissions. The first actual native self-check stopped with targetChanged. A focus-handling revision now requests exact-window focus and waits for both app/window focus; failure reports contain stages and synthetic metadata. Actual rerun is pending. Browser adapters, native click/type/scroll, selected-window OCR/capture and local-model-to-real-UI flows remain unaccepted.
+
+The owner was asked to manually grant Accessibility to Personal Codex Automation Preview or its named embedded helper, then check permission in the panel. Never edit TCC or grant Terminal/Codex as a parent workaround. Only the owner can approve OS prompts. The disposable fixture contains synthetic data and expires after two minutes; the self-check terminates only the exact fixture it launched. Do not use personal apps for acceptance or touch the current browser window. A CUA connection previously hung despite its timeout; do not repeat that connection or use a removed tool namespace.
 
 ## Exact next work
 
-1. Source f2ea8e7ff1b89cd6ab97f4fe89acad67cf9f3094 was published by atomic fast-forward to main and stabilization. All three hosted jobs passed: Linux backend (377 discovered / 363 passed / 14 optional or platform skips), frontend and macOS native. Run44749454322 is green. The first run on9d2de2d exposed a disposable readiness fixture inheriting the production-capacity reserve; only that fixture was corrected and its six local tests passed. A later documentation-only run exposed an intermittent collision in native test temp-directory naming on main while stabilization passed. Only the native test fixture now adds an atomic sequence and bounded exclusive-create retries; production action code is unchanged. All seven native tests passed again and20parallel repetitions (seven cases each) passed; fresh hosted verification follows that fixture-only correction. Reverify current remote/CI state at the next session; preserve history and never force-push. Publication was explicitly requested on20November, superseding older no-push instructions.
-2. When a reliable native UI connection is available, verify Mac actions opening/cancel/expiry against synthetic items, preserving existing apps/browser work. Use separate windows or hidden browser tabs. Do not silently mark this accepted.
-3. Continue scoped cross-app capability design, task/provider/tool trace correlation, dependency/dev-server lifecycle and broader independent coding/ML acceptance. Opening apps is not universal system control.
-4. Resolve actual ZimaOS importer/image/identity and fresh family service/tag/share/route/emergency-admin facts read-only. Freeze exact directory/container/image/Serve/policy operations, risks, rollback and verification before requesting specific approvals.
-5. Keep production coding disabled; full remote HTTPS/worker/native/sleep/restart/denied-client and production recovery/quota acceptance remain open.
+1. Read CI for `7125f25`, then follow `docs/MAC_ACCEPTANCE_RUNBOOK.md` stages 0-7 on the M3 and record every named check. Do not count CI, self-tests or in-memory policy tests as UI acceptance. Stop at the first failing stage and report its `stage`/`error` verbatim.
+2. Accept a disposable browser form in a newly created window, preserving existing tabs. Verify origin/focus isolation, stale-state refusal, Stop and meaningful changed results. Natural-language proposals still require exact review. Known app/label/credential filters are heuristic and public AX support varies; do not promise hostile-app isolation or universal automation.
+3. Update readable docs, private receipts/checkpoints and the feature branch from actual tests; inspect current hosted CI. Do not merge the preview into stable main until acceptance is justified. No force push.
+4. Only when priority 1 is complete: visually accept the earlier opening panel, then reassess JARVIS read-only and prepare exact deployment operations, then broader development workflows, then production operations.
+
+JARVIS deployment is not live. Last prior read-only evidence: dashboard reachable; HTTPS/backend refused; storage/image/import/identity/family-access gates unresolved. No JARVIS changes occurred in this phase. Do not ask for the unknown key passphrase, extract/reset credentials, assume a Docker operator, use sudo/group/socket/API workarounds or revive either declined transient probe. Preserve all family backup directories and existing family/emergency access. Obtain explicit approval of exact target operations before modifying deployment/network/Serve/policy settings.
+
+The existing local coding/chat/history/document/memory/cycle-guard behavior remains. The backend source is unchanged by this UI phase; prior exact API context passed 17 disposable-container checks and the latest earlier backend suite was 372 passed / 5 skipped. Those checks do not certify JARVIS, production coding isolation or general project generation. Do not start/stop an owner Ollama daemon or replace existing models.
 
 Storage invariants: preserve 200 decimal GB free; 25 GB initial total including image/staging/log/recovery overhead, 24 GB API data admission, 75 GB overall maximum. Admission/DB caps are not a hard volume quota. Encrypted recovery's current 64 MiB envelope is not production-capacity recovery.
 

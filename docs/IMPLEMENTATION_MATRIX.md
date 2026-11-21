@@ -11,6 +11,7 @@ Updated 20 November 2026. “Verified locally” does not mean deployed on JARVI
 | Models | Existing local models, explicit metadata unknowns, measured calls, no cloud fallback | Routing benchmarks and broader capability acceptance |
 | ML | Real-model existing-project repair with independent tests, artifact checks and a frontend | General complete-project generation and production fairness/quality guarantees |
 | Mac opening actions | Native catalogue/Finder selection, exact expiring one-use review; tests/build pass | Visual opening acceptance, cross-app clicking/typing/reading and natural-language workflows |
+| Mac automation preview | Native helper, bounded window scopes, reviewed actions, local planner, optional capture/OCR, owned synthetic self-check; 31 helper/13 Rust/17 frontend checks and preview build pass | Manual OS permission; actual native/browser/capture and natural-language-to-real-UI acceptance; no universal app support |
 | Mac inference worker | Outbound polling, scoped authority, leases/replay/rotation/cancel tests and earlier real-model fixture | Persistent installation and actual JARVIS HTTPS lifecycle tests |
 | API container | Exact282b90d source passes17 checks in a disposable Linux guest | Target-specific image/identity/importer/runtime proof; no coding-executor certificate |
 | JARVIS management | Existing owner dashboard and Custom App route observed read-only | Field preservation, image delivery, exact storage/ownership, explicit installation approval |

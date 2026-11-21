@@ -78,7 +78,7 @@ class HttpLifecycleTests(unittest.TestCase):
     (self.repo/'README.md').write_text('# fixture\n'); subprocess.run(["git","add","README.md"],cwd=self.repo,check=True,capture_output=True); subprocess.run(["git","commit","-m","fixture"],cwd=self.repo,check=True,capture_output=True)
     self.http=ThreadingHTTPServer(('127.0.0.1',0),server.App); self.thread=threading.Thread(target=self.http.serve_forever,daemon=True); self.thread.start(); self.base=f'http://127.0.0.1:{self.http.server_port}'
   def tearDown(self):
-    self.http.shutdown(); self.http.server_close(); self.thread.join(); server.STORE.conn.close(); server.DATA, server.DB_PATH, server.STORE, server.PROVIDER_TRANSPORT=self.old_data,self.old_db,self.old_store,self.old_transport; self.tmp.cleanup()
+    self.http.shutdown(); self.http.server_close(); self.thread.join(); server.STORE.close(); server.DATA, server.DB_PATH, server.STORE, server.PROVIDER_TRANSPORT=self.old_data,self.old_db,self.old_store,self.old_transport; self.tmp.cleanup()
   def request(self,path,method='GET',data=None):
     body=json.dumps(data).encode() if data is not None else None; request=Request(self.base+path,data=body,method=method,headers={'Content-Type':'application/json'})
     try:
@@ -153,7 +153,7 @@ class ExecutionClaimTests(unittest.TestCase):
                          "VALUES (?,?,?,?,?,?,?,?,?,?)",('round-1','task-1',1,'prov-1','m','sha','prop-1','awaiting-approval',at,at))
 
     def tearDown(self):
-        server.STORE.conn.close()
+        server.STORE.close()
         server.DATA,server.DB_PATH,server.STORE=self.old_data,self.old_db,self.old_store
         self.tmp.cleanup()
 
@@ -195,5 +195,29 @@ class ExecutionClaimTests(unittest.TestCase):
         self.assertEqual(errors,[])
         chunks=self.store.rows("SELECT text FROM message_chunks WHERE message_id=? ORDER BY seq",(message['id'],))
         self.assertEqual(len(chunks),expected)
+
+    def test_close_waits_for_a_query_that_is_still_running(self):
+        """A streamed response thread can still be inside rows() when a teardown closes the store.
+
+        Closing outside the lock frees SQLite's handle underneath that query, which crashed the
+        interpreter with a segmentation fault rather than raising. Serializing close on the same
+        lock every reader takes turns that race into an orderly wait.
+        """
+        started=threading.Event(); release=threading.Event(); observed=[]
+        def reader():
+            try:
+                with self.store.lock:
+                    started.set(); release.wait(5)
+                    observed.append(self.store.one("SELECT id FROM projects WHERE id='p1'")['id'])
+            except Exception as error:
+                observed.append(error)
+        thread=threading.Thread(target=reader); thread.start()
+        self.assertTrue(started.wait(5))
+        closer=threading.Thread(target=self.store.close); closer.start()
+        closer.join(0.2); self.assertTrue(closer.is_alive(),'close must wait for the in-flight query')
+        release.set(); thread.join(5); closer.join(5)
+        self.assertEqual(observed,['p1'])
+        self.assertFalse(closer.is_alive())
+        self.assertFalse(thread.is_alive())
 
 if __name__ == '__main__': unittest.main()

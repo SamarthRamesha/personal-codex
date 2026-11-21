@@ -28,3 +28,7 @@ Production coding remains disabled. The new executor is an operator-only prototy
 | Publication / supply chain | Local commits only, explicit staging/archive list, protected diagnostic and private deployment files outside Git, retained rollback artifacts. | Native distribution remains ad-hoc signed/not notarized; no automatic update signing infrastructure. Publishing requires approval. |
 
 See [isolation design and acceptance](ISOLATION.md), [recovery contract](RECOVERY.md), [deployment proposal](../DEPLOYMENT.md) and [API contract](API.md). Defaults do not provide cloud fallback or telemetry. No absolute security claim is made.
+
+## Native Mac automation preview
+
+The separate helper uses private standard input/output, finite operations and an expiring selected-window scope. It does not expose an HTTP control service. Fresh observation digests, per-action focus/window checks, one-use approvals and an out-of-band Stop reduce stale or replayed actions. No arbitrary executable, shell command or permission-database write is exposed. A timeout can follow a completed edit; inspect before retrying. OS grants are broad, and known app/label/credential filters are heuristic. Trusted local app and owner review remain assumptions. Screenshot/OCR requires a separate grant and one-shot consent. See [behavior, test limits and required real-UI acceptance](MAC_AUTOMATION.md).

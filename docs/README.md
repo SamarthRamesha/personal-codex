@@ -4,6 +4,7 @@
 
 - [Getting started](GETTING_STARTED.md)
 - [Current capabilities and unfinished work](IMPLEMENTATION_MATRIX.md)
+- [Mac automation preview and acceptance gates](MAC_AUTOMATION.md)
 - [Mac actions](MAC_ACTIONS.md)
 - [Project-document search](PROJECT_DOCUMENT_SEARCH.md)
 - [Native application](../desktop/README.md)

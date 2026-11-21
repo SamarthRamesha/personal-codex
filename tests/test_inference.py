@@ -18,7 +18,7 @@ class BrokerTests(unittest.TestCase):
         self.store.write('INSERT INTO providers (id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at) VALUES (?,?,?,?,?,?,?,?)',('p',inference.KIND,'','fixture','',0,1,1))
         self.broker=inference.Broker(self.store);self.broker.poll(['fixture'])
     def tearDown(self):
-        self.store.conn.close();server.DATA,server.DB_PATH=self.old;self.tmp.cleanup()
+        self.store.close();server.DATA,server.DB_PATH=self.old;self.tmp.cleanup()
     def submit(self):return self.broker.submit('p','fixture','synthetic prompt')
     def test_chunks_are_ordered_idempotent_and_lease_bound(self):
         jid=self.submit();job=self.broker.poll(['fixture'])
@@ -44,7 +44,7 @@ class BrokerTests(unittest.TestCase):
             with self.assertRaises(PermissionError):self.broker.heartbeat(jid,job['lease'])
         self.assertEqual(self.store.one('SELECT status FROM inference_jobs WHERE id=?',(jid,))['status'],'expired')
     def test_restart_interrupts_jobs_and_forgets_presence(self):
-        jid=self.submit();self.broker.poll(['fixture']);self.store.conn.close();self.store=server.Store();self.broker=inference.Broker(self.store)
+        jid=self.submit();self.broker.poll(['fixture']);self.store.close();self.store=server.Store();self.broker=inference.Broker(self.store)
         self.assertEqual(self.store.one('SELECT status,prompt FROM inference_jobs WHERE id=?',(jid,)),{'status':'interrupted','prompt':''})
         self.assertFalse(self.broker.catalog()['online'])
         self.assertIsNone(self.broker.poll(['fixture']))

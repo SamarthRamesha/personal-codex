@@ -181,7 +181,7 @@ class CatalogApiTests(unittest.TestCase):
             finally:
                 if http:
                     http.shutdown(); http.server_close(); thread.join(timeout=3)
-                server.STORE.conn.close()
+                server.STORE.close()
                 server.DATA, server.DB_PATH, server.STORE, server.AUTH = old
 
 
