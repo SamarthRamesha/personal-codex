@@ -1,5 +1,15 @@
 # Development log
 
+## 22 November 2026 — CI re-check and full-task lifecycle re-audit
+
+Continuation session; nothing was restarted. The primary checkout stayed on `personal-codex/stabilization` at `12a24d5` with its user modification (`web/style.css`, sha256 `4746cdd0…` unchanged) and its preserved untracked files, and feature work stayed in `.worktrees/mac` on `personal-codex/mac-automation` at `999f591`.
+
+**CI.** The branch's workflow-run list still serves a stale cache: it shows #50 (`f26ae74`) and #51 (PR #2) as "in progress" and lists no run at all for `999f591`, `6e919cd`, `54cbdad` or `ad2cec0`. Job names and logs remain unreadable from this host (the REST API answers 403), so no CI result is claimed for those commits. New evidence on the two earlier failures: runs #44 and #45 **are the same commit** `294f4e6`, once from the push event and once from the PR synchronize event, and both failed. That rules out one flaky run, but the failing job is still unnamed; they stay unexplained, not resolved.
+
+**Lifecycle re-audit (preparatory risk reduction, not acceptance).** Read end to end with no change-worthy defect found: `app/project_agent.py` (`start`, `_supervise`, `_run`, resume and delivery paths), `app/full_task.py` (`parse_plan`, `requirements_feedback`, `test_count`, `verify`, `deliver`, `markdown`, `proposal_cycle_period`), `app/project_review.py` (`review`, `apply_new`, `apply_verified`), `app/task_backend.py` (`plan_task`, `execute_task`, `inspect_task`, `resume_task`), the `/api/full-tasks`, `/api/tasks/<id>/full-resume` and `/api/tasks/<id>/autonomous/*` routes, and `Store.recover_interrupted`. Behaviours specifically checked and already guarded: the single-run slot is released outside `_run`; a restart closes the in-flight `autonomous_runs`, `tasks`, `proposals` and `rounds` rows; resume re-binds provider identity, destination inode identity and Git baseline; delivery refuses conflicting destination edits and re-checks digests after its preflight; the 18-round lifetime budget is enforced before any write; identical proposals and exact cycles of period 1–3 are blocked only when they make no content progress. Per the session rule against manufacturing work, no speculative change was made to these paths.
+
+**Verification actually run this session.** Backend `415 tests, OK, 54 skips` (35.1 s, exit 0, `PERSONAL_CODEX_HTTP_TESTS=0`); frontend `41 tests / 8 files` passed; `tsc -b` clean. No macOS check ran: this host is Linux with no `swiftc`, `xcrun`, `codesign` or `osascript`, so the real-UI Phase 1 items (R-01, R-05…R-10) remain unrun and unclaimed.
+
 ## 20 November 2026 — Mac actions and repository polish
 
 Added a local native Mac actions capability with bounded installed-app metadata search, Finder selection, canonical identity revalidation and explicit expiring one-use confirmation. The opener uses fixed arguments, no shell/scripts/backend transport and a filtered environment. Credentials/scripts/symlinks/stale choices are refused. General cross-app automation remains unimplemented.

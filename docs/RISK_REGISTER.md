@@ -68,6 +68,8 @@ Phase 1 is a mandatory acceptance gate and it is blocked, so phases 2–5 do not
 
 ## What the next session must not claim
 
+- That CI passed for `ad2cec0`, `54cbdad`, `6e919cd` or `999f591`. The run list for the branch still serves a stale cache (it shows #50 and #51 "in progress") and lists no run for any of the four, and job logs are unreadable from this host. Re-check the commit's own run page before claiming anything.
+- That runs #44 and #45 were a single flaky failure. Both are commit `294f4e6` (push and PR synchronize) and both failed; the failing job is still unnamed, so the cause is unexplained, not resolved.
 - That any commit **after** `c00e35a` compiles; each needs its own green `native` job. `7366121` (run #19), `7125f25` (run #20) and `c00e35a` (run #26) are compiled and self-tested; `26339e7` (run #30) added the executed origin refusals.
 - That any native check passed, because none has run.
 - That capture, OCR, browser isolation or the local-model path are accepted.
