@@ -25,6 +25,13 @@ class SecurityAndPlanningTests(unittest.TestCase):
     with self.assertRaises(ValueError): parse_command('pytest && curl example.com')
   def test_output_secrets_are_redacted(self):
     self.assertIn('[REDACTED]', redacted('API_KEY=abc123 failure'))
+    # Stored test output and errors can echo request headers or bare provider keys.
+    self.assertNotIn('eyJhbGciOiJIUzI1NiIsInR5cCI6', redacted('Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6'))
+    self.assertNotIn('dXNlcjpwYXNzd29yZA==', redacted('authorization: Basic dXNlcjpwYXNzd29yZA=='))
+    self.assertNotIn('sk-live-abcdefghijklmnop', redacted('the call failed with sk-live-abcdefghijklmnop'))
+    self.assertNotIn('hunter2', redacted('password: hunter2'))
+    # Ordinary long identifiers are not credentials and stay readable.
+    self.assertIn('3f9a1c2b4d5e6f708192a3b4c5d6e7f8', redacted('commit 3f9a1c2b4d5e6f708192a3b4c5d6e7f8 failed'))
   def test_timeout_range_is_enforced_before_execution(self):
     with self.assertRaises(ValueError): execute_in_workspace('/tmp', 'python3 -c "print(1)"', 301)
   def test_merge_preview_reports_conflicts_without_modifying_repository(self):

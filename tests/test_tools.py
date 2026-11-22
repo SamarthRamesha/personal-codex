@@ -224,6 +224,27 @@ class AgentApiTests(unittest.TestCase):
         _, events = self.call(f"/api/tasks/{task_id}/events")
         self.assertTrue(any("Tool apply_patch" in event["message"] for event in events))
 
+    def test_review_shows_the_code_the_model_wrote_not_a_redacted_copy(self):
+        # Redaction belongs to stored/displayed text. Parsing the redacted text would silently
+        # rewrite an approved edit: "token=abc123def" would execute as "token=[REDACTED]".
+        proposal = {"summary": "record a synthetic token", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n",
+             "new_text": "token=abc123def\n"}]}
+        task_id, provider, workspace = self.prepare(proposal)
+        _, request_approval = self.call(f"/api/tasks/{task_id}/agent/request", "POST", {"provider_id": provider["id"]})
+        self.call(f"/api/approvals/{request_approval['approval_id']}", "PATCH", {"status": "approved"})
+        status, planned = self.call(f"/api/tasks/{task_id}/agent/plan", "POST", {"provider_id": provider["id"]})
+        self.assertEqual(status, 201)
+        self.assertIn("token=abc123def", planned["operations"][0]["new_text"])
+        self.assertEqual(self.call(f"/api/approvals/{planned['approval_id']}", "PATCH", {"status": "approved"})[0], 200)
+        status, executed = self.call(f"/api/tasks/{task_id}/agent/execute", "POST", {})
+        self.assertEqual((status, executed["status"]), (200, "executed"))
+        self.assertEqual((Path(workspace["path"]) / "README.md").read_text(), "token=abc123def\n")
+        # What is kept for later display is still scrubbed.
+        _, invocations = self.call(f"/api/tasks/{task_id}/invocations")
+        self.assertIn("[REDACTED]", invocations[0]["response"])
+        self.assertNotIn("abc123def", invocations[0]["response"])
+
     def test_stale_file_state_fails_the_patch_instead_of_overwriting(self):
         proposal = {"summary": "patch", "operations": [
             {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "agent\n"},
@@ -342,6 +363,16 @@ class RoundApiFixture(unittest.TestCase):
 
 class MultiRoundApiTests(RoundApiFixture):
     """Iterative rounds: execute, feed evidence back, require fresh approvals, verify completion."""
+
+    def test_round_review_keeps_credential_shaped_code_intact(self):
+        self.responses = [json.dumps({"summary": "record a token", "status": "continue", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "token=abc123def\n"},
+            {"tool": "run_tests", "command": 'python3 -c "print(1)"'}]})]
+        planned = self.plan_round()
+        self.assertIn("token=abc123def", planned["operations"][0]["new_text"])
+        _, invocations = self.call(f"/api/tasks/{self.task_id}/invocations")
+        self.assertIn("[REDACTED]", invocations[0]["response"])
+        self.assertNotIn("abc123def", invocations[0]["response"])
 
     def test_two_rounds_self_correct_then_verified_completion(self):
         self.responses = [

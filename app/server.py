@@ -844,6 +844,15 @@ def parse_command(command: str) -> list[str]:
     return argv
 
 def redacted(text: str) -> str:
+    """Scrub unambiguous credential spans from output that is stored or shown.
+
+    Only credential-prefixed shapes are matched. A blanket long-token rule would mangle the
+    identifiers and fixtures the operator and the model still have to read, and header values
+    such as ``Authorization: Bearer ...`` were previously left intact in stored test output.
+    """
+    text = re.sub(r'(?i)\b(authorization|proxy-authorization)\s*[:=]\s*\S+(?:\s+\S+)?', r'\1: [REDACTED]', text)
+    text = re.sub(r'(?i)\bbearer\s+[A-Za-z0-9._~+/-]{12,}=*', 'Bearer [REDACTED]', text)
+    text = re.sub(r'\b(?:sk|ghp|gho|ghu|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}', '[REDACTED]', text)
     text = re.sub(r'(?i)(api[_-]?key|token|password|secret)\s*[=:]\s*[^\s]+', r'\1=[REDACTED]', text)
     return text[:MAX_OUTPUT_BYTES]
 
@@ -1845,19 +1854,23 @@ class App(SimpleHTTPRequestHandler):
                 if budget: return self.json({"error":budget,"budget":budget_state(tid),"limits":limits},409)
                 started=time.time()
                 transport=round_transport(provider, stop_check=lambda: STOPPING.is_set() or cancellation_row(tid) is not None)
-                result=invoke_provider(provider,prompt,transport); result["text"]=redacted(result["text"])
+                result=invoke_provider(provider,prompt,transport)
+                # Redaction is for display and storage only. Parsing the redacted text would
+                # rewrite the work: a patch whose new text contains "token=value" would be
+                # reviewed and executed as "token=[REDACTED]".
+                raw=result["text"]; display=redacted(raw)
                 record_latency(provider["id"],started)
-                add_usage(tid, response_bytes=len(result["text"].encode("utf-8")), invocations=1)
+                add_usage(tid, response_bytes=len(raw.encode("utf-8")), invocations=1)
                 prompt_sha=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
-                repeated=STORE.one("SELECT id FROM invocations WHERE task_id=? AND response=? LIMIT 1",(tid,result["text"]))
+                repeated=STORE.one("SELECT id FROM invocations WHERE task_id=? AND response=? LIMIT 1",(tid,display))
                 if repeated:
                     task_event(tid,"security","warning",f"Round {number} repeated an identical provider response; it was refused.")
                     return self.json({"error":"provider repeated an identical response; request a genuinely different next step","round":number},409)
-                STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],prompt_sha,result["text"],now()))
+                STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],prompt_sha,display,now()))
                 if STOPPING.is_set() or cancellation_row(tid):
                     task_event(tid,"security","warning","Provider response arrived after cancellation; no proposal was published.")
                     return self.json({"error":"task was cancelled during planning; its response was retained but cannot execute"},409)
-                parsed=tools.parse_round_proposal(result["text"])
+                parsed=tools.parse_round_proposal(raw)
                 if parsed["status"]=="continue":
                     operations=tools.bind_hashes(safe_workspace_path(workspace), parsed["operations"])
                     digest=tools.proposal_digest(tid, workspace["branch"], operations)
@@ -2004,10 +2017,12 @@ class App(SimpleHTTPRequestHandler):
                 prompt=validate_provider_prompt(build_agent_prompt(task, workspace, str(data.get("prompt") or "")))
                 kind=provider_approval_kind(provider); detail=provider_invocation_detail(tid,provider,prompt)
                 if not spend_approval(task["project_id"],kind,detail): return self.json({"error":f"approved {kind} request for this exact workspace, provider, and prompt required, and one approval covers one invocation"},403)
-                started=time.time(); result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"]); record_latency(provider["id"],started)
+                started=time.time(); result=invoke_provider(provider,prompt,active_provider_transport(provider)); record_latency(provider["id"],started)
+                # Store and show the redacted form; parse the bytes the model actually produced.
+                raw=result["text"]; display=redacted(raw)
                 digest_prompt=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
-                STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest_prompt,result["text"],now()))
-                parsed=tools.parse_proposal(result["text"])
+                STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest_prompt,display,now()))
+                parsed=tools.parse_proposal(raw)
                 operations=tools.bind_hashes(safe_workspace_path(workspace), parsed["operations"])
                 digest=tools.proposal_digest(tid, workspace["branch"], operations); proposal_id=uid()
                 STORE.write("INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?,?,?)",(proposal_id,tid,workspace["branch"],workspace["path"],parsed["summary"],json.dumps(operations),digest,"pending",None,now()))
