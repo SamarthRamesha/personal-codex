@@ -13,7 +13,7 @@ check, so no guessing is needed.
 | In-memory policy/session self-tests, now including the credential-text predicate capture refuses on | Same job, `--self-test` (no permissions, no window) |
 | 13 Rust broker tests | Same job, `cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml -j 2` |
 | 39 frontend tests, typecheck | `frontend` job; and locally `npx vitest run`, `tsc -b` |
-| Backend + HTTP regression, 413 tests | `backend` job with `PERSONAL_CODEX_HTTP_TESTS=1`; also locally |
+| Backend + HTTP regression, 415 tests | `backend` job with `PERSONAL_CODEX_HTTP_TESTS=1`; also locally |
 | **Real windowed UI behaviour** | **nothing yet** — this runbook is that evidence |
 
 A green CI run does not prove any row in the "Stages" tables below. Only your run does.

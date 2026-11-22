@@ -472,3 +472,12 @@ The newly added tests were run fifteen times in a loop with no failure, because 
 retrievable from this IP, so it is recorded as unexplained rather than as a passing check.
 Hosted CI: run #50 (`45048266342`) for `f26ae74` **completed successfully** (backend, frontend,
 macOS `native`).
+
+A restart drill (`tests/test_restart_drill.py`, `d1f3e02`) then closed the ninth defect of the
+session: the proposal-execution route claims a proposal without a round id, so a restart during that
+path left the row `executing` for good — never reviewable, never runnable again, and shown as running.
+`recover_interrupted` now closes every `executing` proposal, and the drill asserts the general
+invariant: no table may keep `running`/`executing`/`streaming`/`queued` after a restart, while partial
+messages, events and saved deliveries survive it. Final counts: 415 backend tests (1 skip), 39 frontend
+tests, typecheck clean. The approvals panel now states the one-action, ten-minute lifetime that
+`eade3dc` introduced.
