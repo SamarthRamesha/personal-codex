@@ -174,6 +174,17 @@ class Store:
             result=self.conn.execute("UPDATE approvals SET status=? WHERE id=? AND status='pending'",(status,approval_id))
             self.conn.commit()
             return result.rowcount == 1
+    def consume_approval(self, approval_id: str) -> bool:
+        """Spend one approved approval atomically; a competing caller loses the race.
+
+        The approval UI authorizes exactly one action. Reading ``status='approved'`` and acting
+        afterwards lets one approval invoke a provider or run a command as often as the caller
+        likes, so the spend itself has to be the compare-and-set that makes replay impossible.
+        """
+        with self.lock:
+            result=self.conn.execute("UPDATE approvals SET status='consumed' WHERE id=? AND status='approved'",(approval_id,))
+            self.conn.commit()
+            return result.rowcount == 1
     def claim_execution(self, proposal_id: str, round_id: str | None = None) -> str:
         """Take a pending proposal (and a round, when given) in one locked transaction.
 
@@ -893,6 +904,11 @@ def ref_oid(root: str, ref: str) -> str:
 def approval_detail(action: str, task_id: str, **refs) -> str:
     """Canonical, immutable description of the exact Git state a user reviewed."""
     return json.dumps({"action": action, "refs": refs, "task_id": task_id}, sort_keys=True, separators=(",", ":"))
+
+def spend_approval(project_id: str, kind: str, detail: str) -> bool:
+    """Spend the oldest matching approved approval for one action; it is never presented again."""
+    row=STORE.one("SELECT id FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved' ORDER BY created_at, rowid LIMIT 1",(project_id,kind,detail))
+    return bool(row) and STORE.consume_approval(row["id"])
 
 def merge_preview(root: str, branch: str) -> dict:
     if not workspace_clean(root): raise ValueError("Project has uncommitted changes; merge is refused")
@@ -1823,8 +1839,8 @@ class App(SimpleHTTPRequestHandler):
                 if not context_row: return self.json({"error":f"request round {number} approval again; its approved prompt was not found"},409)
                 prompt=validate_provider_prompt(context_row["prompt"] or "")
                 kind=provider_approval_kind(provider); detail=round_invocation_detail(tid,provider,prompt,number)
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
-                if not permitted: return self.json({"error":f"approved {kind} request for this exact round {number} prompt required"},403)
+                # One approval authorizes one invocation; a spent approval must be requested again.
+                if not spend_approval(task["project_id"],kind,detail): return self.json({"error":f"approved {kind} request for this exact round {number} prompt required, and one approval covers one invocation"},403)
                 budget=budget_error(tid)
                 if budget: return self.json({"error":budget,"budget":budget_state(tid),"limits":limits},409)
                 started=time.time()
@@ -1987,8 +2003,7 @@ class App(SimpleHTTPRequestHandler):
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
                 prompt=validate_provider_prompt(build_agent_prompt(task, workspace, str(data.get("prompt") or "")))
                 kind=provider_approval_kind(provider); detail=provider_invocation_detail(tid,provider,prompt)
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
-                if not permitted: return self.json({"error":f"approved {kind} request for this exact workspace, provider, and prompt required"},403)
+                if not spend_approval(task["project_id"],kind,detail): return self.json({"error":f"approved {kind} request for this exact workspace, provider, and prompt required, and one approval covers one invocation"},403)
                 started=time.time(); result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"]); record_latency(provider["id"],started)
                 digest_prompt=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
                 STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest_prompt,result["text"],now()))
@@ -2041,8 +2056,7 @@ class App(SimpleHTTPRequestHandler):
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
                 prompt=validate_provider_prompt(data.get("prompt")); kind=provider_approval_kind(provider)
                 detail=provider_invocation_detail(tid,provider,prompt)
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved'",(task["project_id"],kind,detail))
-                if not permitted: return self.json({"error":f"approved {kind} request for this exact provider, endpoint, model, and prompt required"},403)
+                if not spend_approval(task["project_id"],kind,detail): return self.json({"error":f"approved {kind} request for this exact provider, endpoint, model, and prompt required, and one approval covers one invocation"},403)
                 started=time.time(); result=invoke_provider(provider,prompt,active_provider_transport(provider)); result["text"]=redacted(result["text"]); record_latency(provider["id"],started)
                 digest=json.loads(detail)["refs"]["prompt_sha256"]; iid=uid()
                 STORE.write("INSERT INTO invocations VALUES (?,?,?,?,?,?)",(iid,tid,provider["id"],digest,result["text"],now()))
@@ -2060,8 +2074,7 @@ class App(SimpleHTTPRequestHandler):
                 if not task: return self.json({"error":"task not found"},404)
                 workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
                 if not workspace: return self.json({"error":"ready task workspace required"},403)
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='execute' AND detail=? AND status='approved'",(task["project_id"],f"execute:{tid}:{command}"))
-                if not permitted: return self.json({"error":"approved exact command request required"},403)
+                if not spend_approval(task["project_id"],"execute",f"execute:{tid}:{command}"): return self.json({"error":"approved exact command request required, and one approval covers one run"},403)
                 result=execute_in_workspace(workspace["path"],command,data.get("timeout",120),stop_check=lambda: STOPPING.is_set() or bool(cancellation_row(tid))); eid=uid()
                 STORE.write("INSERT INTO executions VALUES (?,?,?,?,?,?)",(eid,tid,json.dumps(result["argv"]),result["exit_code"],result["output"],now()))
                 task_event(tid,"executor","info",f"Approved command completed with exit code {result['exit_code']}.")

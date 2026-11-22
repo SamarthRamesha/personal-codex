@@ -98,6 +98,8 @@ class HttpLifecycleTests(unittest.TestCase):
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
     status,invoked=self.request(f'/api/tasks/{task_id}/invoke','POST',{'provider_id':provider['id'],'prompt':prompt}); self.assertEqual(status,200); self.assertTrue(invoked['text'].startswith('deterministic reply')); self.assertEqual(len(invoked['prompt_sha256']),64); self.assertFalse(invoked['cloud_allowed'])
     status,changed_prompt=self.request(f'/api/tasks/{task_id}/invoke','POST',{'provider_id':provider['id'],'prompt':prompt+' changed'}); self.assertEqual(status,403)
+    # The same approval must not authorize a second identical invocation: one grant, one action.
+    status,replayed=self.request(f'/api/tasks/{task_id}/invoke','POST',{'provider_id':provider['id'],'prompt':prompt}); self.assertEqual(status,403); self.assertIn('one invocation',replayed['error'])
     status,invocations=self.request(f'/api/tasks/{task_id}/invocations'); self.assertEqual((status,len(invocations)),(200,1)); self.assertNotIn(prompt,invocations[0]['response']); self.assertIn('deterministic reply',invocations[0]['response'])
     status,cloud_provider=self.request('/api/providers','POST',{'kind':'openai-compatible','endpoint':'https://provider.example/v1','model':'fixture-cloud','secret_ref':'PROVIDER_API_KEY','cloud_allowed':True}); self.assertEqual(status,201)
     status,cloud_request=self.request(f'/api/tasks/{task_id}/provider-request','POST',{'provider_id':cloud_provider['id'],'prompt':prompt}); self.assertEqual((status,cloud_request['kind'],cloud_request['cloud_allowed']),(201,'network',True))
@@ -115,6 +117,8 @@ class HttpLifecycleTests(unittest.TestCase):
     status,approval=self.request(f'/api/tasks/{task_id}/execution-request','POST',{'command':command}); self.assertEqual(status,201)
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
     status,execution=self.request(f'/api/tasks/{task_id}/execute','POST',{'command':command}); self.assertEqual(status,200); self.assertEqual(execution['exit_code'],0); self.assertIn('42',execution['output'])
+    # An approved command runs once; replaying it requires a fresh approval.
+    status,replayed=self.request(f'/api/tasks/{task_id}/execute','POST',{'command':command}); self.assertEqual(status,403); self.assertIn('one run',replayed['error'])
     status,events=self.request(f'/api/tasks/{task_id}/events'); self.assertEqual(status,200); self.assertGreaterEqual(len(events),4)
     workspace_path=Path(workspace['path']); (workspace_path/'feature.txt').write_text('merged fixture\n')
     subprocess.run(["git","add","feature.txt"],cwd=workspace_path,check=True,capture_output=True); subprocess.run(["git","commit","-m","feature fixture"],cwd=workspace_path,check=True,capture_output=True)

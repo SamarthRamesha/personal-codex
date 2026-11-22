@@ -52,6 +52,21 @@ class AuthPolicyTests(unittest.TestCase):
                 self.assertEqual(store.one('SELECT status FROM approvals WHERE id=?',('a',))['status'],decided)
             finally:store.conn.close()
 
+    def test_a_spent_approval_authorizes_exactly_one_action(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(server, 'DATA', Path(directory)), patch.object(server, 'DB_PATH', Path(directory)/'test.db'):
+                store=server.Store()
+            try:
+                store.write('INSERT INTO approvals VALUES (?,?,?,?,?,?)',('spend','p','provider-invoke','exact','approved',1))
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    results=list(pool.map(lambda _:store.consume_approval('spend'),range(4)))
+                self.assertEqual(sum(results),1,'one approval must never authorize two actions')
+                self.assertEqual(store.one('SELECT status FROM approvals WHERE id=?',('spend',))['status'],'consumed')
+                self.assertFalse(store.consume_approval('spend'))
+                self.assertFalse(store.decide_approval('spend','approved'))
+            finally:store.conn.close()
+
     def test_login_attempts_are_rate_limited_and_bounded(self):
         auth=security.OwnerAuth('x'*48)
         for _ in range(5):
