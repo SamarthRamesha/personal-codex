@@ -448,5 +448,43 @@ class ConversationHttpTests(unittest.TestCase):
         self.assertEqual(body["failure_class"], "unreachable")
 
 
+class TurnStartFailureTests(unittest.TestCase):
+    """A turn that cannot start must not leave the conversation claiming an active answer."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.old = (server.DATA, server.DB_PATH, server.STORE)
+        server.DATA, server.DB_PATH = base / "data", base / "data" / "test.db"
+        server.STORE = server.Store()
+        self.store = server.STORE
+        self.addCleanup(self.cleanup)
+
+    def cleanup(self):
+        server.STORE.close()
+        server.DATA, server.DB_PATH, server.STORE = self.old
+        self.tmp.cleanup()
+
+    def test_a_transient_write_failure_releases_the_slot_and_the_message(self):
+        conversation = conversations.create_conversation(self.store, title="fixture")
+        message = conversations.new_message(self.store, conversation["id"], "assistant", "", status="queued")
+        original, state = self.store.write, {"failed": False}
+
+        def flaky(sql, args=()):
+            if not state["failed"] and sql.startswith("UPDATE messages SET status='streaming'"):
+                state["failed"] = True
+                raise RuntimeError("synthetic transient storage failure")
+            return original(sql, args)
+
+        self.store.write = flaky
+        conversations._run_turn(self.store, conversation, message["id"], {}, "prompt", threading.Event())
+        row = self.store.one("SELECT status,error FROM messages WHERE id=?", (message["id"],))
+        self.assertEqual(row["status"], "error")
+        self.assertNotIn(message["id"], conversations.GENERATIONS)
+        # The conversation is usable again rather than stuck behind a phantom active answer.
+        self.assertFalse(self.store.one("SELECT id FROM messages WHERE conversation_id=? AND status IN ('queued','streaming') LIMIT 1",
+                                        (conversation["id"],)))
+
+
 if __name__ == "__main__":
     unittest.main()

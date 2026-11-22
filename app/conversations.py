@@ -372,7 +372,6 @@ def _start_turn(store, conversation: dict, content: str, *, provider: dict | Non
 def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt: str, cancel: threading.Event) -> None:
     """One provider call. Final text comes from the adapter, never from the displayed chunks."""
     started = time.time()
-    store.write("UPDATE messages SET status='streaming', updated_at=? WHERE id=?", (stamp(), message_id))
     streamed: list[str] = []
 
     def on_text(chunk: str) -> None:
@@ -384,6 +383,9 @@ def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt
         streamed.append(chunk)
 
     try:
+        # Marking the message active belongs inside the turn: if this write fails, the error path
+        # and the cleanup below still have to release the slot and the active-answer state.
+        store.write("UPDATE messages SET status='streaming', updated_at=? WHERE id=?", (stamp(), message_id))
         adapter = transport_for(provider)
         result = adapter({"provider_id":provider["id"],"kind":provider["kind"],"endpoint": provider["endpoint"], "model": provider["model"], "prompt": prompt,
                           "cloud_allowed": bool(provider["cloud_allowed"]), "secret_ref": provider.get("secret_ref") or "",
@@ -409,6 +411,13 @@ def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt
     finally:
         with _LOCK:
             GENERATIONS.pop(message_id, None)
+        # Never leave a queued or streaming message behind: the conversation would refuse every
+        # later turn until the process restarted, and a client would wait for a status forever.
+        try:
+            store.write("UPDATE messages SET status='error', error=?, updated_at=? WHERE id=? AND status IN ('queued','streaming')",
+                        ("Turn ended without a final assistant status", stamp(), message_id))
+        except Exception:
+            pass
 
 
 def wait_for_message(store, message_id: str, timeout: float = 10.0) -> dict | None:
