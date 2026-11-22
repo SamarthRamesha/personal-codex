@@ -7,6 +7,10 @@ export type SelfCheckSummary = {
   failed: number;
   failures: {name: string; detail?: string}[];
   headline: string;
+  /** True only for a report that says it ran through a real UI and every listed check passed. */
+  verified: boolean;
+  /** Workflows a passing run did not cover, so a pass is never read as full coverage. */
+  notExercised: string[];
   stage?: string;
   error?: string;
 };
@@ -20,10 +24,16 @@ export type SelfCheckSummary = {
  */
 export function summarizeSelfCheck(report: unknown): SelfCheckSummary {
   if (!report || typeof report !== 'object' || Array.isArray(report)) {
-    return {status: 'unreadable', total: 0, passed: 0, failed: 0, failures: [],
+    return {status: 'unreadable', total: 0, passed: 0, failed: 0, failures: [], verified: false, notExercised: [],
       headline: 'The native check returned no readable report. Nothing is verified by this result.'};
   }
   const source = report as Record<string, unknown>;
+  // A report that never claims a real UI run cannot verify anything, however many checks passed.
+  const exercised = source.actual_ui_exercised === true;
+  const notExercised = [
+    ...(source.capture_requested === true ? [] : ['selected-window capture and OCR']),
+    ...(source.browser_exercised === true ? [] : ['new-window browser workflow']),
+  ];
   const status = typeof source.status === 'string' ? source.status : 'unknown';
   const stage = typeof source.stage === 'string' ? source.stage : undefined;
   const error = typeof source.error === 'string' ? source.error : undefined;
@@ -48,9 +58,12 @@ export function summarizeSelfCheck(report: unknown): SelfCheckSummary {
     // An unrecognised status must not read as green: a cancelled or future terminal report may
     // carry passing checks and still not establish acceptance.
     headline = `The check reported "${status}", not passed, so its ${total} recorded result${total === 1 ? '' : 's'} do not establish a verified run.`;
+  } else if (!exercised) {
+    headline = `All ${total} checks passed, but the report does not record an actual UI run, so this is not acceptance.`;
   } else {
     headline = `All ${total} checks passed.`;
   }
   return {status, total, passed, failed: failures.length, failures, headline,
-    ...(stage ? {stage} : {}), ...(error ? {error} : {})};
+    verified: status === 'passed' && exercised && total > 0 && failures.length === 0,
+    notExercised, ...(stage ? {stage} : {}), ...(error ? {error} : {})};
 }

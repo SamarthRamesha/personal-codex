@@ -78,8 +78,9 @@ export function MacAutomation({close}:{close:()=>void}){
       <label className="automation-consent"><input type="checkbox" checked={checkConsent} disabled={!!busy} onChange={e=>setCheckConsent(e.target.checked)}/>Run these synthetic checks through the native automation driver.</label>
       <label className="automation-consent"><input type="checkbox" checked={checkCapture} disabled={!!busy} onChange={e=>setCheckCapture(e.target.checked)}/>Also check capture and OCR of the synthetic window. Requires screen capture permission.</label>
       <button disabled={!!busy||!checkConsent||!permission?.accessibility||(checkCapture&&!permission?.screen_capture)} onClick={()=>{setScope(null);setPlan(null);setCapture(null);setCheckReport(null);void action('Checking the disposable test app…',()=>rpc<Record<string,unknown>>({op:'self_check',confirmed:checkConsent,capture:checkCapture}),r=>setCheckReport(r));}}>Run synthetic Mac check</button>
-      {checkSummary&&<><p role="status" className={checkSummary.failed>0||checkSummary.status!=='passed'?'message-error':'muted small'}>{checkSummary.headline}</p>
+      {checkSummary&&<><p role="status" className={checkSummary.verified?'muted small':'message-error'}>{checkSummary.headline}</p>
         {checkSummary.failures.map(failure=><p className="muted small" key={failure.name}>{failure.name}{failure.detail?` · ${failure.detail}`:''}</p>)}
+        {checkSummary.status==='passed'&&checkSummary.notExercised.map(name=><p className="muted small" key={name}>NOT EXERCISED · {name}</p>)}
         <pre>{JSON.stringify(checkReport,null,2)}</pre></>}
     </details>
     <details><summary>Start a fresh browser window</summary><label>Browser<select value={browser} disabled={!!busy} onChange={e=>setBrowser(e.target.value)}>

@@ -5,10 +5,10 @@ const check=(name:string,passed:boolean,detail?:string)=>({name,passed,...(detai
 
 describe('native self-check summary',()=>{
   it('reports a full pass with the number of checks that actually ran',()=>{
-    const summary=summarizeSelfCheck({status:'passed',actual_ui_exercised:true,
+    const summary=summarizeSelfCheck({status:'passed',actual_ui_exercised:true,capture_requested:true,browser_exercised:true,
       checks:[check('prepare_is_read_only',true),check('native_text_and_press_result',true),check('native_scrollbar_result',true)]});
     expect(summary.headline).toBe('All 3 checks passed.');
-    expect(summary).toMatchObject({status:'passed',total:3,passed:3,failed:0,failures:[]});
+    expect(summary).toMatchObject({status:'passed',total:3,passed:3,failed:0,failures:[],verified:true,notExercised:[]});
   });
   it('names the failing check instead of leaving the reader to scan JSON',()=>{
     const summary=summarizeSelfCheck({status:'needs_review',checks:[
@@ -31,6 +31,21 @@ describe('native self-check summary',()=>{
   });
   it('does not treat an empty pass as verification',()=>{
     expect(summarizeSelfCheck({status:'passed',checks:[]}).headline).toContain('no checks');
+  });
+  it('does not accept a pass that recorded no real UI run',()=>{
+    const summary=summarizeSelfCheck({status:'passed',actual_ui_exercised:false,checks:[check('prepare_is_read_only',true)]});
+    expect(summary.headline).not.toBe('All 1 checks passed.');
+    expect(summary.headline).toContain('not acceptance');
+    expect(summary.verified).toBe(false);
+    expect(summarizeSelfCheck({status:'passed',actual_ui_exercised:true,checks:[check('prepare_is_read_only',true)]}).verified).toBe(true);
+  });
+  it('names the workflows a passing run did not exercise',()=>{
+    const partial=summarizeSelfCheck({status:'passed',actual_ui_exercised:true,capture_requested:false,browser_exercised:false,
+      checks:[check('prepare_is_read_only',true)]});
+    expect(partial.notExercised).toEqual(['selected-window capture and OCR','new-window browser workflow']);
+    const full=summarizeSelfCheck({status:'passed',actual_ui_exercised:true,capture_requested:true,browser_exercised:true,
+      checks:[check('prepare_is_read_only',true)]});
+    expect(full.notExercised).toEqual([]);
   });
   it('never presents an unlisted status as a green result',()=>{
     const summary=summarizeSelfCheck({status:'cancelled',checks:[check('prepare_is_read_only',true),check('native_text_and_press_result',true)]});
