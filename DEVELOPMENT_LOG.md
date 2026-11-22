@@ -434,3 +434,41 @@ verified resolved), R-20 (output redaction, verified resolved) and R-21 (chat tu
 resolved); R-02 now records compile evidence through `c00e35a`, R-05 and R-06 record the new refusals
 and their remaining native gap, and R-09 records the summariser corrections. Phase 1 stays
 **partially verified**: every real-UI check in `docs/MAC_ACCEPTANCE_RUNBOOK.md` is still unrun.
+
+## 22 November 2026 (continued) — eight more defects in the shared foundations
+
+Same environment, same rule: no macOS host, so nothing native is claimed. Eight further defects were
+fixed in the same loop, each proven by a check that fails on the previous code.
+
+- `a40cb34` — completion evidence skipped rounds whose status was `failed`, so a round that ran work
+  and broke it was invisible and an older passing round stood in as the latest evidence: the model's
+  completion claim was accepted after the workspace had been broken.
+- `28b500d` — `project_agent._run` prepared state before its own `try/finally`; an unexpected failure
+  there left the single-run slot claimed and the row `running`, refusing every later coding run until
+  restart. A supervisor now releases the slot and closes the row.
+- `294f4e6` — the panel's self-check summary special-cased three statuses and rendered any other one
+  with passing checks (`cancelled`, a future terminal state) as "All N checks passed."
+- `eade3dc` — the approvals table had **no lifetime**: an approval stayed spendable forever. Approving
+  now records a 600 s expiry, `consume_approval` refuses and marks a lapsed row, existing databases
+  are backfilled, and the eleven positional approval inserts name their columns (a seventh column
+  would otherwise have broken every approval creation).
+- `0e35cb3` — six guarded setup routes (`workspace`, `release`, `apply`) read `status='approved'`
+  directly, so an approval of any age authorized them, and an old row could shadow a fresh one. They
+  now share `approval_permits`.
+- `f26ae74` — the context walker promised to skip secret-named paths but selected `secrets.json`,
+  `credentials.yaml`, `deploy.pem` and `id_dsa` into the model prompt, and ranked them higher when the
+  task mentioned secrets.
+- `5404c97` — `regenerate` rebuilt the prompt with the answer being replaced still in it, ending at
+  `ASSISTANT: <old answer>` plus a final `ASSISTANT:` cue: a continuation request, not a new answer.
+- `f8c7303` — `do_GET`/`do_POST` mapped only `ValueError`, `OSError` and SQLite errors and `do_DELETE`
+  had no guard, so a `KeyError`/`TypeError` reset the connection and the panel could only say
+  "Backend returned an invalid response".
+
+Verification: 413 backend tests with `PERSONAL_CODEX_HTTP_TESTS=1` (1 skip: the recovery tier needs
+the optional `cryptography` wheel), 39 frontend tests, `tsc -b` clean. Every new test was also run
+against the pre-fix source and observed to fail there (recorded in each commit and in R-22…R-27).
+The newly added tests were run fifteen times in a loop with no failure, because hosted run #45 for
+`294f4e6` reported `failed` while its jobs passed at `f26ae74`; the failing job name was not
+retrievable from this IP, so it is recorded as unexplained rather than as a passing check.
+Hosted CI: run #50 (`45048266342`) for `f26ae74` **completed successfully** (backend, frontend,
+macOS `native`).

@@ -4,7 +4,7 @@ Updated 22 November 2026. Continue the same active mission on `personal-codex/ma
 Stable source `64189ef30177922481d17da242d11a90baf3c599` (`main` and
 `personal-codex/stabilization`) is untouched and must stay that way until acceptance justifies more.
 Draft PR #2 stays a draft and is not to be merged. The feature head is this document's commit; its
-parent is `7c6c6bc`. Confirm with `git log --oneline -5` and `git ls-remote origin`.
+parent is `f8c7303`. Confirm with `git log --oneline -5` and `git ls-remote origin`.
 
 ## Read first
 
@@ -23,9 +23,10 @@ evidence available: it compiles the helper and runs its in-memory self-tests and
 That is compile plus policy evidence, not windowed UI acceptance.
 
 Hosted verification is readable at the run pages (the GitHub API is rate-limited from this IP):
-run #26 (`45045013891`, `c00e35a`) and run #30 (`45045487455`, `26339e7`) both **completed
-successfully** — backend, frontend, and the macOS `native` job. Later commits carry their own runs;
-read the one you need before claiming a compile result.
+run #26 (`45045013891`, `c00e35a`), run #30 (`45045487455`, `26339e7`) and run #50 (`45048266342`,
+`f26ae74`) **completed successfully** — backend, frontend, and the macOS `native` job. Run #45 for
+`294f4e6` reported `failed`; its failing job was not retrievable from here and the same jobs passed
+at `f26ae74`, so treat it as unexplained rather than resolved. Every later commit needs its own run.
 
 Publishing still works only through the documented workaround: `cloud_git push` sends the chat
 checkout's HEAD, which sits on the stable branch. Re-point only that HEAD with `git symbolic-ref`,
@@ -43,11 +44,19 @@ unchanged. A verified bundle is in the chat workspace at `.safety/mac-automation
 | `586a3d3` | A restored recovery tree kept `data/projects` and `data/workspaces` at 0755; every restored directory is now created at 0700 and every file is 0600. |
 | `80b4b70` | The display filter rewrote the model's proposal before parsing (`token=...` became `token=[REDACTED]`, JSON often invalid) while `Authorization: Bearer ...` and bare `sk-` keys survived in stored output. |
 | `7c6c6bc` | A chat turn that failed before marking itself streaming leaked its generation slot and wedged the conversation until restart. |
+| `a40cb34` | Completion evidence ignored rounds whose status was `failed`, so an older passing round stood in as the latest evidence and completion was accepted after the workspace had been broken. |
+| `28b500d` | `project_agent._run` prepared state before its own `try/finally`; a failure there kept the single-run slot and the `running` row, refusing every later coding run until restart. |
+| `294f4e6` | The panel read any unrecognised self-check status with passing checks as "All N checks passed." |
+| `eade3dc` | Approvals had no lifetime: an approval stayed spendable forever. Approving records a 600 s expiry, a lapsed approval is refused and marked expired, existing rows are backfilled, and the approval inserts name their columns. |
+| `0e35cb3` | Six setup routes (`workspace`, `release`, `apply`) accepted an approval of any age and let a stale row shadow a fresh one; they now share `approval_permits`. |
+| `f26ae74` | The context walker selected `secrets.json`, `credentials.yaml`, `deploy.pem` and `id_dsa` into model prompts and search results. |
+| `5404c97` | `regenerate` handed the model its own previous answer followed by an `ASSISTANT:` cue, so it could only continue the old text. |
+| `f8c7303` | An unexpected handler error (`KeyError`/`TypeError`; `do_DELETE` had no guard) reset the connection instead of answering bounded JSON. |
 
 Verification actually run at the end of the session: `python3 -m unittest discover -s tests` with
-`PERSONAL_CODEX_HTTP_TESTS=1` → **399 tests, OK, 1 skip** (the optional `cryptography` wheel was
+`PERSONAL_CODEX_HTTP_TESTS=1` → **413 tests, OK, 1 skip** (the optional `cryptography` wheel was
 installed locally to run the 10 recovery tests; CI without it skips that tier);
-`npx vitest run` → **38 tests**; `npm run typecheck` (`tsc -b`) clean. Each new regression test was
+`npx vitest run` → **39 tests**; `npm run typecheck` (`tsc -b`) clean. Each new regression test was
 also run against the pre-fix source and observed to fail.
 
 ## Phase 1 status: partially verified, still blocked
