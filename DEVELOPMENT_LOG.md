@@ -383,3 +383,54 @@ and not started. Nothing in it claims a compiled or natively accepted result.
 Not verified: any Swift compilation of `a6090d7..54a11bd`, the 31 helper self-tests, and every native
 self-check. No compiler or macOS SDK exists in this workspace, and the hosted CI result is not
 observable from here.
+
+## 22 November 2026 — Phase 1 hardening and shared-foundation defects
+
+This session again had no macOS host: `uname` is `Linux freestyle-vm 6.1.102 x86_64`, `swiftc`,
+`xcrun`, `clang`, `cargo` and `codesign` are absent, there is no `/Users` or `/Applications`. No
+native check was run and none is claimed. Every native change was compiled and self-tested by the
+hosted `native` job instead, which is compile and in-memory evidence only.
+
+Seven defects were fixed, each with a negative control run against the previous code:
+
+- `5616276` — approval replay. Four guarded routes read `status='approved'` and never spent it, so one
+  owner approval authorized unlimited provider invocations (including cloud) and unlimited runs of
+  the same approved command. `Store.consume_approval` makes the spend an atomic
+  `approved → consumed` transition. The HTTP lifecycle test returns **200** on the old code, **403**
+  on the fixed code; a four-thread test proves exactly one caller wins.
+- `c00e35a` — capture returned OCR text unscreened, although field values were already screened with
+  the same predicate, and the protected fixture window was bound by a launch-time index that focus
+  changes reorder. Capture now refuses credential-shaped OCR text with `unsafeTarget`, and the
+  secure-window checks re-resolve the window by title. Run #26 compiled and self-tested this.
+- `65a9493` — the acceptance summariser documented exit 4 for "helper could not run" but never
+  returned it (missing helper exited 1, a hang escaped as a traceback), and a passing run said
+  nothing about capture, OCR or the browser. Exit 4 now means exactly that, `verified` requires
+  `actual_ui_exercised: true`, no report is saved for a run that did not happen, and a pass prints
+  `NOT EXERCISED` for capture and the browser workflow.
+- `26339e7` — the browser-origin refusals (cross-origin link press, cross-origin typed URL, a scope
+  with no origin) were enforced in policy but only described by source-string contracts. They now
+  execute in the macOS `native` job (run #30 passed).
+- `586a3d3` — a restored recovery tree left `data/projects` and `data/workspaces` at 0755 while every
+  other path was 0700/0600, because `Path.mkdir(parents=True, mode=0o700)` modes only the last
+  component. Restored directories are created explicitly at 0700; the test fails on the old code.
+- `80b4b70` — the display filter ran on the model's response before parsing, so a proposal containing
+  `token=...` was rewritten to `token=[REDACTED]` and its JSON was usually rejected outright; stored
+  output also kept `Authorization: Bearer ...` and bare `sk-` keys. Redaction now applies to
+  stored/displayed text only, and covers those shapes.
+- `7c6c6bc` — a chat turn marked its message `streaming` before its `try`, so a transient storage
+  failure escaped `_run_turn`, left the message queued and kept its generation slot; the conversation
+  then refused every later turn until restart. The `finally` now releases the slot and marks any
+  still-active message `error`.
+
+Verification actually run: `python3 -m unittest discover -s tests` with
+`PERSONAL_CODEX_HTTP_TESTS=1` → 399 tests, OK, 1 skip after installing the optional `cryptography`
+wheel locally to run the 10 recovery tests; `npx vitest run` → 38 tests; `npm run typecheck` clean;
+each new regression test also run against the pre-fix code and observed to fail. Hosted CI: run #26
+(`45045013891`, `c00e35a`) and run #30 (`45045487455`, `26339e7`) completed successfully, including
+the macOS `native` job.
+
+`docs/RISK_REGISTER.md` gains R-18 (approval replay, verified resolved), R-19 (restore-tree modes,
+verified resolved), R-20 (output redaction, verified resolved) and R-21 (chat turn slot, verified
+resolved); R-02 now records compile evidence through `c00e35a`, R-05 and R-06 record the new refusals
+and their remaining native gap, and R-09 records the summariser corrections. Phase 1 stays
+**partially verified**: every real-UI check in `docs/MAC_ACCEPTANCE_RUNBOOK.md` is still unrun.

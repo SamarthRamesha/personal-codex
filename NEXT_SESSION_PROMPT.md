@@ -1,66 +1,103 @@
 # Personal Codex: current continuation
 
-Updated 21 November 2026. Continue the same active mission on `personal-codex/mac-automation`. Preserve stable source `64189ef30177922481d17da242d11a90baf3c599` and the existing default launcher/profile. GitHub updates are authorized; this unaccepted feature must remain isolated from stable main.
+Updated 22 November 2026. Continue the same active mission on `personal-codex/mac-automation`.
+Stable source `64189ef30177922481d17da242d11a90baf3c599` (`main` and
+`personal-codex/stabilization`) is untouched and must stay that way until acceptance justifies more.
+Draft PR #2 stays a draft and is not to be merged. The feature head is this document's commit; its
+parent is `7c6c6bc`. Confirm with `git log --oneline -5` and `git ls-remote origin`.
 
 ## Read first
 
-Read README.md, PROJECT_STATUS.md, docs/MAC_AUTOMATION.md, docs/IMPLEMENTATION_MATRIX.md, SECURITY.md and current Git status/log. Preserve all prior source, profiles, bundles, task worktrees and local model caches. Never read, stage, modify or archive the protected untracked personal-codex-diagnostic.txt. Private deployment/permission/check receipts belong in the chat workspace, not public Git.
+README.md, PROJECT_STATUS.md, docs/MAC_AUTOMATION.md, docs/IMPLEMENTATION_MATRIX.md,
+docs/RISK_REGISTER.md, docs/MAC_ACCEPTANCE_RUNBOOK.md, SECURITY.md and current Git status/log.
+Preserve all prior source, profiles, bundles, task worktrees and local model caches. Never read,
+stage, modify or archive the protected untracked `personal-codex-diagnostic.txt`. Keep private
+deployment/permission receipts in the chat workspace, not in public Git.
 
-## Latest session (21 November 2026)
+## Environment reality (verified again this session)
 
-Feature head `7125f25` is published on `personal-codex/mac-automation`; stable `main` and
-`personal-codex/stabilization` remain `64189ef` and were not touched. Draft PR #2 is still a draft
-and is not to be merged.
+There is still no macOS host here: `uname` is `Linux freestyle-vm 6.1.102 x86_64`, `swiftc`, `xcrun`,
+`clang`, `cargo` and `codesign` are absent, and there is no `/Users` or `/Applications`. **No native
+check has been run, and none may be claimed.** The hosted macOS `native` job is the only native
+evidence available: it compiles the helper and runs its in-memory self-tests and the 13 Rust tests.
+That is compile plus policy evidence, not windowed UI acceptance.
 
-**CI is green for `7366121`**: workflow "Verify Personal Codex" run #19 (`44859571919`) completed
-successfully — backend, frontend, and the macOS `native` job (helper built with `--self-test`, 31
-checks; `cargo test --locked`, 13 tests). That retires the "never compiled" risk for that revision.
-It is not UI acceptance. `7125f25` has its own runs (push `44860058265`, PR `44860062647`): read the
-`native` job there before claiming that revision compiles.
+Hosted verification is readable at the run pages (the GitHub API is rate-limited from this IP):
+run #26 (`45045013891`, `c00e35a`) and run #30 (`45045487455`, `26339e7`) both **completed
+successfully** — backend, frontend, and the macOS `native` job. Later commits carry their own runs;
+read the one you need before claiming a compile result.
 
-The publication problem is solved: pushes failed because the push tool sends the chat checkout's
-HEAD, which sits on the stable branch. Re-pointing only that HEAD with `git symbolic-ref`, pushing,
-and restoring it left every file byte-identical (`web/style.css` hash and `git status` matched). A
-verified bundle sits in the chat workspace at `.safety/mac-automation.bundle`.
+Publishing still works only through the documented workaround: `cloud_git push` sends the chat
+checkout's HEAD, which sits on the stable branch. Re-point only that HEAD with `git symbolic-ref`,
+push, restore it, then confirm `git status --porcelain` and the `sha256sum` of `web/style.css` are
+unchanged. A verified bundle is in the chat workspace at `.safety/mac-automation.bundle`.
 
-Changes this session: `approval_is_one_use` now requires `AutomationError.actionNotConfirmed` (any
-error used to count as proof); the self-check exercises a wrong `AXWindowNumber`
-(`window_number_identity_refused`); `newBrowserWindow` binds the created window by title/number
-instead of its index, which creating a window can reorder. Frontend 35 tests pass, `tsc -b` clean,
-backend suite unchanged by these edits (382 OK, 62 environment-gated skips; 382 OK with
-`PERSONAL_CODEX_HTTP_TESTS=1`, 11 skips).
+## What this session fixed (all verified, all with negative controls)
 
-New documents: `docs/RISK_REGISTER.md` (17 risks with statuses) and `docs/MAC_ACCEPTANCE_RUNBOOK.md`
-(stages 0-7 with exact commands and the evidence each stage must produce).
+| Commit | Defect |
+|---|---|
+| `5616276` | One approval authorized unlimited provider invocations (including cloud) and command runs: four routes read `status='approved'` and never spent it. Now `Store.consume_approval` is an atomic `approved → consumed` spend; old code returned **200**, fixed code returns **403**. |
+| `c00e35a` | Capture returned OCR text unscreened (credential-shaped text now refused with `unsafeTarget`); the protected fixture window was bound by a launch-time index that focus reorders and is now re-resolved by title. |
+| `65a9493` | `scripts/mac_acceptance.py` documented exit 4 but never returned it; a pass could not say what it had not exercised. Exit 4 now means "helper never ran", `verified` requires `actual_ui_exercised: true`, no report is saved for a run that did not happen, and a pass prints `NOT EXERCISED` for capture and the browser workflow. |
+| `26339e7` | The browser-origin refusals are now executed in the macOS `native` job, not merely asserted as source strings. |
+| `586a3d3` | A restored recovery tree kept `data/projects` and `data/workspaces` at 0755; every restored directory is now created at 0700 and every file is 0600. |
+| `80b4b70` | The display filter rewrote the model's proposal before parsing (`token=...` became `token=[REDACTED]`, JSON often invalid) while `Authorization: Bearer ...` and bare `sk-` keys survived in stored output. |
+| `7c6c6bc` | A chat turn that failed before marking itself streaming leaked its generation slot and wedged the conversation until restart. |
 
-Still unverified and requiring the Mac: every real-UI check — the synthetic self-check including
-scrollbar and both identity guards, capture/OCR with protected-window refusal, cancellation and
-expiry, the new-window browser workflow, and the local-model plan. Phase 1's gate is only 
-"partially verified" until those runs happen.
+Verification actually run at the end of the session: `python3 -m unittest discover -s tests` with
+`PERSONAL_CODEX_HTTP_TESTS=1` → **399 tests, OK, 1 skip** (the optional `cryptography` wheel was
+installed locally to run the 10 recovery tests; CI without it skips that tier);
+`npx vitest run` → **38 tests**; `npm run typecheck` (`tsc -b`) clean. Each new regression test was
+also run against the pre-fix source and observed to fail.
 
-## Current first priority
+## Phase 1 status: partially verified, still blocked
 
-Implement and accept general Mac automation before advancing to any later priority. The branch adds a Swift helper using public Accessibility/ScreenCaptureKit/Vision, a bounded private stdio Rust broker and a separate React panel. Supported actions are reviewed set_text/press/Enter/Tab/Escape/AX scrolling. Scope lasts ten minutes/32 actions; a proposal lasts two minutes and is consumed once. Recheck target/focus/permissions and action safety after every step; stop on stale or ambiguous state without retrying completed actions. Natural-language planning uses only existing local 9B/14B Ollama after text consent; no downloads or cloud fallback.
+Implemented and self-tested: reviewed `set_text`/`press`/`key`/AX `scroll`, one-use approvals with
+expiry, stale-window and focus revalidation after every step, secure-control omission, selected-window
+capture with protected-window refusal, origin-bound browser scopes, and local-model planning against
+the synthetic window.
 
-31 helper policy checks, 13 Rust checks and 34 frontend checks pass. An optimized separate preview builds. A local 9B proposal passed the actual helper policy and synthetic in-memory driver; earlier failure and correction are retained privately. These are not real UI acceptance. The owner has granted the product permissions. The first actual native self-check stopped with targetChanged. A focus-handling revision now requests exact-window focus and waits for both app/window focus; failure reports contain stages and synthetic metadata. Actual rerun is pending. Browser adapters, native click/type/scroll, selected-window OCR/capture and local-model-to-real-UI flows remain unaccepted.
-
-The owner was asked to manually grant Accessibility to Personal Codex Automation Preview or its named embedded helper, then check permission in the panel. Never edit TCC or grant Terminal/Codex as a parent workaround. Only the owner can approve OS prompts. The disposable fixture contains synthetic data and expires after two minutes; the self-check terminates only the exact fixture it launched. Do not use personal apps for acceptance or touch the current browser window. A CUA connection previously hung despite its timeout; do not repeat that connection or use a removed tool namespace.
+Not run on any Mac: every real-UI check in `docs/MAC_ACCEPTANCE_RUNBOOK.md` — the synthetic
+self-check (scrollbar, both identity guards, one-use, stale, cancellation), capture/OCR with
+protected-window refusal, the disposable new-window browser workflow with the cross-origin negative,
+and the local-model plan against a real window. Phase 1 does not advance until those pass.
 
 ## Exact next work
 
-1. Read CI for `7125f25`, then follow `docs/MAC_ACCEPTANCE_RUNBOOK.md` stages 0-7 on the M3 and record every named check. Do not count CI, self-tests or in-memory policy tests as UI acceptance. Stop at the first failing stage and report its `stage`/`error` verbatim.
-2. Accept a disposable browser form in a newly created window, preserving existing tabs. Verify origin/focus isolation, stale-state refusal, Stop and meaningful changed results. Natural-language proposals still require exact review. Known app/label/credential filters are heuristic and public AX support varies; do not promise hostile-app isolation or universal automation.
-3. Update readable docs, private receipts/checkpoints and the feature branch from actual tests; inspect current hosted CI. Do not merge the preview into stable main until acceptance is justified. No force push.
-4. Only when priority 1 is complete: visually accept the earlier opening panel, then reassess JARVIS read-only and prepare exact deployment operations, then broader development workflows, then production operations.
+1. On the M3, run `python3 scripts/build_mac_automation.py --self-test` and
+   `cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml -j 2`, then
+   `python3 scripts/mac_acceptance.py --run --save mac-acceptance.json` and
+   `--run --capture --save mac-acceptance-capture.json`. Grant Accessibility (and Screen Recording
+   for capture) yourself; never edit TCC or grant Terminal as a parent workaround.
+2. Continue runbook stages 4-7 and report the first failing `stage`/`error`/check name verbatim.
+   A `NOT EXERCISED` line is not a pass.
+3. Update `docs/RISK_REGISTER.md` (R-01, R-05, R-06, R-07, R-08, R-10) from the actual results only,
+   and fix defects without weakening any check.
+4. Only after Phase 1 is accepted: end-to-end integration (Phase 2), then data integrity and recovery
+   drills (Phase 3), model/hardware reliability (Phase 4), autonomy acceptance (Phase 5), foundation
+   readiness review (Phase 6), the opening-panel visual pass, then JARVIS read-only planning.
 
-JARVIS deployment is not live. Last prior read-only evidence: dashboard reachable; HTTPS/backend refused; storage/image/import/identity/family-access gates unresolved. No JARVIS changes occurred in this phase. Do not ask for the unknown key passphrase, extract/reset credentials, assume a Docker operator, use sudo/group/socket/API workarounds or revive either declined transient probe. Preserve all family backup directories and existing family/emergency access. Obtain explicit approval of exact target operations before modifying deployment/network/Serve/policy settings.
+While native acceptance stays blocked, independent work in shared foundations is allowed and useful
+(data-integrity tests, SQLite concurrency, crash recovery, approval and tool safety, task resumption,
+observability) provided it does not claim Phase 1 acceptance or quietly broaden autonomy.
 
-The existing local coding/chat/history/document/memory/cycle-guard behavior remains. The backend source is unchanged by this UI phase; prior exact API context passed 17 disposable-container checks and the latest earlier backend suite was 372 passed / 5 skipped. Those checks do not certify JARVIS, production coding isolation or general project generation. Do not start/stop an owner Ollama daemon or replace existing models.
+## Constraints that still hold
 
-Storage invariants: preserve 200 decimal GB free; 25 GB initial total including image/staging/log/recovery overhead, 24 GB API data admission, 75 GB overall maximum. Admission/DB caps are not a hard volume quota. Encrypted recovery's current 64 MiB envelope is not production-capacity recovery.
+No force push, no hard reset, no history rewrite, no merge of PR #2 into `main`. Do not overwrite or
+re-sign the permission-approved Automation Preview, modify TCC or auto-approve OS prompts. Do not use
+personal applications or the user's browser tabs for acceptance. Do not start/stop the owner's Ollama
+daemon or replace models. JARVIS deployment is not live: dashboard reachable, HTTPS/backend refused,
+storage/image/import/identity/family-access gates unresolved. Do not ask for the unknown key
+passphrase, extract or reset credentials, assume a Docker operator, or use sudo/group/socket/API
+workarounds. Preserve family backup directories and existing family/emergency access, and obtain
+explicit approval of exact target operations before changing deployment, network, Serve or policy
+settings. Storage invariants: 200 decimal GB free reserve, 24 GB API data admission, 75 GB overall
+maximum, 25 GB initial total; admission/DB caps are not a hard volume quota.
 
-## Permanent cross-account continuation protocol
+## Continuation protocol
 
-After every meaningful verified milestone and before context/usage exhaustion, refresh this file, status, handoff and development log from actual source, checks, failures/skips, current infrastructure facts and remaining approvals. Require the next account to do the same. Keep private deployment evidence outside Git, preserve the protected diagnostic and user changes, and do not claim partial work is complete. Git history retains previous detailed milestones; this concise current checkpoint supersedes stale historical status and paused sections.
-
-If the owner asks to pause, safely stop only task-owned processes, save consistent state and wait for a subsequent user message saying “it's back”. The prior pauses have already been fulfilled and do not block this active mission.
+After every meaningful verified milestone, refresh this file, `docs/RISK_REGISTER.md`,
+`DEVELOPMENT_LOG.md`, `PROJECT_STATUS.md` and `SESSION_HANDOFF.md` from actual source, checks,
+failures/skips and remaining approvals. Require the next session to do the same. Keep private
+evidence outside Git, preserve the protected diagnostic and all uncommitted user changes, and never
+describe partially verified work as complete.
