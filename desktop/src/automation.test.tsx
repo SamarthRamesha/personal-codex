@@ -6,6 +6,7 @@ import driver from '../automation/Sources/NativeDriver.swift?raw';
 import fixture from '../automation/Fixtures/Fixture.swift?raw';
 import acceptance from '../automation/Sources/Acceptance.swift?raw';
 import browser from '../automation/Sources/Browser.swift?raw';
+import selfTests from '../automation/Tests/SelfTests.swift?raw';
 import ui from './MacAutomation.tsx?raw';
 import {AutomationReview,MacAutomation} from './MacAutomation';
 
@@ -55,6 +56,13 @@ describe('scoped Mac automation',()=>{
     // observe the ordinary window after that happens.
     expect(acceptance).toContain('firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Protected Fixture" })');
     expect(acceptance).toContain('expectedTitle: "Personal Codex Protected Fixture"');
+  });
+  it('enforces one browser origin in an executed test, not only in a comment',()=>{
+    // These run in the macOS native job, so a regression in the policy fails CI rather than
+    // leaving only a source-string assertion behind.
+    expect(selfTests).toContain('A link to another origin is refused');
+    expect(selfTests).toContain("Typing another origin's URL is refused");
+    expect(selfTests).toContain('A browser scope without an origin is refused');
   });
   it('never returns credential-shaped screenshot text',()=>{
     // OCR sees whatever pixels the window shows, including text a secure field would have hidden.

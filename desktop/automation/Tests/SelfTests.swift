@@ -84,6 +84,29 @@ import Foundation
         // Capture refuses on the same predicate that hides credential-shaped field values.
         expect(AutomationPolicy.credentialLike("password: hunter2") && AutomationPolicy.credentialLike("Authorization: Bearer abcdefghijklmnopqrstuvwx"), "Credential-shaped screen text is refused")
         expect(!AutomationPolicy.credentialLike("AMBER WORKFLOW · Synthetic data only"), "Ordinary captured text is allowed")
+        // Browser scopes bind one origin. These are the refusals the browser workflow depends on, so
+        // they are asserted here instead of only in a source-string contract test.
+        let page = Observation(scopeID: "policy", window: "Synthetic page", controls: [
+            Control(id: "field", role: "AXTextField", label: "Search", value: "", enabled: true, editable: true, pressable: false, sensitive: false),
+            Control(id: "button", role: "AXButton", label: "Preview", value: nil, enabled: true, editable: false, pressable: true, sensitive: false),
+            Control(id: "away", role: "AXLink", label: "Elsewhere", value: "Elsewhere", enabled: true, editable: false, pressable: true, sensitive: false, href: "https://other.example/"),
+            Control(id: "result", role: "AXStaticText", label: "Result", value: "Ready", enabled: true, editable: false, pressable: false, sensitive: false)
+        ], truncated: false, browser: true, origin: "https://example.com")
+        let browserPlan = Proposal(summary: "Search the synthetic page", steps: [Step(operation: "set_text", target: "field", text: "hello"), Step(operation: "press", target: "button")], expected: Expected(target: "result", attribute: "value", equals: "Preview: hello"))
+        expect(!fails { try AutomationPolicy.validate(browserPlan, observation: page) }, "A same-origin browser plan is allowed")
+        var crossLink = browserPlan; crossLink.steps = [Step(operation: "press", target: "away")]
+        expect(fails { try AutomationPolicy.validate(crossLink, observation: page) }, "A link to another origin is refused")
+        var crossText = browserPlan; crossText.steps[0].text = "https://other.example/login"
+        expect(fails { try AutomationPolicy.validate(crossText, observation: page) }, "Typing another origin's URL is refused")
+        var sameText = browserPlan; sameText.steps[0].text = "https://example.com/next"
+        expect(!fails { try AutomationPolicy.validate(sameText, observation: page) }, "Same-origin URL text is allowed")
+        var scopeless = page; scopeless.origin = nil
+        expect(fails { try AutomationPolicy.validate(browserPlan, observation: scopeless) }, "A browser scope without an origin is refused")
+        // The postcondition is the only completion evidence, so a secure control cannot supply it.
+        expect(fails { try AutomationPolicy.validate(Proposal(summary: "x", steps: browserPlan.steps, expected: Expected(target: "protected", attribute: "value", equals: "x")), observation: pristine) }, "A secure control cannot prove completion")
+        expect(!AutomationPolicy.matched(Expected(target: "protected", attribute: "value", equals: "x"), in: pristine), "A sensitive control never satisfies verification")
+        expect(fails { _ = try AutomationPolicy.decode(Data(String(repeating: " ", count: 24_001).utf8)) }, "Oversized proposals are refused")
+        expect(fails { _ = try AutomationPolicy.decode(Data("{\"summary\":\"x\",\"steps\":[{\"operation\":\"press\",\"target\":\"a\",\"extra\":1}],\"expected\":{\"target\":\"a\",\"attribute\":\"value\",\"equals\":\"b\"}}".utf8)) }, "Extra step fields are refused")
         let partial = FakeDriver(); let scoped = AutomationSession(driver: partial)
         let partialKey = try scoped.prepare(proposal, digest: scoped.observe().digest)
         partial.afterAction = { partial.valid = false }
