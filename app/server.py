@@ -1173,6 +1173,11 @@ class App(SimpleHTTPRequestHandler):
         except ExecutionDisabledError as error:return self.json({"error":str(error)},403)
         except (ValueError,sqlite3.ProgrammingError):return self.json({"error":"Invalid request or disabled operation"},400)
         except (OSError,sqlite3.Error,subprocess.SubprocessError):return self.json({"error":"Local operation unavailable"},503)
+        except (KeyError,IndexError,TypeError,AttributeError) as error:
+            # An unexpected field must still produce bounded JSON: an uncaught error here resets the
+            # connection, and the panel can only report "Backend returned an invalid response".
+            print(f"[personal-codex] request failed ({type(error).__name__}); details withheld",file=sys.stderr)
+            return self.json({"error":"Request failed; details withheld"},500)
     def get_route(self):
         route=self.route()
         if route == "/api/health": return self.json({"ok":True,"version":"0.2.0","mode":"private-control-plane" if AUTH.enabled else "loopback-development"})
@@ -2133,6 +2138,14 @@ class App(SimpleHTTPRequestHandler):
         except sqlite3.ProgrammingError:return self.json({"error":"Invalid request field types"},400)
         except (OSError,sqlite3.Error,subprocess.SubprocessError):return self.json({"error":"Local operation unavailable"},503)
     def do_DELETE(self):
+        try:
+            return self.delete_route()
+        except (ValueError,sqlite3.ProgrammingError):return self.json({"error":"Invalid request or disabled operation"},400)
+        except (OSError,sqlite3.Error,subprocess.SubprocessError):return self.json({"error":"Local operation unavailable"},503)
+        except (KeyError,IndexError,TypeError,AttributeError) as error:
+            print(f"[personal-codex] request failed ({type(error).__name__}); details withheld",file=sys.stderr)
+            return self.json({"error":"Request failed; details withheld"},500)
+    def delete_route(self):
         route=self.route()
         if route == "/api/session":
             AUTH.logout(self.headers)
@@ -2152,6 +2165,7 @@ class App(SimpleHTTPRequestHandler):
             except LookupError as error: return self.json({"error":str(error)},404)
             except ValueError as error: return self.json({"error":str(error)},400)
             except json.JSONDecodeError: return self.json({"error":"invalid JSON"},400)
+            except TypeError as error: return self.json({"error":"Invalid request field types"},400)
             return self.json(row) if row else self.json({"error":"conversation not found"},404)
         if route.startswith("/api/approvals/"):
             aid=route.split("/")[3]; status=data.get("status")
