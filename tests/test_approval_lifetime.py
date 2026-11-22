@@ -58,6 +58,25 @@ class ApprovalLifetimeTests(unittest.TestCase):
         row = self.row(identifier)
         self.assertEqual((row["status"], row["expires_at"]), ("rejected", None))
 
+    def test_a_stale_approval_does_not_authorize_a_guarded_setup_route(self):
+        identifier = self.pending()
+        self.assertTrue(server.STORE.decide_approval(identifier, "approved"))
+        server.STORE.write("UPDATE approvals SET expires_at=? WHERE id=?", (server.now() - 1, identifier))
+        self.assertIsNone(server.approval_permits("synthetic", "execute", "execute:t:c"))
+        self.assertFalse(server.spend_approval("synthetic", "execute", "execute:t:c"))
+
+    def test_a_stale_approval_does_not_shadow_a_fresh_one(self):
+        stale = self.pending()
+        self.assertTrue(server.STORE.decide_approval(stale, "approved"))
+        server.STORE.write("UPDATE approvals SET expires_at=?,created_at=? WHERE id=?",
+                           (server.now() - 1, server.now() - 5, stale))
+        fresh = self.pending()
+        self.assertTrue(server.STORE.decide_approval(fresh, "approved"))
+        self.assertEqual(server.approval_permits("synthetic", "execute", "execute:t:c")["id"], fresh)
+        self.assertTrue(server.spend_approval("synthetic", "execute", "execute:t:c"))
+        self.assertEqual(self.row(fresh)["status"], "consumed")
+        self.assertEqual(self.row(stale)["status"], "approved")
+
     def test_migration_bounds_an_approval_written_before_lifetimes(self):
         identifier = self.pending()
         server.STORE.write("UPDATE approvals SET status='approved', expires_at=NULL WHERE id=?", (identifier,))

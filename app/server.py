@@ -935,9 +935,20 @@ def approval_detail(action: str, task_id: str, **refs) -> str:
     """Canonical, immutable description of the exact Git state a user reviewed."""
     return json.dumps({"action": action, "refs": refs, "task_id": task_id}, sort_keys=True, separators=(",", ":"))
 
+def approval_permits(project_id: str, kind: str, detail: str) -> dict | None:
+    """The oldest approved approval for exactly this action that is still fresh.
+
+    Setup routes (workspace, release, apply) are guarded by their own state rather than spending an
+    approval, but a stale approval must not authorize work requested long after it was approved.
+    """
+    return STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved' "
+                     "AND (expires_at IS NULL OR expires_at>?) ORDER BY created_at, rowid LIMIT 1",
+                     (project_id,kind,detail,now()))
+
+
 def spend_approval(project_id: str, kind: str, detail: str) -> bool:
-    """Spend the oldest matching approved approval for one action; it is never presented again."""
-    row=STORE.one("SELECT id FROM approvals WHERE project_id=? AND kind=? AND detail=? AND status='approved' ORDER BY created_at, rowid LIMIT 1",(project_id,kind,detail))
+    """Spend the oldest fresh matching approval for one action; it is never presented again."""
+    row=approval_permits(project_id,kind,detail)
     return bool(row) and STORE.consume_approval(row["id"])
 
 def merge_preview(root: str, branch: str) -> dict:
@@ -1758,7 +1769,7 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/tasks/") and route.endswith("/workspace"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,));
                 if not task: return self.json({"error":"task not found"},404)
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],f"workspace:{tid}"))
+                permitted=approval_permits(task["project_id"],"modify",f"workspace:{tid}")
                 if not permitted: return self.json({"error":"approved workspace request required"},403)
                 project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],))
                 workspace=create_task_workspace(tid,str(safe_project_path(project["path"])))
@@ -1775,7 +1786,7 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/tasks/") and route.endswith("/workspace-release"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
                 if not task or not workspace: return self.json({"error":"ready workspace not found"},404)
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],f"release:{tid}"))
+                permitted=approval_permits(task["project_id"],"critical",f"release:{tid}")
                 if not permitted: return self.json({"error":"approved workspace release request required"},403)
                 project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); release_task_workspace(str(safe_project_path(project["path"])),workspace["path"])
                 STORE.write("UPDATE workspaces SET status='released' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info",f"Clean workspace released; recovery branch {workspace['branch']} was retained.")
@@ -1796,7 +1807,7 @@ class App(SimpleHTTPRequestHandler):
                 if not task or not workspace: return self.json({"error":"released workspace not found"},404)
                 project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); preview=merge_preview(str(safe_project_path(project["path"])),workspace["branch"])
                 detail=approval_detail("merge", tid, target=preview["target"], target_oid=preview["target_oid"], branch=workspace["branch"], branch_oid=preview["branch_oid"])
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],detail))
+                permitted=approval_permits(task["project_id"],"critical",detail)
                 if not permitted: return self.json({"error":"approved merge request for the current target required"},403)
                 merge_recovery_branch(str(safe_project_path(project["path"])),workspace["branch"],preview["target"],preview["branch_oid"],preview["target_oid"])
                 STORE.write("UPDATE workspaces SET status='merged' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info",f"Recovery branch {workspace['branch']} merged into {preview['target']}; branch retained.")
@@ -1814,7 +1825,7 @@ class App(SimpleHTTPRequestHandler):
                 if not task or not workspace: return self.json({"error":"merged recovery branch not found"},404)
                 project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); branch_oid=ref_oid(str(safe_project_path(project["path"])),workspace["branch"])
                 detail=approval_detail("branch-delete", tid, branch=workspace["branch"], branch_oid=branch_oid)
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='critical' AND detail=? AND status='approved'",(task["project_id"],detail))
+                permitted=approval_permits(task["project_id"],"critical",detail)
                 if not permitted: return self.json({"error":"approved recovery-branch deletion request required"},403)
                 delete_merged_branch(str(safe_project_path(project["path"])),workspace["branch"],branch_oid)
                 STORE.write("UPDATE workspaces SET status='complete' WHERE task_id=?",(tid,)); task_event(tid,"orchestrator","info","Merged recovery branch deleted after critical approval.")
@@ -1940,7 +1951,7 @@ class App(SimpleHTTPRequestHandler):
                 if not workspace or workspace["branch"] != proposal["workspace_branch"] or workspace["path"] != proposal["workspace_path"]:
                     return self.json({"error":"Workspace changed since approval; request a new round"},409)
                 detail=round_proposal_detail(tid, round_row["round_number"], workspace, digest, round_row["prompt_sha256"])
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],detail))
+                permitted=approval_permits(task["project_id"],"modify",detail)
                 if not permitted: return self.json({"error":"approved round proposal for this exact digest and workspace required"},403)
                 pending_cancel=cancellation_row(tid)
                 if pending_cancel and pending_cancel["round_id"]==round_row["id"]:
@@ -2063,7 +2074,7 @@ class App(SimpleHTTPRequestHandler):
                 if not workspace or workspace["branch"] != proposal["workspace_branch"] or workspace["path"] != proposal["workspace_path"]:
                     return self.json({"error":"Workspace changed since approval; request a new proposal"},409)
                 detail=approval_detail("agent-proposal", tid, workspace=proposal["workspace_branch"], workspace_path=proposal["workspace_path"], proposal=digest)
-                permitted=STORE.one("SELECT * FROM approvals WHERE project_id=? AND kind='modify' AND detail=? AND status='approved'",(task["project_id"],detail))
+                permitted=approval_permits(task["project_id"],"modify",detail)
                 if not permitted: return self.json({"error":"approved agent proposal for this exact workspace and digest required"},403)
                 if STORE.claim_execution(proposal["id"])!="ok": return self.json({"error":"Proposal is already being executed"},409)
                 outcome=tools.execute_operations(safe_workspace_path(workspace), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=lambda: STOPPING.is_set() or bool(cancellation_row(tid))))
