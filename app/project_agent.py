@@ -60,6 +60,28 @@ def report(store, task_id):
     return result
 
 
+def _supervise(server, task, provider, command, initial, rounds, evidence, cancelled):
+    """Run one attempt and always release the single-run slot afterwards.
+
+    `_run` reads the saved scope before its own try/finally, so an unexpected failure there (a
+    malformed saved scope, a locked database) used to leave the slot claimed and the row marked
+    "running": every later coding run then failed with "One local coding run can be active at a
+    time" until the process restarted.
+    """
+    try:
+        _run(server, task, provider, command, initial, rounds, evidence, cancelled)
+    finally:
+        task_id = task["id"]
+        with _LOCK:
+            _ACTIVE.pop(task_id, None)
+        try:
+            server.STORE.write("UPDATE autonomous_runs SET status='failed',summary=?,updated_at=? "
+                               "WHERE task_id=? AND status='running'",
+                               ("Local coding run ended without a final status", server.now(), task_id))
+        except Exception:  # the store itself may be why the run ended; never mask that
+            pass
+
+
 def start(server, task, provider, command, rounds, *, scope=None):
     store = server.STORE
     task_id = task["id"]
@@ -94,7 +116,8 @@ def start(server, task, provider, command, rounds, *, scope=None):
                         (task_id, provider["id"], command, "running", initial, initial + rounds, "Starting local run",
                          json.dumps(evidence), server.now()))
         cancelled = threading.Event()
-        thread = threading.Thread(target=_run, args=(server, task, provider, command, initial, rounds, evidence, cancelled),
+        thread = threading.Thread(target=_supervise,
+                                  args=(server, task, provider, command, initial, rounds, evidence, cancelled),
                                   name="local-agent-" + task_id[:8], daemon=True)
         _ACTIVE[task_id] = cancelled, thread
         thread.start()
