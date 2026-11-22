@@ -296,6 +296,11 @@ class RoundProposalUnitTests(unittest.TestCase):
         self.assertFalse(completion_evidence(stale)[0])
         proven = [{"status": "passed", "test_result": {"tests_ran": True, "test_exit_code": 0, "changed_files": ["a"]}}]
         self.assertTrue(completion_evidence(proven)[0])
+        # A hard-failed round executed work too: an older pass must not stand in for it.
+        hard_failed = proven + [{"status": "failed", "test_result": {"tests_ran": False, "changed_files": []}}]
+        self.assertFalse(completion_evidence(hard_failed)[0])
+        recovered = hard_failed + [{"status": "passed", "test_result": {"tests_ran": True, "test_exit_code": 0, "changed_files": ["a"]}}]
+        self.assertTrue(completion_evidence(recovered)[0])
 
 
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")

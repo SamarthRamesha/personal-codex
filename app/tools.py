@@ -491,7 +491,9 @@ def round_feedback(root: Path, operations: list, results: list, redact=None) -> 
 
 def completion_evidence(rounds: list) -> tuple[bool, str]:
     """A model may not declare success without executed work and a passing test run."""
-    executed = [r for r in rounds if r["status"] in {"passed", "failed-checks"}]
+    # 'failed' is a round that executed work and then hit a hard failure. Leaving it out let an older
+    # passing round stand in as the latest evidence after the workspace had already been broken.
+    executed = [r for r in rounds if r["status"] in {"passed", "failed-checks", "failed"}]
     if not executed:
         return False, "no executed round with recorded evidence yet"
     passing = [r for r in rounds if r["status"] == "passed" and r.get("test_result")]
