@@ -43,7 +43,7 @@ class AuthPolicyTests(unittest.TestCase):
             with patch.object(server, 'DATA', Path(directory)), patch.object(server, 'DB_PATH', Path(directory)/'test.db'):
                 store=server.Store()
             try:
-                store.write('INSERT INTO approvals VALUES (?,?,?,?,?,?)',('a','p','modify','exact','pending',1))
+                store.write('INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)',('a','p','modify','exact','pending',1))
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     results=list(pool.map(lambda status:store.decide_approval('a',status),('approved','rejected')))
                 self.assertEqual(sum(results),1)
@@ -58,7 +58,7 @@ class AuthPolicyTests(unittest.TestCase):
             with patch.object(server, 'DATA', Path(directory)), patch.object(server, 'DB_PATH', Path(directory)/'test.db'):
                 store=server.Store()
             try:
-                store.write('INSERT INTO approvals VALUES (?,?,?,?,?,?)',('spend','p','provider-invoke','exact','approved',1))
+                store.write('INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)',('spend','p','provider-invoke','exact','approved',1))
                 with ThreadPoolExecutor(max_workers=4) as pool:
                     results=list(pool.map(lambda _:store.consume_approval('spend'),range(4)))
                 self.assertEqual(sum(results),1,'one approval must never authorize two actions')

@@ -121,7 +121,8 @@ class RecoveryTests(unittest.TestCase):
 
     def test_restore_revokes_stale_approvals_and_interrupts_inflight_state(self):
         db=sqlite3.connect(self.data/'personal_codex.db')
-        db.execute("INSERT INTO approvals VALUES ('approval','p','modify','old digest','approved',1)")
+        db.execute("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) "
+                   "VALUES ('approval','p','modify','old digest','approved',1)")
         db.execute("INSERT INTO messages (id,conversation_id,role,content,status,created_at,updated_at) VALUES ('mid','chat','assistant','partial','streaming',1,1)")
         db.execute("INSERT INTO inference_jobs (id,provider_id,model,prompt,prompt_sha256,status,deadline,created_at,updated_at) VALUES ('job','provider','fixture','must clear','digest','running',9999999999,1,1)")
         db.commit();db.close();self.checkpoint();result=recovery.restore(self.output,self.target,self.key)

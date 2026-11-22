@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, pa
 CREATE TABLE IF NOT EXISTS native_project_roots (path TEXT PRIMARY KEY, device INTEGER NOT NULL, inode INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL, plan TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, agent TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, created_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER);
 CREATE TABLE IF NOT EXISTS providers (id TEXT PRIMARY KEY, kind TEXT NOT NULL, endpoint TEXT, model TEXT, secret_ref TEXT, cloud_allowed INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS workspaces (task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, path TEXT NOT NULL UNIQUE, branch TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS executions (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, argv TEXT NOT NULL, exit_code INTEGER, output TEXT NOT NULL, created_at INTEGER NOT NULL);
@@ -77,12 +77,16 @@ CREATE TABLE IF NOT EXISTS conversation_tasks (conversation_id TEXT NOT NULL, ta
 """
 SCHEMA += inference.SCHEMA + project_agent.SCHEMA + attachments.SCHEMA + full_task.SCHEMA
 MIGRATIONS = {
+    "approvals": {"expires_at": "INTEGER"},
     "providers": {"last_latency_ms": "INTEGER", "last_checked_at": "INTEGER"},
     "memory": {"source_task_id": "TEXT", "source_round_id": "TEXT", "evidence": "TEXT", "digest": "TEXT"},
 }
 
 def now() -> int: return int(time.time())
 def uid() -> str: return str(uuid.uuid4())
+# One owner approval covers one action, and only while it is fresh: an approval left unused for
+# longer than this no longer authorizes a command, a provider invocation or a file write.
+APPROVAL_SECONDS = 600
 
 class Store:
     def __init__(self):
@@ -114,6 +118,10 @@ class Store:
             for name, kind in columns.items():
                 if name not in existing:
                     self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+        # Approvals written before lifetimes existed get the same bounded lifetime, counted from when
+        # the request was created (conservative: never longer than a fresh approval).
+        self.conn.execute("UPDATE approvals SET expires_at=created_at+? WHERE expires_at IS NULL AND status='approved'",
+                          (APPROVAL_SECONDS,))
         self.conn.commit()
     def recover_interrupted(self):
         """No round and no streamed answer may stay 'running' forever after a restart.
@@ -171,7 +179,12 @@ class Store:
             self.conn.close()
     def decide_approval(self, approval_id: str, status: str) -> bool:
         with self.lock:
-            result=self.conn.execute("UPDATE approvals SET status=? WHERE id=? AND status='pending'",(status,approval_id))
+            if status == "approved":
+                # The lifetime starts when the owner approves, not when the request was created.
+                result=self.conn.execute("UPDATE approvals SET status=?,expires_at=? WHERE id=? AND status='pending'",
+                                         (status,now()+APPROVAL_SECONDS,approval_id))
+            else:
+                result=self.conn.execute("UPDATE approvals SET status=? WHERE id=? AND status='pending'",(status,approval_id))
             self.conn.commit()
             return result.rowcount == 1
     def consume_approval(self, approval_id: str) -> bool:
@@ -182,9 +195,17 @@ class Store:
         likes, so the spend itself has to be the compare-and-set that makes replay impossible.
         """
         with self.lock:
-            result=self.conn.execute("UPDATE approvals SET status='consumed' WHERE id=? AND status='approved'",(approval_id,))
+            stamp=now()
+            result=self.conn.execute("UPDATE approvals SET status='consumed' WHERE id=? AND status='approved' "
+                                     "AND (expires_at IS NULL OR expires_at>?)",(approval_id,stamp))
+            if result.rowcount == 1:
+                self.conn.commit()
+                return True
+            # A lapsed approval must not keep looking approved in the panel or be spendable later.
+            self.conn.execute("UPDATE approvals SET status='expired' WHERE id=? AND status='approved' AND expires_at<=?",
+                              (approval_id,stamp))
             self.conn.commit()
-            return result.rowcount == 1
+            return False
     def claim_execution(self, proposal_id: str, round_id: str | None = None) -> str:
         """Take a pending proposal (and a round, when given) in one locked transaction.
 
@@ -1721,7 +1742,7 @@ class App(SimpleHTTPRequestHandler):
                 project=STORE.one("SELECT * FROM projects WHERE id=?",(data.get("project_id"),))
                 if not project: return self.json({"error":"project not found"},404)
                 kind=str(data.get("kind","execute")); detail=str(data.get("detail",""))
-                aid=uid(); STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,project["id"],kind,detail,"pending",now())); return self.json({"id":aid,"status":"pending"},201)
+                aid=uid(); STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,project["id"],kind,detail,"pending",now())); return self.json({"id":aid,"status":"pending"},201)
             if route == "/api/providers":
                 kind=str(data.get("kind","openai-compatible")); endpoint=str(data.get("endpoint","")).strip(); model=str(data.get("model","")).strip(); ref=str(data.get("secret_ref","")).strip()
                 config=validate_provider_config(kind,endpoint,model,ref,data.get("cloud_allowed") is True)
@@ -1731,7 +1752,7 @@ class App(SimpleHTTPRequestHandler):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
                 aid=uid(); detail=f"workspace:{tid}"
-                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"modify",detail,"pending",now()))
+                STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"modify",detail,"pending",now()))
                 task_event(tid,"security","info","Workspace creation requires approval.")
                 return self.json({"id":aid,"status":"pending","detail":detail},201)
             if route.startswith("/api/tasks/") and route.endswith("/workspace"):
@@ -1748,7 +1769,7 @@ class App(SimpleHTTPRequestHandler):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
                 if not task or not workspace: return self.json({"error":"ready workspace not found"},404)
                 aid=uid(); detail=f"release:{tid}"
-                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
+                STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
                 task_event(tid,"security","warning","Clean worktree release requires critical-operation approval; branch will be retained.")
                 return self.json({"id":aid,"status":"pending","detail":detail},201)
             if route.startswith("/api/tasks/") and route.endswith("/workspace-release"):
@@ -1767,7 +1788,7 @@ class App(SimpleHTTPRequestHandler):
                     task_event(tid, "security", "warning", f"Merge preview reported a conflict for {workspace['branch']} into {preview['target']}: {preview['detail']}")
                     return self.json(preview,409)
                 aid=uid(); detail=approval_detail("merge", tid, target=preview["target"], target_oid=preview["target_oid"], branch=workspace["branch"], branch_oid=preview["branch_oid"])
-                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
+                STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
                 task_event(tid,"security","warning",f"Merge into {preview['target']} requires critical-operation approval.")
                 return self.json({"id":aid,"status":"pending",**preview},201)
             if route.startswith("/api/tasks/") and route.endswith("/merge"):
@@ -1785,7 +1806,7 @@ class App(SimpleHTTPRequestHandler):
                 if not task or not workspace: return self.json({"error":"merged recovery branch not found"},404)
                 project=STORE.one("SELECT * FROM projects WHERE id=?",(task["project_id"],)); branch_oid=ref_oid(str(safe_project_path(project["path"])),workspace["branch"])
                 aid=uid(); detail=approval_detail("branch-delete", tid, branch=workspace["branch"], branch_oid=branch_oid)
-                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
+                STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"critical",detail,"pending",now()))
                 task_event(tid,"security","warning",f"Deleting recovery branch {workspace['branch']} requires critical-operation approval.")
                 return self.json({"id":aid,"status":"pending","branch":workspace["branch"]},201)
             if route.startswith("/api/tasks/") and route.endswith("/branch-delete"):
@@ -1826,7 +1847,7 @@ class App(SimpleHTTPRequestHandler):
                     task_event(tid,"security","warning",f"Round {number} refused before any provider call: {budget}")
                     return self.json({"error":budget,"budget":budget_state(tid),"limits":limits},409)
                 kind=provider_approval_kind(provider); detail=round_invocation_detail(tid,provider,prompt,number); aid=uid()
-                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
+                STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
                 prompt_sha=json.loads(detail)["refs"]["prompt_sha256"]
                 context_id=uid()
                 STORE.write("INSERT INTO contexts VALUES (?,?,?,?,?,?,?,?,?)",(context_id,tid,None,number,selection["digest"],len(context_text.encode("utf-8")),json.dumps([{key: snippet[key] for key in ("path","reason","start_line","end_line","sha256")} for snippet in selection["files"]]),prompt,now()))
@@ -1879,7 +1900,7 @@ class App(SimpleHTTPRequestHandler):
                         return self.json({"error":"identical proposal already reviewed for this task; request a genuinely different change","digest":digest},409)
                     proposal_id=uid(); proposal_approval=uid()
                     STORE.write("INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?,?,?)",(proposal_id,tid,workspace["branch"],workspace["path"],parsed["summary"],json.dumps(operations),digest,"pending",None,now()))
-                    STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(proposal_approval,task["project_id"],"modify",round_proposal_detail(tid,number,workspace,digest,prompt_sha),"pending",now()))
+                    STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(proposal_approval,task["project_id"],"modify",round_proposal_detail(tid,number,workspace,digest,prompt_sha),"pending",now()))
                     rid=insert_round(tid,number,provider,prompt_sha,"awaiting-approval",parsed["summary"],proposal_id,digest,proposal_approval,operations)
                     link_context(tid,number,rid)
                     STORE.write("UPDATE tasks SET status='iterating', updated_at=? WHERE id=?",(now(),tid))
@@ -2003,7 +2024,7 @@ class App(SimpleHTTPRequestHandler):
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
                 prompt=validate_provider_prompt(build_agent_prompt(task, workspace, str(data.get("prompt") or "")))
                 kind=provider_approval_kind(provider); detail=provider_invocation_detail(tid,provider,prompt); aid=uid()
-                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
+                STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
                 task_event(tid,"security","warning",f"Agent proposal generation on {provider['model']} requires {kind} approval.")
                 return self.json({"approval_id":aid,"status":"pending","kind":kind,"provider_id":provider["id"],"cloud_allowed":bool(provider["cloud_allowed"]),"detail":json.loads(detail)},201)
             if route.startswith("/api/tasks/") and route.endswith("/agent/plan"):
@@ -2027,7 +2048,7 @@ class App(SimpleHTTPRequestHandler):
                 digest=tools.proposal_digest(tid, workspace["branch"], operations); proposal_id=uid()
                 STORE.write("INSERT INTO proposals VALUES (?,?,?,?,?,?,?,?,?,?)",(proposal_id,tid,workspace["branch"],workspace["path"],parsed["summary"],json.dumps(operations),digest,"pending",None,now()))
                 approval_detail_value=approval_detail("agent-proposal", tid, workspace=workspace["branch"], workspace_path=workspace["path"], proposal=digest)
-                approval_id=uid(); STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(approval_id,task["project_id"],"modify",approval_detail_value,"pending",now()))
+                approval_id=uid(); STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(approval_id,task["project_id"],"modify",approval_detail_value,"pending",now()))
                 task_event(tid,"planner","info",f"Agent proposal contains {len(operations)} operation(s); summary digest {digest[:12]}.")
                 task_event(tid,"security","warning","Proposed file modifications and test commands require explicit approval before they run.")
                 return self.json({"proposal_id":proposal_id,"digest":digest,"summary":parsed["summary"],"operations":operations,"approval_id":approval_id,"invocation_id":iid},201)
@@ -2059,7 +2080,7 @@ class App(SimpleHTTPRequestHandler):
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
                 prompt=validate_provider_prompt(data.get("prompt"))
                 kind=provider_approval_kind(provider); detail=provider_invocation_detail(tid,provider,prompt); aid=uid()
-                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
+                STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
                 transmission="cloud transmission" if provider["cloud_allowed"] else "loopback invocation"
                 task_event(tid,"security","warning",f"Approved {transmission} on model {provider['model']} requires {kind} approval; prompt stays local until then.")
                 return self.json({"id":aid,"status":"pending","kind":kind,"cloud_allowed":bool(provider["cloud_allowed"]),"detail":json.loads(detail)},201)
@@ -2082,7 +2103,7 @@ class App(SimpleHTTPRequestHandler):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); command=str(data.get("command","")).strip()
                 if not task: return self.json({"error":"task not found"},404)
                 parse_command(command); aid=uid(); detail=f"execute:{tid}:{command}"
-                STORE.write("INSERT INTO approvals VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"execute",detail,"pending",now()))
+                STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],"execute",detail,"pending",now()))
                 return self.json({"id":aid,"status":"pending","detail":detail},201)
             if route.startswith("/api/tasks/") and route.endswith("/execute"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,)); command=str(data.get("command","")).strip()
