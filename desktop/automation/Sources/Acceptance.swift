@@ -40,8 +40,10 @@ import CoreGraphics
         if windows.count == 2 { break }
         try await Task.sleep(nanoseconds: 30_000_000)
     }
-    guard let primary = windows.firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Automation Fixture" }),
-          let protected = windows.firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Protected Fixture" }) else { throw AutomationError.verificationFailed }
+    // Both windows must exist, but the primary is bound by title rather than by whatever index the
+    // first listing happened to give it.
+    guard windows.contains(where: { axString($0, kAXTitleAttribute) == "Personal Codex Protected Fixture" }),
+          let primary = windows.firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Automation Fixture" }) else { throw AutomationError.verificationFailed }
     // Bind with the identity the listing reported, so the guarded path is the one under test.
     let driver = try NativeDriver(pid: app.processIdentifier, windowIndex: primary,
                                   expectedTitle: axString(windows[primary], kAXTitleAttribute),
@@ -125,7 +127,14 @@ import CoreGraphics
     do { _ = try session.execute(id: staleKey, confirmed: true); record("stale_window_refused", false) }
     catch AutomationError.staleObservation { record("stale_window_refused", true) }
     stage = "secure_window_check"
-    let secure = try NativeDriver(pid: app.processIdentifier, windowIndex: protected)
+    // Focus changes reorder the accessible window list, so an index captured at launch can name the
+    // ordinary window here. Re-resolve the protected window by identity instead of trusting it.
+    let liveWindows = axElements(application, kAXWindowsAttribute, max: 20)
+    guard let protectedIndex = liveWindows.firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Protected Fixture" }) else {
+        throw AutomationError.verificationFailed
+    }
+    let secure = try NativeDriver(pid: app.processIdentifier, windowIndex: protectedIndex,
+                                  expectedTitle: "Personal Codex Protected Fixture")
     let secureSnapshot = try secure.observe(scope: "disposable-secure-check")
     let serialized = try JSONEncoder().encode(secureSnapshot)
     record("secure_control_omitted", secureSnapshot.controls.contains(where: { $0.sensitive })

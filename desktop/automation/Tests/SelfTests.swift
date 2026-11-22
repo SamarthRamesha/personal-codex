@@ -81,6 +81,9 @@ import Foundation
         expect(!permittedBrowserURL("file:///etc/passwd") && !permittedBrowserURL("https://u:p@example.com"), "Private file and credential URL refused")
         expect(!permittedBrowserURL("http://example.com") && !permittedBrowserURL("https://example.com/?token=synthetic"), "Insecure remote and token URL refused")
         expect(permittedBrowserURL("https://example.com/path") && permittedBrowserURL("http://127.0.0.1:9876/"), "HTTPS and synthetic loopback URL")
+        // Capture refuses on the same predicate that hides credential-shaped field values.
+        expect(AutomationPolicy.credentialLike("password: hunter2") && AutomationPolicy.credentialLike("Authorization: Bearer abcdefghijklmnopqrstuvwx"), "Credential-shaped screen text is refused")
+        expect(!AutomationPolicy.credentialLike("AMBER WORKFLOW · Synthetic data only"), "Ordinary captured text is allowed")
         let partial = FakeDriver(); let scoped = AutomationSession(driver: partial)
         let partialKey = try scoped.prepare(proposal, digest: scoped.observe().digest)
         partial.afterAction = { partial.valid = false }

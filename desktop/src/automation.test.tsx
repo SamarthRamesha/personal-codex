@@ -50,6 +50,16 @@ describe('scoped Mac automation',()=>{
     // The stronger identity must be exercised natively, not only read in review.
     expect(acceptance).toContain('window_number_identity_refused');
   });
+  it('re-resolves the protected fixture window instead of reusing a launch-time index',()=>{
+    // Focus moves reorder the accessible window list; the secure-window checks must not silently
+    // observe the ordinary window after that happens.
+    expect(acceptance).toContain('firstIndex(where: { axString($0, kAXTitleAttribute) == "Personal Codex Protected Fixture" })');
+    expect(acceptance).toContain('expectedTitle: "Personal Codex Protected Fixture"');
+  });
+  it('never returns credential-shaped screenshot text',()=>{
+    // OCR sees whatever pixels the window shows, including text a secure field would have hidden.
+    expect(driver).toContain('guard !AutomationPolicy.credentialLike(text)');
+  });
   it('binds a created browser window by identity, not by position alone',()=>{
     // Creating a window reorders the accessibility list, so binding the index alone could control a
     // different window than the one just created and focused.

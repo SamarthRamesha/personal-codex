@@ -235,6 +235,10 @@ func rect(_ element: AXUIElement) -> CGRect? {
         let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
         try VNImageRequestHandler(cgImage: image).perform([request])
         let text = String((request.results ?? []).prefix(100).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n").prefix(6000))
+        // A screenshot can show text that a secure field would have hidden. The owner approved one
+        // capture of this window, not the disclosure of a credential-shaped string, so publish
+        // neither the image nor the text rather than filtering afterwards.
+        guard !AutomationPolicy.credentialLike(text) else { throw AutomationError.unsafeTarget }
         return ["mime": "image/jpeg", "image_base64": data.base64EncodedString(), "ocr": text,
                 "window": before.window, "scope_id": scope, "width": config.width, "height": config.height,
                 "sent_to_model": false, "persisted": false]
