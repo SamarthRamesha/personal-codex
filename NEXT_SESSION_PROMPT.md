@@ -52,12 +52,13 @@ unchanged. A verified bundle is in the chat workspace at `.safety/mac-automation
 | `f26ae74` | The context walker selected `secrets.json`, `credentials.yaml`, `deploy.pem` and `id_dsa` into model prompts and search results. |
 | `5404c97` | `regenerate` handed the model its own previous answer followed by an `ASSISTANT:` cue, so it could only continue the old text. |
 | `f8c7303` | An unexpected handler error (`KeyError`/`TypeError`; `do_DELETE` had no guard) reset the connection instead of answering bounded JSON. |
+| `54cbdad` | The panel's summariser called a passing self-check report with no real UI run a full pass and never named the workflows it skipped; it now requires `actual_ui_exercised`, exposes `verified` and lists what was not exercised. |
 | `d1f3e02` | A proposal claimed by the proposal-execution route (no round id) stayed `executing` after a restart, so it could never be reviewed or run again. Found by a new restart drill that asserts no table keeps an in-flight status. |
 
 Verification actually run at the end of the session: `python3 -m unittest discover -s tests` with
 `PERSONAL_CODEX_HTTP_TESTS=1` → **415 tests, OK, 1 skip** (the optional `cryptography` wheel was
 installed locally to run the 10 recovery tests; CI without it skips that tier);
-`npx vitest run` → **39 tests**; `npm run typecheck` (`tsc -b`) clean. Each new regression test was
+`npx vitest run` → **41 tests**; `npm run typecheck` (`tsc -b`) clean. Each new regression test was
 also run against the pre-fix source and observed to fail.
 
 ## Phase 1 status: partially verified, still blocked

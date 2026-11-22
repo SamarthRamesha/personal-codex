@@ -481,3 +481,13 @@ invariant: no table may keep `running`/`executing`/`streaming`/`queued` after a 
 messages, events and saved deliveries survive it. Final counts: 415 backend tests (1 skip), 39 frontend
 tests, typecheck clean. The approvals panel now states the one-action, ten-minute lifetime that
 `eade3dc` introduced.
+
+The tenth fix of the session was on the display side: the panel summariser accepted any
+`status: passed` report as "All N checks passed" even when the report never claimed a real UI run,
+and it never named the workflows a run skipped. It now requires `actual_ui_exercised`, reports
+`verified` only for a real run with passing checks, and lists the unexercised capture/OCR and
+browser workflows (R-29, `54cbdad`). Frontend suite: 41 tests, typecheck clean. An audit of
+`tools.py`, `providers.py`, `full_task.py`, `secure_files.py`, `native_projects.py` and
+`scripts/mac_acceptance.py` found no further defect worth a change; the two CI runs at `294f4e6`
+(#44, #45) reported failure with no retrievable job detail from this host, the same jobs passed at
+`f26ae74`, and it is recorded as unexplained rather than resolved.
