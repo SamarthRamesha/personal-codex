@@ -61,6 +61,28 @@ installed locally to run the 10 recovery tests; CI without it skips that tier);
 `npx vitest run` → **41 tests**; `npm run typecheck` (`tsc -b`) clean. Each new regression test was
 also run against the pre-fix source and observed to fail.
 
+The six newest test modules (`test_restart_drill`, `test_approval_lifetime`, `test_error_surface`,
+`test_context_secrets`, `test_documents`, `test_project_agent_slot`) were then run ten times in a
+row: **0 failures**, so the new cases are not order- or timing-dependent here.
+
+Branch `personal-codex/mac-automation` is at **`6e919cd`** (pushed; fast-forward from `d1f3e02`).
+Hosted CI was last read green at `f26ae74` (run #50: backend, frontend and the macOS `native` job).
+Runs #44 (`294f4e6`) and #45 reported **failure**, but this host could not retrieve which job failed,
+and the same jobs passed at `f26ae74`: recorded as unexplained, not resolved. The runs for
+`ad2cec0`, `54cbdad` and `6e919cd` were still not listed when this session closed — **do not claim
+CI for those commits until their run pages show it.**
+
+Git integrity was re-verified after a scare that showed 193 "staged deletions" in the primary
+checkout. That checkout is a linked worktree (`.git` is a gitfile into
+`/workspace/repo.git/worktrees/b3647b5f9c91c9d2a6c41d37`), and the deletions were only the read-only
+`git status` comparison of the newer `personal-codex/mac-automation` tree against the old
+`stabilization` index while `HEAD` was temporarily re-pointed for a push. `git diff --cached` is
+empty, the only worktree change is the owner's `web/style.css` edit (sha256
+`4746cdd00f590bb19c5322c6676f9d4b09a8bcc8af826c2e9a1300324eb09f21`), the untracked
+`.recovery-backup/`, `.safety/`, `diagnostics/`, `SESSION_HANDOFF.md` and `web/chat.js` are present,
+there are no stashes, and `HEAD` is `refs/heads/personal-codex/stabilization` at `12a24d5`. Nothing
+was repaired because nothing was damaged; do not run reset, clean or stash on that checkout.
+
 ## Phase 1 status: partially verified, still blocked
 
 Implemented and self-tested: reviewed `set_text`/`press`/`key`/AX `scroll`, one-use approvals with

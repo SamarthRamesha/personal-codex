@@ -491,3 +491,22 @@ browser workflows (R-29, `54cbdad`). Frontend suite: 41 tests, typecheck clean. 
 `scripts/mac_acceptance.py` found no further defect worth a change; the two CI runs at `294f4e6`
 (#44, #45) reported failure with no retrievable job detail from this host, the same jobs passed at
 `f26ae74`, and it is recorded as unexplained rather than resolved.
+
+## Final verification (end of the second session)
+
+Backend `PERSONAL_CODEX_HTTP_TESTS=1`: **415 tests, OK, 1 skip** (the skip is the optional
+`cryptography` recovery tier, installed locally). Frontend: **41 tests in 8 files**. `npm run
+typecheck` (`tsc -b`) clean. The six newest test modules were run ten times back to back with **0
+failures**, so the added cases are not order- or timing-dependent in this environment.
+
+The primary checkout was re-verified after `git status` briefly showed 193 staged deletions while
+`HEAD` was re-pointed for a push: it is a linked worktree, its index has zero staged changes, its only
+worktree change is the owner's `web/style.css` edit (sha256 unchanged from the start of the session),
+all preserved untracked paths are present, no stash exists, and `HEAD` is back on
+`personal-codex/stabilization` at `12a24d5`. The deletions were an artifact of comparing the newer
+feature tree against the old stabilization index with a read-only command; nothing was staged,
+deleted or repaired.
+
+Hosted CI was last read green at `f26ae74` (run #50). Runs #44 and #45 failed with no retrievable
+failing job from this host, and the runs for the last three commits were not yet listed; that is
+recorded as unverified rather than green.
