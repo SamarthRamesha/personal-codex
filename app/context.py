@@ -25,7 +25,11 @@ except ImportError:
 IGNORED_DIRS = {".git", "node_modules", ".codex-runtime", ".venv", "venv", "dist", "build", "target", "__pycache__",
                 ".pytest_cache", ".mypy_cache", ".ruff_cache", "coverage", ".next", ".idea", ".vscode"}
 SECRET_NAMES = {".env", ".env.local", ".env.production", ".env.development", "id_rsa", "id_ed25519",
-                "id_ecdsa", "credentials.json", ".netrc", ".npmrc", ".pypirc"}
+                "id_ecdsa", "id_dsa", "credentials.json", "credentials.yaml", "credentials.yml",
+                "credentials.toml", "secrets.json", "secrets.yaml", "secrets.yml", "secrets.toml",
+                ".netrc", ".npmrc", ".pypirc", ".pgpass", ".htpasswd", "kubeconfig"}
+# A key material file is a secret whatever its name; these never enter a prompt or a search result.
+SECRET_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".kdbx", ".jks", ".keystore", ".ppk"}
 DOC_NAMES = {"readme.md", "readme", "architecture.md", "contributing.md", "handoff.md",
              "project_status.md", "tasks.md", "security.md"}
 CONFIG_NAMES = {"package.json", "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
@@ -69,7 +73,8 @@ def is_ignored(relative: str, patterns: list[str]) -> bool:
     if any(part in IGNORED_DIRS for part in parts[:-1]):
         return True
     name = parts[-1].lower()
-    if name in SECRET_NAMES or name.startswith(".env") or name in {".git", "personal-codex-diagnostic.txt"}:
+    if (name in SECRET_NAMES or name.startswith(".env") or Path(relative).suffix.lower() in SECRET_SUFFIXES
+            or name in {".git", "personal-codex-diagnostic.txt"}):
         return True
     for pattern in patterns:
         if fnmatch(relative, pattern) or fnmatch(name, pattern) or fnmatch(parts[0], pattern):
