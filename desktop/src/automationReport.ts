@@ -44,6 +44,10 @@ export function summarizeSelfCheck(report: unknown): SelfCheckSummary {
     headline = status === 'passed'
       ? 'The report says passed but lists no checks, so nothing here is verified.'
       : 'The native check returned no individual results.';
+  } else if (status !== 'passed') {
+    // An unrecognised status must not read as green: a cancelled or future terminal report may
+    // carry passing checks and still not establish acceptance.
+    headline = `The check reported "${status}", not passed, so its ${total} recorded result${total === 1 ? '' : 's'} do not establish a verified run.`;
   } else {
     headline = `All ${total} checks passed.`;
   }

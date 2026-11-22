@@ -32,6 +32,12 @@ describe('native self-check summary',()=>{
   it('does not treat an empty pass as verification',()=>{
     expect(summarizeSelfCheck({status:'passed',checks:[]}).headline).toContain('no checks');
   });
+  it('never presents an unlisted status as a green result',()=>{
+    const summary=summarizeSelfCheck({status:'cancelled',checks:[check('prepare_is_read_only',true),check('native_text_and_press_result',true)]});
+    expect(summary.headline).not.toContain('All 2 checks passed');
+    expect(summary.headline).toContain('cancelled');
+    expect(summary.passed).toBe(2);
+  });
   it('survives a report it cannot read',()=>{
     for(const value of [null,undefined,'blocked',42,[]]){
       const summary=summarizeSelfCheck(value);
