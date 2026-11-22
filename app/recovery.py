@@ -29,6 +29,22 @@ def fernet(key_file):
 def digest(data):return hashlib.sha256(data).hexdigest()
 
 
+def private_parents(target,path):
+    """Create every missing parent of ``path`` with mode 0o700.
+
+    ``Path.mkdir(parents=True,mode=0o700)`` applies that mode to the final component only and
+    leaves the ancestors it creates at 0o777 & ~umask, which would expose the restored
+directory structure to other local accounts.
+    """
+    current=target
+    for part in path.relative_to(target).parts[:-1]:
+        current=current/part
+        if current.is_symlink() or (current.exists() and not current.is_dir()):
+            raise ValueError('Restore path contains a non-directory component')
+        current.mkdir(mode=0o700,exist_ok=True)
+    return path.parent
+
+
 def data_root(value):
     root=secure_files.reviewed_scope(value);secure_files.no_symlink_parents(root)
     info=root.stat()
@@ -163,7 +179,7 @@ def restore(bundle,destination,key_file):
     secure_files.write_new(target/'data'/'RECOVERY_LOCKED.json',json.dumps(marker,indent=2).encode())
     try:
         for name,value in entries.items():
-            path=target/name;path.parent.mkdir(parents=True,exist_ok=True,mode=0o700);secure_files.write_new(path,value)
+            path=target/name;private_parents(target,path);secure_files.write_new(path,value)
         for name in ('projects','workspaces'):(target/'data'/name).mkdir(exist_ok=True,mode=0o700)
         secure_files.write_new(target/'configuration.review.json',json.dumps(manifest['configuration'],indent=2).encode())
         secure_files.write_new(target/'data'/'RECOVERY_COMPLETE.json',json.dumps({'source_bundle_sha256':digest(payload),'complete':True}).encode())

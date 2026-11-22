@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,11 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual((self.data/'personal_codex.db').read_bytes(),before)
         self.assertTrue((self.target/'data/RECOVERY_LOCKED.json').exists());self.assertTrue((self.target/'data/RECOVERY_COMPLETE.json').exists())
         self.assertFalse((self.target/'secrets').exists())
+        # Every restored path must keep the private modes checkpoint requires of its source, not
+        # inherit 0o777 & ~umask from a parent-directory helper.
+        for path in self.target.rglob('*'):
+            info=path.lstat()
+            self.assertEqual(stat.S_IMODE(info.st_mode),0o700 if stat.S_ISDIR(info.st_mode) else 0o600,str(path))
     def test_quiescence_no_overwrite_and_original_preservation(self):
         with runtime.InstanceLock(self.data):
             with self.assertRaisesRegex(ValueError,'already owns'):self.checkpoint()
