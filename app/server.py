@@ -155,6 +155,9 @@ class Store:
             task = self.conn.execute("SELECT status FROM tasks WHERE id=?", (row["task_id"],)).fetchone()
             if task and task["status"] == "iterating":
                 self.conn.execute("UPDATE tasks SET status='needs-another-round', updated_at=? WHERE id=?", (stamp, row["task_id"]))
+        # The proposal-execution route claims a proposal without a round, so a restart during that
+        # path left it "executing" forever: it could never be reviewed or executed again.
+        self.conn.execute("UPDATE proposals SET status='interrupted' WHERE status='executing'")
         if recovered_messages:
             print(f"[personal-codex] recovered {recovered_messages} interrupted conversation answer(s)", file=sys.stderr)
         inference.recover(self.conn)
