@@ -9,11 +9,11 @@ check, so no guessing is needed.
 
 | Claim | Evidence |
 |---|---|
-| The helper and fixture compile | GitHub workflow "Verify Personal Codex" #19 at `7366121`: `native` job ran `scripts/build_mac_automation.py --self-test` |
-| 31 in-memory policy/session self-tests | Same job, `--self-test` (no permissions, no window) |
+| The helper and fixture compile, including the credential-text and secure-window changes | GitHub workflow "Verify Personal Codex" #26 at `c00e35a`: `native` job ran `scripts/build_mac_automation.py --self-test` |
+| In-memory policy/session self-tests, now including the credential-text predicate capture refuses on | Same job, `--self-test` (no permissions, no window) |
 | 13 Rust broker tests | Same job, `cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml -j 2` |
-| 35 frontend tests, typecheck | `frontend` job; and locally `npx vitest run`, `tsc -b` |
-| Backend + HTTP regression | `backend` job with `PERSONAL_CODEX_HTTP_TESTS=1` |
+| 37 frontend tests, typecheck | `frontend` job; and locally `npx vitest run`, `tsc -b` |
+| Backend + HTTP regression, 396 tests | `backend` job with `PERSONAL_CODEX_HTTP_TESTS=1`; also locally |
 | **Real windowed UI behaviour** | **nothing yet** — this runbook is that evidence |
 
 A green CI run does not prove any row in the "Stages" tables below. Only your run does.
@@ -72,8 +72,13 @@ python3 scripts/mac_acceptance.py --run --capture --save mac-acceptance-capture.
 ```
 
 Exit status: `0` verified, `1` not verified, `2` Accessibility not granted, `3` stopped early,
-`4` candidate helper missing. It reads or runs the candidate in `desktop/automation/.build/` only; it
-never grants permission, signs anything or touches the installed preview.
+`4` the helper could not be run at all (missing, timed out, or printed no readable report). It reads or
+runs the candidate in `desktop/automation/.build/` only; it never grants permission, signs anything or
+touches the installed preview, and it saves no report for a run that never happened.
+
+A `0` is about the checks that ran, so the summary also prints a `NOT EXERCISED` line for anything the
+run never touched — normally `capture/OCR` (re-run with `--capture`) and `browser workflow` (stage 7).
+A stage-2 pass therefore never closes R-05 or R-06.
 
 ## Stage 1 — permissions and the panel
 
@@ -88,7 +93,9 @@ unticked, press **Run synthetic Mac check**. It launches its own fixture, drives
 only that instance.
 
 The panel prints a headline plus any failed check names. Required outcome: `All N checks passed.`
-Each check below must appear as passed in the raw report shown under it:
+The command above prints one `PASS`/`FAIL` line per check and then `NOT EXERCISED` lines for capture
+and the browser workflow, which this stage does not run. Each check below must appear as passed in
+the raw report shown under it:
 
 | Check name | What it proves |
 |---|---|

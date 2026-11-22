@@ -68,6 +68,21 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(summary["verdict"], acceptance.UNREADABLE)
             self.assertIn("nothing is verified", summary["headline"])
 
+    def test_a_pass_that_claims_no_real_ui_is_not_verified(self):
+        summary = acceptance.summarize({"status": "passed", "checks": [check("a", True)]})
+        self.assertEqual(summary["verdict"], acceptance.NOT_VERIFIED)
+        self.assertIn("real UI", summary["headline"])
+
+    def test_a_passing_run_states_what_it_never_exercised(self):
+        summary = acceptance.summarize({"status": "passed", "actual_ui_exercised": True,
+                                        "capture_requested": False, "browser_exercised": False,
+                                        "checks": [check("a", True)]})
+        self.assertEqual(summary["verdict"], acceptance.VERIFIED)
+        self.assertEqual(summary["not_exercised"], [
+            "capture/OCR (re-run with --capture once Screen Recording is granted)",
+            "browser workflow (owner-run, runbook stage 7)"])
+        self.assertIn("NOT EXERCISED capture/OCR", acceptance.render({**summary, "_checks": ["a"]}))
+
     def test_unknown_fields_are_not_echoed(self):
         summary = acceptance.summarize({"status": "needs_review", "checks": [
             {"name": "selected_window_isolation", "passed": False, "value": "SYNTHETIC-SECRET"}]})
@@ -79,7 +94,8 @@ class CommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             report = Path(folder) / "report.json"
             saved = Path(folder) / "kept.json"
-            report.write_text(json.dumps({"status": "passed", "checks": [check("a", True)]}))
+            report.write_text(json.dumps({"status": "passed", "actual_ui_exercised": True,
+                                          "checks": [check("a", True)]}))
             output = io.StringIO()
             with redirect_stdout(output):
                 code = acceptance.main(["--report", str(report), "--save", str(saved)])
@@ -91,12 +107,18 @@ class CommandTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(acceptance.main(["--report", str(report)]), 1)
 
-    def test_a_missing_candidate_helper_is_reported_not_faked(self):
+    def test_a_missing_candidate_helper_exits_four_and_saves_nothing(self):
+        # The documented contract says a helper that never ran is exit 4, not a failing check list.
         with tempfile.TemporaryDirectory() as folder:
             missing = Path(folder) / "no-helper"
-            with self.assertRaises(SystemExit) as raised:
-                acceptance.main(["--run", "--helper", str(missing)])
-            self.assertIn("build_mac_automation.py", str(raised.exception))
+            saved = Path(folder) / "saved.json"
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = acceptance.main(["--run", "--helper", str(missing), "--save", str(saved)])
+            self.assertEqual(code, acceptance.EXIT[acceptance.COULD_NOT_RUN])
+            self.assertEqual(code, 4)
+            self.assertIn("build_mac_automation.py", output.getvalue())
+            self.assertFalse(saved.exists(), "a run that never happened must not leave a saved report")
 
     def test_the_script_never_grants_permission(self):
         source = (ROOT / "scripts/mac_acceptance.py").read_text()
