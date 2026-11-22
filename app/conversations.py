@@ -261,6 +261,21 @@ def build_prompt(history: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
+def regeneration_history(history: list[dict]) -> list[dict]:
+    """Drop the answer that is being regenerated, and nothing else.
+
+    ``start_turn(regenerate=True)`` reuses the newest user message. Any assistant turn after it is
+    the answer being replaced: leaving it in the prompt asks the model to continue its own text
+    instead of writing a fresh answer. Assistant turns before that user message stay as context.
+    """
+    trimmed = list(history)
+    newest_user = next((index for index in range(len(trimmed) - 1, -1, -1) if trimmed[index]["role"] == "user"), None)
+    if newest_user is None:
+        return trimmed
+    return [message for index, message in enumerate(trimmed)
+            if not (index > newest_user and message["role"] == "assistant")]
+
+
 def new_message(store, conversation_id: str, role: str, content: str, status: str = "complete", **extra) -> dict:
     if role not in ("user", "assistant", "system"):
         raise ValueError("unsupported message role")
@@ -350,6 +365,8 @@ def _start_turn(store, conversation: dict, content: str, *, provider: dict | Non
             store.write("UPDATE conversations SET title=? WHERE id=?", (derived_title(text), conversation["id"]))
 
     history = message_history(store, conversation["id"])
+    if regenerate:
+        history = regeneration_history(history)
     prompt = build_prompt(history)
     if network_policy.offline_only() and conversation.get("project_id"):
         project_id = conversation["project_id"]

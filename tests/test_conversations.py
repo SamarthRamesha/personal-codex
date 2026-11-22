@@ -164,6 +164,26 @@ class ConversationStoreTests(unittest.TestCase):
         self.assertEqual([m["role"] for m in detail["messages"]], ["user", "assistant"])
         self.assertEqual(detail["title"], "What is the parser bug?")
 
+    def test_regenerating_does_not_feed_the_old_answer_back_as_context(self):
+        row = self.conversation()
+        prompts = []
+
+        def transport(request):
+            prompts.append(request["prompt"])
+            request["on_text"]("OLD-ANSWER-MARKER")
+            return {"text": "OLD-ANSWER-MARKER", "streamed": True}
+
+        conversations.TRANSPORT = transport
+        first = conversations.start_turn(self.store, row, "Explain the parser")
+        conversations.wait_for_message(self.store, first["assistant_message_id"])
+        again = self.store.one("SELECT * FROM conversations WHERE id=?", (row["id"],))
+        second = conversations.start_turn(self.store, again, "", regenerate=True)
+        conversations.wait_for_message(self.store, second["assistant_message_id"])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("Explain the parser", prompts[1])
+        # The replaced answer must not appear as if it were earlier context to continue.
+        self.assertNotIn("OLD-ANSWER-MARKER", prompts[1])
+
     def test_stream_resumes_after_a_sequence_number_without_duplicates(self):
         row = self.conversation()
         result = conversations.start_turn(self.store, row, "stream please")

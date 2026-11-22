@@ -57,7 +57,12 @@ class RunSlotTests(unittest.TestCase):
         with patch.object(project_agent.full_task, "fetch", side_effect=fetch):
             project_agent.start(server, self.task, {"id": identifier, "model": "synthetic"},
                                 "python3 -m unittest", 1)
-        self.assertFalse(self.settle(), "the run slot was never released")
+        # Join the run's own thread instead of polling, so a slow machine cannot look like a leak.
+        with project_agent._LOCK:
+            entry = project_agent._ACTIVE.get(task_id)
+        if entry is not None:
+            entry[1].join(10)
+        self.assertFalse(self.settle(1.0), "the run slot was never released")
         row = server.STORE.one("SELECT status FROM autonomous_runs WHERE task_id=?", (task_id,))
         self.assertEqual(row["status"], "failed")
         self.assertFalse(project_agent.running(task_id))
