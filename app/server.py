@@ -1592,6 +1592,10 @@ class App(SimpleHTTPRequestHandler):
             if route == "/api/maintenance/backup":
                 try: return self.json(maintenance.snapshot(STORE,DATA,DB_PATH),201)
                 except (ValueError,OSError,sqlite3.Error) as error: return self.json({"error":str(error)},409)
+            if route == "/api/maintenance/compact":
+                # Bounded, explicit compaction: terminal answers keep their text, only resume cursors go.
+                try: return self.json(conversations.prune_terminal_chunks(STORE))
+                except sqlite3.Error as error: return self.json({"error":str(error)},409)
             if route == "/api/session":
                 if not AUTH.enabled: return self.json({"error":"Owner authentication is not configured"},409)
                 try: value=AUTH.login(str(data.get("token", "")), self.client_address[0])

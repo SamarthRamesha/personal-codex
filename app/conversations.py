@@ -447,6 +447,28 @@ def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt
             pass
 
 
+def prune_terminal_chunks(store, limit: int = 5_000) -> dict:
+    """Drop streamed deltas no client can still resume from; the answer text is untouched.
+
+    A chunk row exists so a reconnecting client can continue an answer that is still arriving:
+    every delta is also appended to ``messages.content`` (and replaced by the authoritative text on
+    completion). Terminal messages therefore keep their full answer without their chunk rows, which
+    is the largest table an always-on assistant grows. An active answer is never touched, and this
+    deletes rows only — it never rewrites a message, conversation or project.
+    """
+    batch = max(1, min(20_000, int(limit)))
+    with store.lock:
+        before = store.conn.execute("SELECT COUNT(*) FROM message_chunks").fetchone()[0]
+        deleted = store.conn.execute(
+            "DELETE FROM message_chunks WHERE rowid IN (SELECT c.rowid FROM message_chunks c "
+            "JOIN messages m ON m.id=c.message_id WHERE m.status NOT IN ('queued','streaming') LIMIT ?)",
+            (batch,)).rowcount
+        store.conn.commit()
+        remaining = store.conn.execute("SELECT COUNT(*) FROM message_chunks").fetchone()[0]
+    return {"deleted": max(0, int(deleted or 0)), "remaining": int(remaining),
+            "freed_rows": max(0, int(before) - int(remaining)), "scope": "terminal conversation answers only"}
+
+
 def wait_for_message(store, message_id: str, timeout: float = 10.0) -> dict | None:
     """Test and shutdown helper: block until a turn leaves the active states."""
     deadline = time.time() + timeout

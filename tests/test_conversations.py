@@ -328,6 +328,44 @@ class ConversationStoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             conversations.resolve_provider(self.store, row, self.provider_id)
 
+    def test_terminal_chunks_can_be_pruned_without_losing_the_answer(self):
+        row = self.conversation()
+        result = conversations.start_turn(self.store, row, "Hello")
+        message = conversations.wait_for_message(self.store, result["assistant_message_id"], 5)
+        self.assertEqual(message["status"], "complete")
+        before = self.store.one("SELECT COUNT(*) AS n FROM message_chunks")["n"]
+        self.assertGreater(before, 0)
+        pruned = conversations.prune_terminal_chunks(self.store)
+        self.assertEqual(pruned["deleted"], before)
+        self.assertEqual(pruned["remaining"], 0)
+        # The answer survives: content is authoritative and a reader still gets a terminal event.
+        self.assertEqual(self.store.one("SELECT content FROM messages WHERE id=?", (message["id"],))["content"], "Hello world")
+        events = list(conversations.stream_events(self.store, row["id"], message["id"]))
+        self.assertEqual(events[-1][0], "done")
+        self.assertEqual(events[-1][1]["bytes"], len("Hello world"))
+
+    def test_pruning_keeps_deltas_for_an_answer_that_is_still_arriving(self):
+        # Restore in a finally: addCleanup runs after tearDown and would re-install this fake
+        # transport for every later test in the process.
+        original = conversations.TRANSPORT
+        conversations.TRANSPORT = slow_transport()
+        try:
+            self._assert_pruning_keeps_live_deltas()
+        finally:
+            conversations.TRANSPORT = original
+
+    def _assert_pruning_keeps_live_deltas(self):
+        row = self.conversation()
+        result = conversations.start_turn(self.store, row, "Hello")
+        deadline = time.time() + 5
+        while time.time() < deadline and not self.store.one("SELECT COUNT(*) AS n FROM message_chunks")["n"]:
+            time.sleep(0.02)
+        self.assertGreater(self.store.one("SELECT COUNT(*) AS n FROM message_chunks")["n"], 0)
+        self.assertEqual(conversations.prune_terminal_chunks(self.store)["deleted"], 0)
+        self.assertGreater(self.store.one("SELECT COUNT(*) AS n FROM message_chunks")["n"], 0)
+        conversations.request_stop(result["assistant_message_id"])
+        self.assertEqual(conversations.wait_for_message(self.store, result["assistant_message_id"], 5)["status"], "stopped")
+
 
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
 class ConversationHttpTests(unittest.TestCase):
@@ -371,6 +409,17 @@ class ConversationHttpTests(unittest.TestCase):
 
     def get(self, path):
         return self.request("GET", path)
+
+    def test_http_compaction_frees_terminal_chunks_and_keeps_the_answer(self):
+        conversation = self.post("/api/conversations", {"project_id": self.project["id"], "provider_id": self.provider["id"]})
+        started = self.post(f"/api/conversations/{conversation['id']}/messages", {"content": "Hello"})
+        conversations.wait_for_message(server.STORE, started["assistant_message_id"], 5)
+        result = self.post("/api/maintenance/compact")
+        self.assertGreater(result["deleted"], 0)
+        detail = self.get(f"/api/conversations/{conversation['id']}")
+        answer = [m for m in detail["conversation"]["messages"] if m["role"] == "assistant"][0]
+        self.assertEqual(answer["content"], "Hello world")
+        self.assertEqual(answer["status"], "complete")
 
     def test_http_conversation_stream_stop_and_delete(self):
         conversation = self.post("/api/conversations", {"project_id": self.project["id"], "provider_id": self.provider["id"]})
@@ -493,8 +542,12 @@ class TurnStartFailureTests(unittest.TestCase):
         conversation = conversations.create_conversation(self.store, title="fixture", provider_id=pid)
         original_transport = conversations.TRANSPORT
         conversations.TRANSPORT = streaming_transport()
-        self.addCleanup(setattr, conversations, "TRANSPORT", original_transport)
+        try:
+            self._assert_a_failed_start_does_not_wedge(conversation)
+        finally:
+            conversations.TRANSPORT = original_transport
 
+    def _assert_a_failed_start_does_not_wedge(self, conversation):
         class Refusing:
             def __init__(self, *args, **kwargs):
                 pass

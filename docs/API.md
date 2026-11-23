@@ -32,6 +32,7 @@ The HTTP surface retains `/api/` routes for compatibility; `/api/connection` and
 | `POST /api/tasks/{id}/workspace-request`, `/workspace`, `/execution-request`, `/execute`, `/agent/round/request`, `/agent/round/plan`, `/agent/round/execute` | Owner/session | Exact separate approvals; code proposal, patch, execution/worktree/Git operations refused in disabled profile |
 | `POST /api/tasks/{id}/cancel`, `/agent/round/cancel` | Owner/session | Cooperative cancellation with late model/tool results rejected |
 | `GET /api/diagnostics`, `POST /api/maintenance/backup` | Owner/session | Own-data inventory only, verified private SQLite snapshots; concurrent snapshot refusal; no cleanup |
+| `POST /api/maintenance/compact` | Owner/session | Deletes streamed-chunk rows for *terminal* answers only, bounded per call; message text, conversations and an answer that is still arriving are untouched |
 
 The server routes remain the authority for the full legacy task, memory, release, merge and deletion surface. This table highlights client integration; it is not a generated OpenAPI specification.
 
