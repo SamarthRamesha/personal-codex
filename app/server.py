@@ -282,7 +282,12 @@ def conversation_project_context(project_id, request):
         selection = context.select(root, request, max_bytes=max(1,4500-len(references.encode("utf-8"))), max_files=6)
     except (OSError, ValueError):
         return "The selected project could not be read under the current workspace authorization."
-    return context.prompt_block(selection) + references
+    # Approved project memory answers questions the files cannot (conventions, decisions, past
+    # issues). memory_lines ranks it against the request, skips credential-like legacy rows, labels
+    # each entry stale/manual/verified and keeps its own byte budget, so the file context above
+    # keeps the budget it had.
+    memory = memory_lines(project_id, request, [snippet["path"] for snippet in selection["files"]], limit=6, max_bytes=1200)
+    return context.prompt_block(selection, memory=memory) + references
 
 
 conversations.PROJECT_CONTEXT = conversation_project_context

@@ -606,3 +606,45 @@ class TurnStartFailureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProjectMemoryContextTests(unittest.TestCase):
+    """A project chat must see the project's approved memory, and never a credential-shaped row."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.root = base / "project"
+        self.root.mkdir()
+        (self.root / "login.py").write_text("def login(user):\n    return user\n")
+        self.old = (server.DATA, server.DB_PATH, server.STORE)
+        server.DATA, server.DB_PATH = base / "data", base / "data" / "test.db"
+        server.STORE = server.Store()
+        self.store = server.STORE
+        self.addCleanup(self.cleanup)
+        self.project = server.uid()
+        self.store.write("INSERT INTO projects VALUES (?,?,?,?)",
+                         (self.project, "Fixture", str(self.root), server.now()))
+
+    def cleanup(self):
+        server.STORE.close()
+        server.DATA, server.DB_PATH, server.STORE = self.old
+        self.tmp.cleanup()
+
+    def remember(self, kind, content):
+        self.store.write("INSERT INTO memory (id,project_id,kind,content,source,created_at,updated_at) "
+                         "VALUES (?,?,?,?,?,?,?)",
+                         (server.uid(), self.project, kind, content, "manual-edit", server.now(), server.now()))
+
+    def test_approved_memory_reaches_the_chat_prompt_with_its_provenance(self):
+        self.remember("convention", "Login is implemented in login.py, never in the web layer")
+        block = server.conversation_project_context(self.project, "how does the login flow work")
+        self.assertIn("Project memory", block)
+        self.assertIn("Login is implemented in login.py", block)
+        self.assertIn("user-provided, verify against the files", block)
+
+    def test_a_credential_shaped_memory_row_is_not_copied_into_the_prompt(self):
+        self.remember("summary", "api_key = sk-live-0123456789abcdef")
+        block = server.conversation_project_context(self.project, "how does the login flow work")
+        self.assertNotIn("sk-live-0123456789abcdef", block)
+        self.assertNotIn("Project memory", block)
