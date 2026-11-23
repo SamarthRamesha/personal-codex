@@ -1,5 +1,17 @@
 # Development log
 
+## 23 November 2026 — the integration seam, an honest 403, and a CI file that never loaded
+
+Continuing the same session. Five commits, one of which was a mistake worth recording in full.
+
+- `bf8f1f0` — the disaster-recovery drill seeded only a conversation title, so a restore that dropped answers, stream chunks, project memory or an approval decision would still have reported success. It now seeds all four, asserts their content survives, asserts post-checkpoint rows do not, and asserts a restored approval is **revoked**. 10 checks pass locally. The same commit installed the recovery wheel in the backend CI job and ran the drill there, because that tier had always been *skipped* in CI — a skip reported as a pass.
+- **The mistake.** That install line was `--only-binary=:all: cryptography` with no quotes. It is valid pip, but YAML reads `all:` followed by a space as a mapping key, so the workflow stopped loading. Runs `45140362052`, `45141261480`, `45141954813` and `45142644176` each reported `failure` while starting **no job at all**. Four red runs that said nothing about the code. `37de1f1` quotes the command; the file is parsed with a YAML parser before pushing now, and run `45143352247` is green with the drill step present. The tell was that those run pages had no job list — a failing test always has jobs.
+- `555fd32` — `POST /api/conversations/{id}/task` had no test at all, so the chat-to-coding seam (plan, link, approval requirement) was unverified. The new HTTP test asserts the four-step plan, `approval_required`, the stored `conversation_tasks` link, the prompt falling back to the newest user turn, and that creating a task from chat starts **no** run and records **no** execution.
+- `4147807` — writing that test exposed a real API wart: `GET /api/tasks/{id}/autonomous` answered **404 "Task not found"** for a task that exists whenever the offline policy was off, the same answer a genuinely missing task gets. The start and stop routes already name the reason with 403. The route now calls the backend and maps `ExecutionDisabledError` to 403, keeping 404 for a task that does not exist.
+- `a25753f` — the owner-auth sweep named representative mutations, so the new compact endpoint and the task bridge were outside it. Both now prove 401 without the owner credential.
+
+The 200 path of the autonomous report still needs authenticated offline mode, which that fixture does not run; `test_task_backend` covers `inspect_task` returning `idle` for a task with no run. That split is stated in the test rather than implied.
+
 ## 23 November 2026 — retention, project memory and panel increments
 
 Same session, continuing after the native CI repair. Four source commits, each with its own check:
