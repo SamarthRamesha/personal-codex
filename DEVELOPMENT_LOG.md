@@ -1,5 +1,22 @@
 # Development log
 
+## 23 November 2026 — retention, project memory and panel increments
+
+Same session, continuing after the native CI repair. Four source commits, each with its own check:
+
+- `3f4e3df` — `start_turn` released nothing when the runtime refused a worker thread: the claim and the `queued` row stayed, so the conversation refused every later turn and one inference slot was held until restart. Fixed and covered by a test that fails on the old code.
+- `bae85e0` — streamed deltas are stored twice (a resumable chunk row and the message content), and chunk rows were never reclaimed. `conversations.prune_terminal_chunks` deletes them for terminal answers only, bounded per call, leaving text, conversations and any answer still arriving untouched; `POST /api/maintenance/compact` exposes it.
+- `1042c18` — `GET /api/diagnostics` now reports message, chunk, chunk-byte, active and prunable counts so growth is measurable rather than assumed.
+- `0c1b6dc` — the settings panel lists those counts and offers the compaction button, disabled when nothing is prunable.
+- `eb394a5` — a stopped answer could not be regenerated (only `error` offered Retry), so cancelling an answer left it a dead end. The status-to-action mapping moved into `desktop/src/messageState.ts` with tests; stopped and error regenerate, queued and streaming do not.
+- `faffd10` — project chats never saw the project's approved memory even though `memory_lines` already ranked, labelled and byte-bounded it for the coding prompts. Chat context now includes up to six labelled entries with their own 1200-byte budget; a test asserts a credential-shaped row is still refused.
+
+Honest limits of the above: deleting chunk rows does **not** shrink the database file (no VACUUM is run, and the main-database page cap therefore still reflects the historical high-water mark); the panel change was typechecked and built but not viewed; and the memory inclusion is proven at the context-function boundary, not against a live model.
+
+**Verification sweep actually run this session.** Backend `421 tests, OK, 4 skips` with `PERSONAL_CODEX_HTTP_TESTS=1` (69 s); frontend `45 tests / 9 files` and `tsc -b` clean and `vite build` succeeds; the four changed Rust tests pass through the extracted harness. Scripts: `scripts/recovery_drill.py` reported `{"passed": 6, "checkpoint_ms": 14, "restore_ms": 33, "tested_on_jarvis": false}`; `scripts/document_search_acceptance.py` reported `{"success": true, "precision_at_1": 1.0, "mean_reciprocal_rank": 1.0, "model_calls": 0}` with the stale, removed and foreign-project exclusions all true; `scripts/full_task_acceptance.py` stopped at `400 The autonomous runner requires the verified macOS process sandbox`, which is the documented environment block, not a product failure.
+
+**CI, read from the run and job pages.** `999f591` (run `45051415083`) and `93710a8` (run `45054272664`) each failed the native job. `81fd847` (run `45132484092`), `bae85e0` (run `45137737745`) and `eb394a5` (run `45138040157`) each report all three jobs `completed successfully` with no failure marker. Job logs still need authentication from this host, so no log content is claimed.
+
 ## 23 November 2026 — native CI failure diagnosed, repaired, verified green
 
 Continuation session; nothing was restarted. The primary checkout stayed on `personal-codex/stabilization` at `12a24d5` with its user modification (`web/style.css`, sha256 `4746cdd0…` unchanged) and its preserved untracked files; feature work stayed in `.worktrees/mac` on `personal-codex/mac-automation`.
