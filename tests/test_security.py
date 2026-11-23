@@ -110,7 +110,8 @@ class AuthHttpTests(unittest.TestCase):
         response=client.getresponse();result=(response.status,dict(response.getheaders()),response.read())
         client.close();return result
     def test_all_sensitive_methods_and_streams_require_owner_auth(self):
-        for method,path,body in [('GET','/api/projects',None),('GET','/api/connection',None),('GET','/api/conversations/x/messages/y/stream',None),('POST','/api/projects',{}),('PATCH','/api/approvals/x',{}),('DELETE','/api/conversations/x',None),('HEAD','/api/projects',None)]:
+        for method,path,body in [('GET','/api/projects',None),('GET','/api/connection',None),('GET','/api/conversations/x/messages/y/stream',None),('POST','/api/projects',{}),('PATCH','/api/approvals/x',{}),('DELETE','/api/conversations/x',None),('HEAD','/api/projects',None),
+                ('POST','/api/maintenance/compact',{}),('POST','/api/conversations/x/task',{})]:
             status,_,_=self.request(method,path,body)
             self.assertEqual(status,401,(method,path))
         self.assertEqual(self.request('GET','/api/health')[0],200)
