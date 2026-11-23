@@ -414,8 +414,16 @@ class ConversationHttpTests(unittest.TestCase):
         conversation = self.post("/api/conversations", {"project_id": self.project["id"], "provider_id": self.provider["id"]})
         started = self.post(f"/api/conversations/{conversation['id']}/messages", {"content": "Hello"})
         conversations.wait_for_message(server.STORE, started["assistant_message_id"], 5)
+        counts = self.get("/api/diagnostics")["conversation_rows"]
+        self.assertGreater(counts["chunks"], 0)
+        self.assertEqual(counts["prunable_chunks"], counts["chunks"])
+        self.assertEqual(counts["active_messages"], 0)
         result = self.post("/api/maintenance/compact")
         self.assertGreater(result["deleted"], 0)
+        after = self.get("/api/diagnostics")["conversation_rows"]
+        self.assertEqual(after["chunks"], 0)
+        self.assertEqual(after["prunable_chunks"], 0)
+        self.assertEqual(after["messages"], counts["messages"])
         detail = self.get(f"/api/conversations/{conversation['id']}")
         answer = [m for m in detail["conversation"]["messages"] if m["role"] == "assistant"][0]
         self.assertEqual(answer["content"], "Hello world")

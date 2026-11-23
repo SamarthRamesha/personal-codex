@@ -1202,7 +1202,8 @@ class App(SimpleHTTPRequestHandler):
                               "execution_mode":os.getenv("PERSONAL_CODEX_EXECUTION_MODE","development")},200 if ready else 503)
         if route == "/api/inference/status": return self.json(inference.Broker(STORE).status())
         if route == "/api/diagnostics":
-            try: return self.json({**maintenance.diagnostics(DATA),'network_policy':network_policy.status()})
+            try: return self.json({**maintenance.diagnostics(DATA),'network_policy':network_policy.status(),
+                                   'conversation_rows':conversations.row_inventory(STORE)})
             except (OSError,ValueError): return self.json({"error":"Storage diagnostics unavailable; verify resource configuration"},503)
         if route == "/api/connection":
             return self.json({"ok":True,"authenticated":AUTH.enabled,"api_version":1,"session_ttl_seconds":AUTH.ttl,

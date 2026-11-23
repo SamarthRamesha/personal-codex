@@ -447,6 +447,22 @@ def _run_turn(store, conversation: dict, message_id: str, provider: dict, prompt
             pass
 
 
+def row_inventory(store) -> dict:
+    """Row counts that tell an operator whether compaction is worth running.
+
+    A number here is a measurement, not a recommendation: nothing is deleted because of it.
+    """
+    def count(sql):
+        row = store.one(sql)
+        return int(row["n"]) if row and row.get("n") is not None else 0
+    return {"messages": count("SELECT COUNT(*) AS n FROM messages"),
+            "chunks": count("SELECT COUNT(*) AS n FROM message_chunks"),
+            "chunk_text_bytes": count("SELECT COALESCE(SUM(LENGTH(text)),0) AS n FROM message_chunks"),
+            "active_messages": count("SELECT COUNT(*) AS n FROM messages WHERE status IN ('queued','streaming')"),
+            "prunable_chunks": count("SELECT COUNT(*) AS n FROM message_chunks c JOIN messages m ON m.id=c.message_id "
+                                    "WHERE m.status NOT IN ('queued','streaming')")}
+
+
 def prune_terminal_chunks(store, limit: int = 5_000) -> dict:
     """Drop streamed deltas no client can still resume from; the answer text is untouched.
 
