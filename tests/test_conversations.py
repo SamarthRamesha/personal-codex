@@ -212,6 +212,44 @@ class ConversationStoreTests(unittest.TestCase):
         self.assertTrue(final["content"].startswith("chunk"))
         self.assertNotEqual(final["content"], "never")
 
+    def test_a_second_message_is_refused_while_the_answer_is_still_streaming(self):
+        # Neither guard below had a test: two sends could both claim one conversation, and the
+        # local concurrency limit could be exceeded, with the suite still green.
+        conversations.TRANSPORT = slow_transport()
+        row = self.conversation()
+        first = conversations.start_turn(self.store, row, "first question")
+        try:
+            with self.assertRaises(ValueError) as refused:
+                conversations.start_turn(self.store, row, "second question")
+            self.assertIn("already has an active answer", str(refused.exception))
+            self.assertFalse(self.store.one("SELECT 1 FROM messages WHERE conversation_id=? AND content='second question'",
+                                            (row["id"],)))
+        finally:
+            conversations.request_stop(first["assistant_message_id"])
+            final = conversations.wait_for_message(self.store, first["assistant_message_id"])
+        self.assertEqual(final["status"], "stopped")
+        self.assertNotIn(first["assistant_message_id"], conversations.GENERATIONS)
+
+    def test_the_local_answer_limit_refuses_a_third_conversation(self):
+        conversations.TRANSPORT = slow_transport()
+        rows = [self.conversation() for _ in range(3)]
+        started = []
+        try:
+            for row in rows[:2]:
+                started.append(conversations.start_turn(self.store, row, "long answer"))
+            self.assertEqual(len(conversations.GENERATIONS), 2)
+            with self.assertRaises(ValueError) as refused:
+                conversations.start_turn(self.store, rows[2], "third answer")
+            self.assertIn("concurrency limit", str(refused.exception))
+            self.assertFalse(self.store.one("SELECT 1 FROM messages WHERE content='third answer'"))
+        finally:
+            for turn in started:
+                conversations.request_stop(turn["assistant_message_id"])
+            for turn in started:
+                conversations.wait_for_message(self.store, turn["assistant_message_id"])
+        for turn in started:
+            self.assertNotIn(turn["assistant_message_id"], conversations.GENERATIONS)
+
     def test_provider_failure_is_recorded_without_taking_the_server_down(self):
         conversations.TRANSPORT = failing_transport()
         row = self.conversation()
