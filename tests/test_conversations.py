@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -428,6 +429,14 @@ class ConversationHttpTests(unittest.TestCase):
         self.assertEqual(self.get(f"/api/tasks/{task['id']}/executions"), [])
         self.assertTrue(any("conversation" in event["message"].lower()
                             for event in self.get(f"/api/tasks/{task['id']}/events")))
+        # The report for a real task must not answer "not found" just because the offline runner is
+        # off; it now names the actual reason, matching the start and stop routes.
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self.get(f"/api/tasks/{task['id']}/autonomous")
+        self.assertEqual(refused.exception.code, 403)
+        self.assertIn("offline", json.loads(refused.exception.read())["error"])
+        # The 200 path needs authenticated offline mode, which this fixture does not run; it is
+        # covered by test_task_backend, where inspect_task reports "idle" for a task with no run.
 
     def test_http_compaction_frees_terminal_chunks_and_keeps_the_answer(self):
         conversation = self.post("/api/conversations", {"project_id": self.project["id"], "provider_id": self.provider["id"]})

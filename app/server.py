@@ -1247,9 +1247,12 @@ class App(SimpleHTTPRequestHandler):
             project = STORE.one("SELECT path FROM projects WHERE id=?", (task["project_id"],))
             return self.json({"path": str(safe_project_path(project["path"]))})
         agent_route = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/autonomous", route)
-        if agent_route and network_policy.offline_only():
+        if agent_route:
+            # An existing task must not look missing just because the offline runner is off; the
+            # start and stop routes already answer 403 for that case.
             try: return self.json(task_service().inspect_task(agent_route[1]))
             except LookupError as error: return self.json({"error": str(error)}, 404)
+            except ExecutionDisabledError as error: return self.json({"error": str(error)}, 403)
         if route == "/api/tasks": return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/events"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
