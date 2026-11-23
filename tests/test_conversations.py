@@ -410,6 +410,25 @@ class ConversationHttpTests(unittest.TestCase):
     def get(self, path):
         return self.request("GET", path)
 
+    def test_http_chat_turns_into_a_planned_task_that_still_needs_approval(self):
+        # The bridge between a conversation and the coding flow had no test at all: a broken plan,
+        # a lost link or an unnoticed execution grant would have gone unnoticed.
+        conversation = self.post("/api/conversations", {"project_id": self.project["id"], "provider_id": self.provider["id"]})
+        self.post(f"/api/conversations/{conversation['id']}/messages", {"content": "Please add a subtract helper"})
+        task = self.post(f"/api/conversations/{conversation['id']}/task", {})
+        self.assertEqual(task["status"], "planned")
+        self.assertTrue(task["approval_required"])
+        self.assertEqual([step["agent"] for step in task["plan"]], ["planner", "developer", "testing", "reviewer"])
+        # The conversation records the link, and the prompt fell back to the newest user turn.
+        linked = self.get(f"/api/conversations/{conversation['id']}")["conversation"]["tasks"]
+        self.assertEqual([row["id"] for row in linked], [task["id"]])
+        self.assertEqual(linked[0]["prompt"], "Please add a subtract helper")
+        # Chat created a plan, not work: no run exists and nothing was executed.
+        self.assertFalse(server.STORE.one("SELECT 1 FROM autonomous_runs WHERE task_id=?", (task["id"],)))
+        self.assertEqual(self.get(f"/api/tasks/{task['id']}/executions"), [])
+        self.assertTrue(any("conversation" in event["message"].lower()
+                            for event in self.get(f"/api/tasks/{task['id']}/events")))
+
     def test_http_compaction_frees_terminal_chunks_and_keeps_the_answer(self):
         conversation = self.post("/api/conversations", {"project_id": self.project["id"], "provider_id": self.provider["id"]})
         started = self.post(f"/api/conversations/{conversation['id']}/messages", {"content": "Hello"})
