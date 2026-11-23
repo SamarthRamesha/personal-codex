@@ -23,6 +23,16 @@ def main():
         for command in (['git','init','--quiet'],['git','config','user.name','Synthetic'],['git','config','user.email','synthetic@example.invalid'],['git','add','.'],['git','commit','--quiet','-m','synthetic recoverable commit']):subprocess.run(command,cwd=project,check=True,capture_output=True)
         store.write('INSERT INTO projects VALUES (?,?,?,?)',('project','Synthetic',str(project),1))
         store.write('INSERT INTO conversations (id,title,created_at,updated_at) VALUES (?,?,?,?)',('before','included at checkpoint',1,1))
+        # The tables the product grew after this drill was written: a restore that quietly dropped
+        # answers, stream chunks, memory or an approval decision would otherwise look successful.
+        store.write('INSERT INTO messages (id,conversation_id,role,content,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+                    ('answer','before','assistant','synthetic answer text','complete',1,1))
+        store.write('INSERT INTO message_chunks (message_id,conversation_id,text,created_at) VALUES (?,?,?,?)',
+                    ('answer','before','synthetic chunk text',1))
+        store.write('INSERT INTO memory (id,project_id,kind,content,source,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+                    ('memory','project','convention','Synthetic convention','manual-edit',1,1))
+        store.write('INSERT INTO approvals (id,project_id,kind,detail,status,created_at,expires_at) VALUES (?,?,?,?,?,?,?)',
+                    ('approval','project','workspace','synthetic approval','approved',1,10**12))
         store.conn.close()
         release=base/'release.zip'
         import zipfile
@@ -31,10 +41,18 @@ def main():
         bundle=base/'encrypted.pcr'
         with patch.dict(os.environ,{'PERSONAL_CODEX_RESERVE_GB':'1'}):
             checkpoint=recovery.checkpoint(data,bundle,key,release,{'PC_ORIGIN':'https://synthetic.private.ts.net'})
-            db=sqlite3.connect(data/'personal_codex.db');db.execute('INSERT INTO conversations (id,title,created_at,updated_at) VALUES (?,?,?,?)',('after','not included after checkpoint',2,2));db.commit();db.close()
+            db=sqlite3.connect(data/'personal_codex.db');db.execute('INSERT INTO conversations (id,title,created_at,updated_at) VALUES (?,?,?,?)',('after','not included after checkpoint',2,2))
+            db.execute("INSERT INTO messages (id,conversation_id,role,content,status,created_at,updated_at) VALUES ('later','after','user','post-checkpoint text','complete',2,2)")
+            db.execute("INSERT INTO memory (id,project_id,kind,content,source,created_at,updated_at) VALUES ('later-memory','project','convention','Post-checkpoint memory','manual-edit',2,2)")
+            db.commit();db.close()
             restored=recovery.restore(bundle,base/'new-root',key)
         db=sqlite3.connect(base/'new-root/data/personal_codex.db')
-        try:titles=[row[0] for row in db.execute('SELECT title FROM conversations')];path=db.execute('SELECT path FROM projects').fetchone()[0]
+        try:
+            titles=[row[0] for row in db.execute('SELECT title FROM conversations')];path=db.execute('SELECT path FROM projects').fetchone()[0]
+            messages=[row[0] for row in db.execute('SELECT content FROM messages')]
+            chunks=[row[0] for row in db.execute('SELECT text FROM message_chunks')]
+            remembered=[row[0] for row in db.execute('SELECT content FROM memory')]
+            approval=db.execute("SELECT status FROM approvals WHERE id='approval'").fetchone()
         finally:db.close()
         source_db=sqlite3.connect(data/'personal_codex.db')
         try:source_preserved=source_db.execute("SELECT COUNT(*) FROM conversations WHERE id='after'").fetchone()[0]==1
@@ -43,7 +61,11 @@ def main():
         report={'synthetic':True,'tested_on_jarvis':False,'checkpoint':checkpoint,'restore':restored,
                 'checks':{'checkpoint_record_present':'included at checkpoint' in titles,'later_record_absent':'not included after checkpoint' not in titles,
                           'project_file_restored':(Path(path)/'example.py').read_text()=='def value(): return 42\n','git_history_restored':recovered_commit=='synthetic recoverable commit',
-                          'execution_lock_present':(base/'new-root/data/RECOVERY_LOCKED.json').exists(),'original_later_record_preserved':source_preserved},
+                          'execution_lock_present':(base/'new-root/data/RECOVERY_LOCKED.json').exists(),'original_later_record_preserved':source_preserved,
+                          'message_and_chunk_restored':'synthetic answer text' in messages and 'synthetic chunk text' in chunks,
+                          'post_checkpoint_message_absent':'post-checkpoint text' not in messages and 'Post-checkpoint memory' not in remembered,
+                          'memory_restored':'Synthetic convention' in remembered,
+                          'approval_revoked_on_restore':approval is not None and approval[0]=='revoked'},
                 'rpo':'Latest completed offline checkpoint only; post-checkpoint records are not restored',
                 'rto_limitations':'Measured tiny warm local fixture only. JARVIS storage/image/credential/Git-repair/approval recovery time is unmeasured.',
                 'credentials':'No production credentials or private keys collected; synthetic encryption key destroyed with this disposable fixture',
