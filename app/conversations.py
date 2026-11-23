@@ -380,7 +380,17 @@ def _start_turn(store, conversation: dict, content: str, *, provider: dict | Non
         GENERATIONS[assistant["id"]] = event
     thread = threading.Thread(target=_run_turn, args=(store, conversation, assistant["id"], provider, prompt, event),
                               name=f"chat-{assistant['id'][:8]}", daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except RuntimeError:
+        # No worker means no _run_turn, so nothing would ever finish this message. Releasing the claim
+        # here is the difference between one failed turn and a conversation that refuses every later
+        # turn — while holding one of the two inference slots — until the process restarts.
+        with _LOCK:
+            GENERATIONS.pop(assistant["id"], None)
+        store.write("UPDATE messages SET status='error', error=?, updated_at=? WHERE id=?",
+                    ("The local turn could not start; no answer was generated. Send the message again.", stamp(), assistant["id"]))
+        raise ValueError("Local inference could not start a turn; send the message again") from None
     return {"conversation_id": conversation["id"], "user_message": text if not regenerate else None,
             "assistant_message_id": assistant["id"], "status": "queued", "model": provider["model"],
             "provider_id": provider["id"], "regenerated": bool(regenerate)}

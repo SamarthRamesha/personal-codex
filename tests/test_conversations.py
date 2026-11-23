@@ -485,6 +485,43 @@ class TurnStartFailureTests(unittest.TestCase):
         server.DATA, server.DB_PATH, server.STORE = self.old
         self.tmp.cleanup()
 
+    def test_a_turn_that_cannot_start_does_not_wedge_the_conversation(self):
+        pid = "provider-fixture-turn"
+        self.store.write("INSERT INTO providers (id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at) "
+                         "VALUES (?,?,?,?,?,?,?,?)",
+                         (pid, "ollama", "http://127.0.0.1:11434", "fixture:1b", "", 0, 1, server.now()))
+        conversation = conversations.create_conversation(self.store, title="fixture", provider_id=pid)
+        original_transport = conversations.TRANSPORT
+        conversations.TRANSPORT = streaming_transport()
+        self.addCleanup(setattr, conversations, "TRANSPORT", original_transport)
+
+        class Refusing:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start(self):
+                raise RuntimeError("can't start new thread")
+
+        original = conversations.threading.Thread
+        conversations.threading.Thread = Refusing
+        try:
+            with self.assertRaises(ValueError):
+                conversations.start_turn(self.store, conversation, "Hello")
+        finally:
+            conversations.threading.Thread = original
+        # The claim, the inference slot and the queued message are all released here, not at a restart.
+        self.assertEqual(conversations.GENERATIONS, {})
+        self.assertFalse(self.store.one(
+            "SELECT id FROM messages WHERE conversation_id=? AND status IN ('queued','streaming') LIMIT 1",
+            (conversation["id"],)))
+        row = self.store.one("SELECT status,error FROM messages WHERE conversation_id=? AND role='assistant'",
+                             (conversation["id"],))
+        self.assertEqual(row["status"], "error")
+        self.assertIn("could not start", row["error"])
+        # The conversation is usable again rather than refusing every later turn.
+        result = conversations.start_turn(self.store, conversation, "Hello again")
+        self.assertEqual(conversations.wait_for_message(self.store, result["assistant_message_id"], 5)["status"], "complete")
+
     def test_a_transient_write_failure_releases_the_slot_and_the_message(self):
         conversation = conversations.create_conversation(self.store, title="fixture")
         message = conversations.new_message(self.store, conversation["id"], "assistant", "", status="queued")
