@@ -254,15 +254,19 @@ pub(super) async fn plan_mac_automation(app: AppHandle, goal: String, model: Str
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    // Fixtures use /bin/sh, which every supported host provides. The earlier fixtures hard-coded
+    // /usr/bin/python3: on macOS that path is only a Command Line Tools stub, so a runner without the
+    // toolchain blocks in the child instead of answering, the 2s frame deadline fires, and a fixture
+    // failure is reported with the production watchdog wording ("Automation timed out...").
     fn child(script: &str) -> Transport {
-        let mut process = Command::new("/usr/bin/python3").args(["-u", "-c", script])
+        let mut process = Command::new("/bin/sh").args(["-c", script])
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
         Transport { input: process.stdin.take().unwrap(), output: process.stdout.take().unwrap(), child: process,
             buffer: Vec::new(), sequence: 0 }
     }
     #[test]
     fn watchdog_bounds_a_silent_child_and_cancel_is_immediate() {
-        let mut transport = child("import time; time.sleep(20)");
+        let mut transport = child("exec sleep 20");
         let start = Instant::now();
         assert!(frame(&mut transport, start+Duration::from_millis(100), &AtomicBool::new(false)).is_err());
         assert!(start.elapsed()<Duration::from_secs(2));
@@ -270,26 +274,35 @@ mod tests {
     }
     #[test]
     fn blocked_input_has_a_real_deadline() {
-        let mut transport = child("import time; time.sleep(20)");
+        let mut transport = child("exec sleep 20");
         let start = Instant::now();
         assert!(write_request(&mut transport, &vec![b'x';1_000_000], start+Duration::from_millis(100), &AtomicBool::new(false)).is_err());
         assert!(start.elapsed()<Duration::from_secs(2));
     }
     #[test]
     fn framing_handles_fragments_and_refuses_invalid_json() {
-        let mut valid = child("import sys,time; sys.stdout.write('{\"id\":'); sys.stdout.flush(); time.sleep(.02); print('\"one\"}')");
+        // A frame split across reads must only be parsed once its newline arrives. Seeding the buffer
+        // with the first half makes the split deterministic instead of timing-dependent.
+        let mut valid = child("printf '\"one\"}\n'");
+        valid.buffer.extend_from_slice(b"{\"id\":");
         assert_eq!(frame(&mut valid, Instant::now()+Duration::from_secs(2), &AtomicBool::new(false)).unwrap()["id"],"one");
-        let mut invalid = child("print('not json')");
+        let mut invalid = child("printf 'not json\\n'");
         assert!(frame(&mut invalid, Instant::now()+Duration::from_secs(2), &AtomicBool::new(false)).is_err());
     }
     #[test]
     fn response_ids_are_bound_and_activity_omits_payloads() {
-        let mut invalid = child("import sys,json; json.loads(sys.stdin.readline()); print(json.dumps({'id':'old','ok':True,'result':{}}))");
+        let mut invalid = child("read line; printf '{\"id\":\"old\",\"ok\":true,\"result\":{}}\\n'");
         assert!(exchange(&mut invalid, &Broker::default(), json!({"op":"status"}), Duration::from_secs(2)).is_err());
-        let mut valid = child("import sys,json; r=json.loads(sys.stdin.readline()); print(json.dumps({'id':r['id'],'event':'action','stage':'started','index':0,'operation':'set_text','text':'DO_NOT_LOG'})); print(json.dumps({'id':r['id'],'ok':True,'result':{'done':True}}))");
+        let echo = "read line; id=$(printf '%s' \"$line\" | sed -n 's/.*\"id\":\"\\([^\"]*\\)\".*/\\1/p'); \
+            printf '{\"id\":\"%s\",\"event\":\"action\",\"stage\":\"started\",\"index\":0,\"operation\":\"set_text\",\"text\":\"DO_NOT_LOG\"}\\n' \"$id\"; \
+            printf '{\"id\":\"%s\",\"ok\":true,\"result\":{\"done\":true}}\\n' \"$id\"";
+        let mut valid = child(echo);
         let broker = Broker::default();
         assert_eq!(exchange(&mut valid, &broker, json!({"op":"execute"}), Duration::from_secs(2)).unwrap()["done"],true);
-        assert!(!serde_json::to_string(&*broker.activity.lock().unwrap()).unwrap().contains("DO_NOT_LOG"));
+        let activity = serde_json::to_string(&*broker.activity.lock().unwrap()).unwrap();
+        // The event must really have been recorded, otherwise the payload check below is vacuous.
+        assert!(activity.contains("set_text"));
+        assert!(!activity.contains("DO_NOT_LOG"));
     }
     #[test]
     fn permission_operations_are_finite_and_stale_model_generations_change() {
