@@ -23,7 +23,8 @@ jobs:
       - name: Optional recovery dependency
         # The recovery tier and the disaster-recovery drill skip without this wheel. CI installs it
         # so those paths run here instead of reporting a skip as a pass.
-        run: python -m pip install --only-binary=:all: cryptography
+        # Quoted: an unquoted ':all:' followed by a space is valid pip but invalid YAML here.
+        run: "python -m pip install --only-binary=:all: cryptography"
       - name: Isolated backend and HTTP regression
         env:
           PERSONAL_CODEX_HTTP_TESTS: '1'
