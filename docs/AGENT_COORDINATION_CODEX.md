@@ -29,3 +29,7 @@ Continue approval/execution cancellation and replay safety, sensitive-file bound
 ## Shared sensitive-file policy
 
 Direct workspace read/list/patch tools used an older filename list than context selection, so a model could request files that context deliberately omitted. Synthetic negative controls reproduced reads, listing and modification of secrets.json, credentials YAML/TOML, key material and .netrc. `app/file_policy.py` now supplies the common conservative component predicate to both boundaries; listings also omit secret-shaped directories. Ordinary secret_parser.py remains readable. Focused tool/context regressions pass; the installed preview and user data are untouched. This is filename screening, not complete content DLP.
+
+## Process-group cancellation
+
+A resistant child kept writing after its cooperative parent exited on SIGTERM. Cleanup previously returned as soon as the leader was reaped. The new bounded group check waits only the grace period and then kills surviving members. A black-box heartbeat regression failed on the previous code (10 writes versus1 after cancellation) and passes now. Six targeted cases pass with one named Linux-only /proc skip on this Mac. No owner daemon or unrelated process is signalled.

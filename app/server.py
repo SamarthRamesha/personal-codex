@@ -1003,17 +1003,40 @@ CANCEL_GRACE_SECONDS = 1.5
 
 
 def terminate_process_group(process, grace: float = CANCEL_GRACE_SECONDS) -> None:
-    """Stop a running command: SIGTERM its group, then SIGKILL whatever survives the grace period."""
-    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
+    """Stop the owned group, including descendants whose leader exits before they do.
+
+    Waiting for the leader alone is insufficient: a child can ignore SIGTERM and keep writing
+    after the leader is reaped. Poll the group for the bounded grace period, then kill remaining
+    members. Never retry the command or start another process as a cleanup workaround.
+    """
+    def group_exists():
         try:
-            os.killpg(process.pid, sig)
+            os.killpg(process.pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+    deadline = time.monotonic() + max(0, grace)
+    while True:
+        process.poll()  # Reap an exited leader before checking whether descendants remain.
+        if not group_exists() or time.monotonic() >= deadline:
+            break
+        time.sleep(min(.02, max(0, deadline - time.monotonic())))
+    if group_exists():
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
-        try:
-            process.wait(timeout=wait)
-            return
-        except subprocess.TimeoutExpired:
-            continue
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def execute_in_workspace(path: str, command: str, timeout=120, stop_check=None, *, contained=False) -> dict:
