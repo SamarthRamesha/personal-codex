@@ -71,7 +71,9 @@ sensitive-file and process-group corrections remain in the merged history.
   archived search across refresh, saving an evidence-bound project note, and stop, regeneration
   after stop, regeneration after success, model switching and continuation with scripted chat.
   A 432-pixel browser check kept the task's project and delivery panel visible after switching
-  from a personal conversation. Note removal left another note in place.
+  from a personal conversation. Note removal left another note in place. Giving the project
+  panels distinct React keys kept one history list and showed only the selected task's approval
+  across four switches between two pending tasks.
 - Integration run [#115](https://github.com/SamarthRamesha/personal-codex/actions/runs/45425256839)
   passed backend, frontend and macOS, including the scripted full-task demo and native app bundle.
   Run [#114](https://github.com/SamarthRamesha/personal-codex/actions/runs/45423263718) passed the
