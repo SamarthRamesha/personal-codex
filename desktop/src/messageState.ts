@@ -10,6 +10,7 @@ export type MessageState = { label: string; canRegenerate: boolean };
 export function messageState(status: string): MessageState {
   if (status === 'error') return {label: 'Failed', canRegenerate: true};
   if (status === 'stopped') return {label: 'Stopped', canRegenerate: true};
+  if (status === 'complete') return {label: '', canRegenerate: true};
   if (status === 'queued') return {label: 'Queued', canRegenerate: false};
   if (status === 'streaming') return {label: 'Responding', canRegenerate: false};
   return {label: '', canRegenerate: false};
@@ -22,7 +23,7 @@ export function messageMeta(status: string, latencyMs?: number | null): string {
   return latencyMs ? ` · ${(latencyMs / 1000).toFixed(1)}s` : '';
 }
 
-/** Label for the regenerate control, which reads differently for a cancelled answer. */
+/** Use Retry for a failed answer. */
 export function regenerateLabel(status: string): string {
-  return status === 'stopped' ? 'Regenerate' : 'Retry';
+  return status === 'error' ? 'Retry' : 'Regenerate';
 }

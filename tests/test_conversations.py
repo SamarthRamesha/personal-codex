@@ -602,9 +602,16 @@ class ConversationHttpTests(unittest.TestCase):
         listing = self.get("/api/conversations")
         self.assertEqual(listing["conversations"][0]["title"], "Renamed")
         self.assertEqual(self.get("/api/conversations/search?q=hello")["results"][0]["conversation_id"], conversation["id"])
-        regenerated = self.post(f"/api/conversations/{conversation['id']}/regenerate", {})
+        alternate = self.post("/api/providers", {
+            "kind": "ollama", "endpoint": "http://127.0.0.1:11434", "model": "alternate-fixture",
+        })
+        regenerated = self.post(f"/api/conversations/{conversation['id']}/regenerate", {"provider_id": alternate["id"]})
         self.assertTrue(regenerated["regenerated"])
+        self.assertEqual(regenerated["model"], "alternate-fixture")
         conversations.wait_for_message(server.STORE, regenerated["assistant_message_id"])
+        updated = self.get(f"/api/conversations/{conversation['id']}")["conversation"]
+        self.assertEqual((updated["provider_id"], updated["model"]), (alternate["id"], "alternate-fixture"))
+        self.assertEqual([row["content"] for row in updated["messages"] if row["role"] == "user"], ["hello there"])
         task = self.post(f"/api/conversations/{conversation['id']}/task", {})
         self.assertEqual(task["conversation_id"], conversation["id"])
         self.assertEqual(task["status"], "planned")

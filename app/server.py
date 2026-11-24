@@ -1798,11 +1798,16 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/conversations/") and route.endswith("/regenerate"):
                 cid=route.split("/")[3]; conversation=conversations.conversation_detail(STORE,cid)
                 if not conversation: return self.json({"error":"conversation not found"},404)
+                selection=data.get("provider_id") or conversation.get("provider_id")
+                model=data.get("model", conversation["model"] if selection == conversation.get("provider_id") else "")
+                if not isinstance(model, str):
+                    return self.json({"error":"model must be a string"},400)
                 try:
-                    provider=conversations.resolve_provider(STORE,conversation,data.get("provider_id") or None)
+                    provider=conversations.resolve_provider(STORE,{**conversation,"model":model},selection)
                     result=conversations.start_turn(STORE,conversation,"",provider=provider,regenerate=True)
                 except LookupError as error: return self.json({"error":str(error)},404)
                 except ValueError as error: return self.json({"error":str(error)},409)
+                STORE.write("UPDATE conversations SET provider_id=?, model=?, updated_at=? WHERE id=?",(provider["id"],provider["model"],now(),cid))
                 return self.json(result,202)
             if route.startswith("/api/conversations/") and route.endswith("/stop"):
                 parts=route.split("/"); cid=parts[3]; mid=parts[5]

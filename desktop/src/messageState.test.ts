@@ -22,7 +22,8 @@ describe('assistant message state', () => {
   });
 
   it('reports settled work by its latency instead of a state word', () => {
-    expect(messageState('complete')).toEqual({label: '', canRegenerate: false});
+    expect(messageState('complete')).toEqual({label: '', canRegenerate: true});
+    expect(regenerateLabel('complete')).toBe('Regenerate');
     expect(messageMeta('complete', 1500)).toBe(' · 1.5s');
     expect(messageMeta('complete', null)).toBe('');
     expect(messageMeta('streaming', 900)).toBe(' · responding');
