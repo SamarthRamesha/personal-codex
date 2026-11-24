@@ -17,7 +17,7 @@ import { TaskReportPanel } from './TaskReport';
 import { ConversationHits } from './ConversationHits';
 import { ChatContext } from './ChatContext';
 import { ConversationActions } from './ConversationActions';
-import { listPath, selectionAfterDelete } from './conversationActionRequests';
+import { filterChats, listPath, selectionAfterDelete } from './conversationActionRequests';
 import type { TestResult } from './roundEvidenceSummary';
 import { MacActions } from './MacActions';
 import { MacAutomation } from './MacAutomation';
@@ -41,7 +41,7 @@ export default function App(){
   const [settings,setSettings]=useState(true),[url,setUrl]=useState(localStorage.getItem('pc.backend')||'http://127.0.0.1:8787');
   const [token,setToken]=useState(''),[busy,setBusy]=useState(''),[error,setError]=useState('');
   const [chats,setChats]=useState<Conversation[]>([]),[projects,setProjects]=useState<Project[]>([]),[providers,setProviders]=useState<Provider[]>([]);
-  const [archivedView,setArchivedView]=useState(false);
+  const [archivedView,setArchivedView]=useState(false),[chatFilter,setChatFilter]=useState('');
   const [chatId,setChatId]=useState(''),[detail,setDetail]=useState<Detail|null>(null),[search,setSearch]=useState('');
   const [providerId,setProviderId]=useState(''),[model,setModel]=useState(''),[models,setModels]=useState<string[]>([]),[projectId,setProjectId]=useState('');
   const [modelCatalog,setModelCatalog]=useState<ModelDescriptor[]>([]),[configuredContext,setConfiguredContext]=useState<number|null>(null);
@@ -229,6 +229,7 @@ export default function App(){
     await act('Updating conversations',async()=>{const result=await api<{conversations:Conversation[]}>(listPath(archivedView,search));setChats(result.conversations);});
   }
   const visibleApprovals=approvals.filter(a=>a.project_id===(selectedTask?.project_id||projectId));
+  const visibleChats=filterChats(chats,chatFilter);
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -245,8 +246,9 @@ export default function App(){
         else{setNewProject(true);setSettings(true);}
       }}><Folder size={14}/></button></div></div>
       <div className="projects">{projects.map(p=><button className={projectId===p.id?'chosen':''} key={p.id} onClick={()=>{setProjectId(p.id);setTaskId('');setRounds(null);setProposal(null);setDiff(null);setPane('work');}}><Folder size={15}/><span>{p.name}</span><ChevronRight size={13}/></button>)}{!projects.length&&<p className="muted small">Register a repository to start coding.</p>}</div>
-      <div className="section-label">{archivedView?'ARCHIVED':'CONVERSATIONS'}<div className="project-actions"><span>{chats.length}</span><button title={archivedView?'Show active conversations':'Show archived conversations'} aria-label="Toggle archived conversations" onClick={()=>setArchivedView(value=>!value)}><Archive size={13}/></button></div></div>
-      <nav className="chat-list">{chats.map(c=><div className={chatId===c.id?'chat-row chosen':'chat-row'} key={c.id}><button onClick={()=>{setChatId(c.id);setPane('chat');}}><MessageSquare size={15}/><span>{c.title}<small>{c.last_message?.preview||relative(c.updated_at)}</small></span></button>{chatId===c.id&&<ConversationActions conversation={c} archived={archivedView} onDone={afterChatAction}/>}</div>)}{!chats.length&&<p className="muted small empty-list">{archivedView?'No archived conversations.':'Your conversations stay on your backend.'}</p>}</nav>
+      <div className="section-label">{archivedView?'ARCHIVED':'CONVERSATIONS'}<div className="project-actions"><span>{visibleChats.length}</span><button title={archivedView?'Show active conversations':'Show archived conversations'} aria-label="Toggle archived conversations" onClick={()=>setArchivedView(value=>!value)}><Archive size={13}/></button></div></div>
+      <label className="chat-filter"><select aria-label="Filter conversations by project" value={chatFilter} onChange={e=>setChatFilter(e.target.value)}><option value="">All projects</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <nav className="chat-list">{visibleChats.map(c=><div className={chatId===c.id?'chat-row chosen':'chat-row'} key={c.id}><button onClick={()=>{setChatId(c.id);setPane('chat');}}><MessageSquare size={15}/><span>{c.title}<small>{c.last_message?.preview||relative(c.updated_at)}</small></span></button>{chatId===c.id&&<ConversationActions conversation={c} archived={archivedView} onDone={afterChatAction}/>}</div>)}{!visibleChats.length&&<p className="muted small empty-list">{chats.length?(chatFilter?'No conversations in this project.':'No archived conversations.'):'Your conversations stay on your backend.'}</p>}</nav>
       <div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={14}/><span>Local first. Yours to control.</span></div><button onClick={()=>setSettings(true)}><Settings2 size={16}/>Settings & connection<span className={`status-dot ${connected?'online':''}`}/></button></div>
     </aside>
     <main>

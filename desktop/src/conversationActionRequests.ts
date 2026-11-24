@@ -26,6 +26,25 @@ export function deleteRequest(id:string):ChatRequest {
   return {method:'DELETE',path:`/api/conversations/${id}`};
 }
 
+/** The backend refuses an empty title (`title must contain visible characters`), so the client can
+ * say so before a round trip. 120 characters is the stored limit. */
+export function canRename(title:string):boolean {
+  const text=title.replace(/\s+/g,' ').trim();
+  return text.length>0&&text.length<=120;
+}
+
+export function renameRequest(id:string,title:string):ChatRequest {
+  const text=title.replace(/\s+/g,' ').trim();
+  if(!canRename(text)) throw new Error('A conversation title needs visible text, up to 120 characters');
+  return {method:'PATCH',path:`/api/conversations/${id}`,body:{title:text}};
+}
+
+/** Client-side project filter: the sidebar lists what the operator asked for, nothing else. */
+export function filterChats<T extends {project_id:string|null}>(chats:T[], projectId:string):T[] {
+  if(!projectId) return chats;
+  return chats.filter(chat=>chat.project_id===projectId);
+}
+
 /** Deleting the open conversation must clear the view, not leave a dead id selected. */
 export function selectionAfterDelete(removedId:string, currentId:string):string {
   return removedId===currentId?'':currentId;

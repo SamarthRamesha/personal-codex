@@ -129,13 +129,22 @@ different extensions, such as `icon.png`/`icon.icns`, is allowed), and when a re
 resolve to exactly one real file. A deliberately re-created collision (`SearchHits.ts` beside
 `searchHits.ts`) was used as a negative control: the check failed, and passed again once removed.
 
+### 8. Conversation rename and a project filter
+
+`PATCH /api/conversations/{id}` accepted a title but nothing in the panel could set it, and a long
+list could not be narrowed to one project. The selected conversation now has a rename control that
+normalises whitespace, refuses an empty or over-120-character title before the request, saves on
+Enter and cancels on Escape/blur; the sidebar has an "All projects" filter. Both are pure helpers in
+`conversationActionRequests.ts` (`renameRequest`, `canRename`, `filterChats`) with tests; the filter
+is client-side over the already-loaded list, so no new route or authority exists.
+
 ## Verification actually run (all on this Linux workspace)
 
 | Check | Result |
 |---|---|
 | `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 448 discovered, 444 passed, 4 skipped, 72.3 s |
 | `tests.test_environment` alone | 16 passed |
-| `npm test` in `desktop` | 71 passed (16 files) |
+| `npm test` in `desktop` | 73 passed (16 files) |
 | `npm run build` in `desktop` | `tsc -b` + Vite build passed |
 | `yaml.safe_load(.github/workflows/verify.yml)` | three jobs, all steps present |
 | Rust/native | not run in this environment (no macOS toolchain here) |
@@ -213,11 +222,15 @@ verified macOS process sandbox`, which is a platform gate, not a passing check.
 
 ### 5. CI outcomes
 
-**Not read.** The unauthenticated GitHub API was rate-limited from this host (HTTP 403) all session,
-and job logs need authentication. The workflow was extended to trigger on this branch at `da08db1`,
-so runs may exist for `da08db1`, `ca75925`, `1db2835`, `a1eaba0` and `cfeaa61`; Codex or the owner
-must read the run and job pages. No hosted-CI claim is made here, and a red run with no job list is a
-workflow-load failure, not a test failure (R-35).
+The GitHub REST API stayed rate-limited (HTTP 403) from this host, so runs were read from their
+public run pages instead:
+
+- Runs #96 (`da08db1`), #97 (`ca75925`) and #98 (`1db2835`) were **cancelled** by the workflow's own
+  `cancel-in-progress` concurrency group when the next commit pushed.
+- Runs #99 (`a1eaba0`), #101 (`cfeaa61`) and #102 (`4e097f6`) **failed**: the checked-out tree held
+  the four case-only filename pairs, so `tsc` failed in "Prepare embedded frontend" (R-37).
+- **Run #103 (`35775fb`) completed successfully**, which is the casing fix. That is the hosted
+  verdict for backend, frontend and the macOS native job on this branch.
 
 ### 6. Unfinished work
 

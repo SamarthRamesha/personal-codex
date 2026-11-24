@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {archiveRequest,deleteRequest,listPath,pinRequest,selectionAfterDelete} from './conversationActionRequests';
+import {archiveRequest,canRename,deleteRequest,filterChats,listPath,pinRequest,renameRequest,selectionAfterDelete} from './conversationActionRequests';
 
 describe('conversation actions',()=>{
   it('pins and unpins by flipping the stored flag',()=>{
@@ -16,6 +16,21 @@ describe('conversation actions',()=>{
   it('asks for the archived list explicitly and only sends a real query',()=>{
     expect(listPath(false,'')).toBe('/api/conversations?archived=0&limit=100');
     expect(listPath(true,'  spec  ')).toBe('/api/conversations?archived=1&limit=100&q=spec');
+  });
+
+  it('normalises a rename and refuses an empty or oversized title before the round trip',()=>{
+    expect(renameRequest('c3','  Spec   review  ')).toEqual({method:'PATCH',path:'/api/conversations/c3',body:{title:'Spec review'}});
+    expect(canRename('   ')).toBe(false);
+    expect(canRename('x'.repeat(120))).toBe(true);
+    expect(canRename('x'.repeat(121))).toBe(false);
+    expect(()=>renameRequest('c3','   ')).toThrow('visible text');
+  });
+
+  it('filters the sidebar by project only when a project is chosen',()=>{
+    const chats=[{id:'a',project_id:'p1'},{id:'b',project_id:null},{id:'c',project_id:'p2'}];
+    expect(filterChats(chats,'')).toHaveLength(3);
+    expect(filterChats(chats,'p1').map(chat=>chat.id)).toEqual(['a']);
+    expect(filterChats(chats,'p2').map(chat=>chat.id)).toEqual(['c']);
   });
 
   it('clears the open conversation only when that conversation was deleted',()=>{
