@@ -12,6 +12,9 @@ import { InferenceStats } from './InferenceStats';
 import { ProjectDocuments } from './ProjectDocuments';
 import { ProjectReadiness } from './ProjectReadiness';
 import { ProjectTaskList } from './ProjectTaskList';
+import { activityNote, activityRows } from './activityFeed';
+import type { ActivityEvent } from './activityFeed';
+import { needsOwnerAttention, taskDetail } from './projectTaskSummary';
 import { providerForModel } from './providerChoice';
 import { RoundEvidenceView } from './RoundEvidence';
 import { TaskReportPanel } from './TaskReport';
@@ -49,7 +52,7 @@ export default function App(){
   const [draft,setDraft]=useState(''),[pane,setPane]=useState<'chat'|'work'>('chat'),[tasks,setTasks]=useState<Task[]>([]),[taskId,setTaskId]=useState('');
   const [proposal,setProposal]=useState<{operations:Record<string,unknown>[];summary?:string;status:string}|null>(null);
   const [approvals,setApprovals]=useState<Approval[]>([]),[rounds,setRounds]=useState<RoundReport|null>(null),[diff,setDiff]=useState<Diff|null>(null);
-  const [files,setFiles]=useState<string[]>([]),[file,setFile]=useState<FileView|null>(null),[activity,setActivity]=useState<{agent:string;level:string;message:string}[]>([]);
+  const [files,setFiles]=useState<string[]>([]),[file,setFile]=useState<FileView|null>(null),[activity,setActivity]=useState<ActivityEvent[]>([]);
   const [command,setCommand]=useState('python3 -m unittest discover -s tests -v'),[executions,setExecutions]=useState<{exit_code:number;output:string}[]>([]);
   const [projectPath,setProjectPath]=useState(''),[newProject,setNewProject]=useState(false),[providerEndpoint,setProviderEndpoint]=useState('http://127.0.0.1:11434'),[providerModel,setProviderModel]=useState('');
   const [fullDialog,setFullDialog]=useState<{prompt:string;mode:'new'|'existing'|'registered'}|null>(null);
@@ -80,7 +83,7 @@ export default function App(){
     setDetail(data);setProjectId(data.conversation.project_id||'');setProviderId(data.conversation.provider_id||'');setModel(data.conversation.model||'');
   },[]);
   const loadTask=useCallback(async(id:string)=>{
-    const [r,a,e,ex]=await Promise.all([api<RoundReport>(`/api/tasks/${id}/agent/rounds`),api<Approval[]>('/api/approvals'),api<{agent:string;level:string;message:string}[]>(`/api/tasks/${id}/events`),api<{exit_code:number;output:string}[]>(`/api/tasks/${id}/executions`)]);
+    const [r,a,e,ex]=await Promise.all([api<RoundReport>(`/api/tasks/${id}/agent/rounds`),api<Approval[]>('/api/approvals'),api<ActivityEvent[]>(`/api/tasks/${id}/events`),api<{exit_code:number;output:string}[]>(`/api/tasks/${id}/executions`)]);
     setRounds(r);setApprovals(a);setActivity(e);setExecutions(ex);
     setProposal(await api(`/api/tasks/${id}/agent`));
     try{setDiff(await api<Diff>(`/api/tasks/${id}/agent/diff`));}catch{setDiff(null);}
@@ -112,7 +115,7 @@ export default function App(){
         const current=await api<AgentRun>(`/api/tasks/${taskId}/autonomous`);
         if(!stale)setAgentRun(current);
         if(current.full_task){
-          const events=await api<{agent:string;level:string;message:string}[]>(`/api/tasks/${taskId}/events`);
+          const events=await api<ActivityEvent[]>(`/api/tasks/${taskId}/events`);
           if(!stale)setActivity(events);
         }
       }catch(e){if(!stale)setError(errorText(e));}
@@ -230,6 +233,8 @@ export default function App(){
     await act('Updating conversations',async()=>{const result=await api<{conversations:Conversation[]}>(listPath(archivedView,search));setChats(result.conversations);});
   }
   const visibleApprovals=approvals.filter(a=>a.project_id===(selectedTask?.project_id||projectId));
+  const activityView=activityRows(activity,30);
+  const taskStatus=rounds?.status||selectedTask?.status||'';
   const visibleChats=filterChats(chats,chatFilter);
 
   return <div className="app-shell">
@@ -313,7 +318,8 @@ export default function App(){
               {appliedPath&&<p>Files applied to {appliedPath}</p>}
             </div>}
             {agentRun?.evidence.slice(-10).map((item,index)=><details key={index}><summary>Round {item.attempt} · {item.type}{item.exit_code!=null?` · exit ${item.exit_code}`:''}</summary><InferenceStats metrics={item.metrics}/>{item.feedback&&<pre>{item.feedback}</pre>}</details>)}
-          </section>}{!agentRun?.full_task&&<>{!executionEnabled&&<p className="notice">Repository execution is disabled on this backend. Chat, planning and review remain available.</p>}<section className="task-controls"><div><p className="eyebrow">CODING TASK</p><h2>{selectedTask?.prompt}</h2><span className="pill">{rounds?.status||selectedTask?.status}</span></div><div className="button-row"><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('workspace-request')}>Request workspace</button><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('workspace')}>Create approved workspace</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive} onClick={()=>taskAction('agent/round/request',{provider_id:providerId})}>Request round</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive} onClick={()=>taskAction('agent/round/plan',{provider_id:providerId})}>Generate proposal</button></div></section>
+          </section>}{!agentRun?.full_task&&<>{!executionEnabled&&<p className="notice">Repository execution is disabled on this backend. Chat, planning and review remain available.</p>}{taskStatus&&needsOwnerAttention(taskStatus)&&<p className="notice" role="status">{taskDetail(taskStatus)}</p>}
+            <section className="task-controls"><div><p className="eyebrow">CODING TASK</p><h2>{selectedTask?.prompt}</h2><span className="pill">{rounds?.status||selectedTask?.status}</span></div><div className="button-row"><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('workspace-request')}>Request workspace</button><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('workspace')}>Create approved workspace</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive} onClick={()=>taskAction('agent/round/request',{provider_id:providerId})}>Request round</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive} onClick={()=>taskAction('agent/round/plan',{provider_id:providerId})}>Generate proposal</button></div></section>
             {proposal?.status==='pending'&&<section><h3>Proposal operations</h3><p className="muted small">{proposal.summary}</p><pre>{JSON.stringify(proposal.operations,null,2)}</pre></section>}
             {visibleApprovals.length>0&&<section className="approvals"><h3><ShieldCheck size={15}/>Waiting for your approval</h3><p className="muted small">Each approval authorizes exactly one action and lapses ten minutes after you approve it.</p>{visibleApprovals.map(a=><div className="approval" key={a.id}><span className="pill">{a.kind}</span><pre>{a.detail}</pre><div className="button-row"><button disabled={!!busy} className="primary" onClick={()=>act('Approving',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'approved'});await loadTask(taskId);})}>Approve exact request</button><button disabled={!!busy} onClick={()=>act('Rejecting',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'rejected'});await loadTask(taskId);})}>Reject</button></div></div>)}</section>}
             {diff&&<section className="diff-review"><h3>Proposed changes<span className="pill">{diff.stale?'STALE':'Ready for review'}</span></h3><code>{diff.digest}</code>{(diff.files||diff.patches||[]).map((p,i)=><div key={i}><h4>{p.path}</h4><pre>{p.diff.join("\n")}</pre></div>)}<button disabled={!!busy||!executionEnabled||diff.stale||!diff.digest_valid} onClick={()=>taskAction('agent/round/execute')}>Execute approved proposal</button></section>}
@@ -321,7 +327,7 @@ export default function App(){
             <section className="terminal-panel"><h3><Terminal size={15}/>Approved command runner</h3><p className="muted small">Runs an exact approved command in this task’s isolated worktree.</p><input aria-label="Test command" value={command} onChange={e=>setCommand(e.target.value)}/><div className="button-row"><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('execution-request',{command})}>Request command approval</button><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('execute',{command,timeout:120})}>Run approved command</button></div>{executions.map((e,i)=><div key={i}><span className="pill">Exit {e.exit_code}</span><pre>{e.output}</pre></div>)}</section>
             </>}
             <TaskReportPanel taskId={taskId}/>
-            <section className="activity"><h3>Activity</h3>{activity.slice(-30).map((e,i)=><p key={i}><span>{e.agent}</span>{e.message}</p>)}</section>
+            <section className="activity"><h3>Activity</h3>{activityView.hidden>0&&<p className="muted small">{activityNote(activityView.hidden,activity.length)}</p>}{activityView.rows.map((e,i)=><p key={i}><span>{e.agent}<small>{e.at}</small></span>{e.message}</p>)}</section>
           </>}
         </div>
       </div>}

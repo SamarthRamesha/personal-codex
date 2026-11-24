@@ -41,6 +41,12 @@ export function taskDetail(status:string):string {
   return STATUS[status]?.detail ?? 'This backend reported a status the desktop does not recognise. Inspect the task before acting on it.';
 }
 
+/** True when the status means a person has to decide something before the task can progress. */
+export function needsOwnerAttention(status:string):boolean {
+  const phase = taskPhase(status);
+  return phase==='needs-action' || phase==='failed';
+}
+
 /** Newest first, bounded so a long history stays readable; the selected task is always kept. */
 export function projectTaskRows(tasks:TaskLike[], projectId:string, limit=12):TaskRow[] {
   if(!projectId) return [];
