@@ -25,3 +25,7 @@ The historical owner screenshots on 21 November show eight passing native checks
 ## Next work
 
 Continue approval/execution cancellation and replay safety, sensitive-file boundaries, restart/delivery integrity and real integration tests. Review Freebuff's published branch periodically; inspect diffs and tests before integration. Keep current test/CI and commit evidence here and in the private session checkpoint. Do not stop merely because this first correction passes.
+
+## Shared sensitive-file policy
+
+Direct workspace read/list/patch tools used an older filename list than context selection, so a model could request files that context deliberately omitted. Synthetic negative controls reproduced reads, listing and modification of secrets.json, credentials YAML/TOML, key material and .netrc. `app/file_policy.py` now supplies the common conservative component predicate to both boundaries; listings also omit secret-shaped directories. Ordinary secret_parser.py remains readable. Focused tool/context regressions pass; the installed preview and user data are untouched. This is filename screening, not complete content DLP.

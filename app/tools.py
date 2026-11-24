@@ -17,8 +17,10 @@ from pathlib import Path
 
 try:
     import project_files
+    from file_policy import SECRET_NAMES, sensitive_component
 except ImportError:
     from app import project_files
+    from app.file_policy import SECRET_NAMES, sensitive_component
 
 MAX_OPERATIONS = 8
 MAX_READ_BYTES = 20_000
@@ -29,7 +31,6 @@ MAX_SUMMARY = 2_000
 MAX_DIFF_LINES = 400
 MAX_DIFF_CHARS = 60_000
 IGNORED_PARTS = {".git", "node_modules", ".venv", "venv", ".codex-runtime", "dist", "build", "target", "__pycache__"}
-SECRET_NAMES = {".env", ".env.local", ".env.production", ".env.development", "id_rsa", "id_ed25519", "credentials.json"}
 
 TOOL_SPECS = {
     "list_files": ({"path"}, {"depth", "limit"}),
@@ -45,8 +46,7 @@ class ToolCallError(ValueError):
 
 
 def _is_secret(name: str) -> bool:
-    return (name.casefold() in SECRET_NAMES or name.casefold().startswith(".env.")
-            or name.casefold() == "personal-codex-diagnostic.txt")
+    return sensitive_component(name)
 
 
 def resolve_in_workspace(root: Path, relative) -> Path:
@@ -188,7 +188,7 @@ def list_files(root: Path, path: str, depth: int, limit: int) -> dict:
     for current, directories, files in os.walk(base):
         current_path = Path(current)
         depth_here = len(current_path.relative_to(base).parts)
-        directories[:] = sorted(d for d in directories if d not in IGNORED_PARTS)
+        directories[:] = sorted(d for d in directories if d not in IGNORED_PARTS and not _is_secret(d))
         if depth_here >= depth:
             directories[:] = []
         for name in sorted(files):
