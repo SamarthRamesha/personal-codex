@@ -77,13 +77,20 @@ summary, so a task's actual evidence was not visible. `desktop/src/taskReport.ts
 tested; an unreported exit code is shown as unproven, and no state is upgraded to "complete".
 Tests: `taskReport.test.ts` (5).
 
+### 4. Message-search hits in the sidebar
+
+`GET /api/conversations/search` had no panel caller, so the sidebar could only say a conversation
+matched without showing where. The panel now lists one attributed hit per conversation (speaker,
+snippet, title) and opens that conversation on click; `desktop/src/searchHits.ts` is pure and
+tested, the list is bounded to eight rows, and a short query is never sent. Tests: 3.
+
 ## Verification actually run (all on this Linux workspace)
 
 | Check | Result |
 |---|---|
 | `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 440 discovered, 436 passed, 4 skipped, 70.7 s |
 | `tests.test_environment` alone | 16 passed |
-| `npm test` in `desktop` | 60 passed (13 files) |
+| `npm test` in `desktop` | 63 passed (14 files) |
 | `npm run build` in `desktop` | `tsc -b` + Vite build passed |
 | `yaml.safe_load(.github/workflows/verify.yml)` | three jobs, all steps present |
 | Rust/native | not run in this environment (no macOS toolchain here) |

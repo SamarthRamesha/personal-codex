@@ -14,6 +14,7 @@ import { ProjectReadiness } from './ProjectReadiness';
 import { providerForModel } from './providerChoice';
 import { RoundEvidenceView } from './RoundEvidence';
 import { TaskReportPanel } from './TaskReport';
+import { ConversationHits } from './ConversationHits';
 import type { TestResult } from './roundEvidence';
 import { MacActions } from './MacActions';
 import { MacAutomation } from './MacAutomation';
@@ -230,6 +231,7 @@ export default function App(){
       {offline&&offlineLaunch&&executionEnabled&&<button className="full-task-button"
         onClick={()=>setFullDialog({prompt:draft,mode:selectedProject?'registered':'new'})}>Full task execution</button>}
       <label className="search"><Search size={15}/><input aria-label="Search conversations" placeholder="Search conversations" value={search} onChange={e=>setSearch(e.target.value)}/><kbd>⌘ K</kbd></label>
+      <ConversationHits query={search} onOpen={id=>{setChatId(id);setPane('chat');}}/>
       <div className="section-label">PROJECTS<div className="project-actions">{offline&&offlineLaunch&&<button title="New project" onClick={()=>{setExistingProject(false);setProjectPrompt('');}}><Plus size={14}/></button>}<button title={offline&&offlineLaunch?'Open project':'Register project'} onClick={()=>{
         if(offline&&offlineLaunch){setExistingProject(true);setProjectPrompt('');}
         else{setNewProject(true);setSettings(true);}
