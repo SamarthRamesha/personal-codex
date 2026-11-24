@@ -31,7 +31,8 @@ FULL_TASK_APP = ROOT / "data/full-task-app/Personal Codex.app"
 OBSERVABILITY_APP = ROOT / "data/observability-app/Personal Codex.app"
 DOCUMENTS_APP = ROOT / "data/document-search-app/Personal Codex.app"
 MAC_ACTIONS_APP = ROOT / "data/mac-actions-app/Personal Codex.app"
-DEFAULT_APP = next((path for path in (MAC_ACTIONS_APP, DOCUMENTS_APP, OBSERVABILITY_APP, FULL_TASK_APP, AUTONOMOUS_APP) if (path / APP_BINARY).is_file()), PREVIOUS_APP)
+CANDIDATE_APP = ROOT / "desktop/src-tauri/target/release/bundle/macos/Personal Codex.app"
+DEFAULT_APP = next((path for path in (CANDIDATE_APP, MAC_ACTIONS_APP, DOCUMENTS_APP, OBSERVABILITY_APP, FULL_TASK_APP, AUTONOMOUS_APP) if (path / APP_BINARY).is_file()), PREVIOUS_APP)
 
 
 def private_dir(path: Path):
@@ -88,7 +89,8 @@ def stop(process):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=network_policy.OFFLINE_MODELS, default=network_policy.OFFLINE_MODELS[0])
+    parser.add_argument("--model", choices=network_policy.OFFLINE_MODELS,
+                        help="require this installed model (defaults to the first supported model in the local cache)")
     parser.add_argument("--project-root", type=Path, help="existing directory dedicated to the hackathon repositories")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data/offline")
     parser.add_argument("--app", type=Path, default=DEFAULT_APP)
@@ -140,20 +142,24 @@ def main():
         processes.append(daemon)
         wait_ready(daemon, OLLAMA_PORT, "/api/version")
         names = {model["name"] for model in get_json(OLLAMA_PORT, "/api/tags")["models"]}
-        if args.model not in names:
+        if args.model and args.model not in names:
             raise ValueError(f"{args.model} is missing from the local Ollama cache")
+        model = args.model or next((name for name in network_policy.OFFLINE_MODELS if name in names), None)
+        if not model:
+            supported = ", ".join(network_policy.OFFLINE_MODELS)
+            raise ValueError(f"No supported model is installed in the local Ollama cache. Supported models: {supported}")
         with (session / "backend.log").open("xb") as log:
             backend = subprocess.Popen(
                 [sys.executable, str(ROOT / "app/server.py")], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
                 env={**env, "PERSONAL_CODEX_INFERENCE_POLICY": "offline", "PERSONAL_CODEX_HOST": "127.0.0.1",
                      "PERSONAL_CODEX_DATA": str(data), "PERSONAL_CODEX_TOKEN_FILE": str(token),
-                     "PERSONAL_CODEX_PROJECT_ROOTS": str(projects), "PERSONAL_CODEX_OFFLINE_MODEL": args.model,
+                     "PERSONAL_CODEX_PROJECT_ROOTS": str(projects), "PERSONAL_CODEX_OFFLINE_MODEL": model,
                      "PERSONAL_CODEX_MAX_CONTEXT_BYTES": "12000", "PERSONAL_CODEX_NATIVE_GRANT": native_grant},
             )
         processes.append(backend)
         wait_ready(backend, BACKEND_PORT, "/api/health")
 
-        print(f"Personal Codex offline at http://127.0.0.1:8787, default {args.model}", flush=True)
+        print(f"Personal Codex offline at http://127.0.0.1:8787, default {model}", flush=True)
         print(f"Project root: {projects}", flush=True)
         if args.backend_only:
             while daemon.poll() is None and backend.poll() is None:

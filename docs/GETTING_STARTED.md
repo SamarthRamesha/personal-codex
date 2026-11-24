@@ -8,7 +8,7 @@
 4. For coding, choose an existing Git project or a parent folder for a new one. Describe the behavior and a concrete example. Attach only the references you want included.
 5. Review the destination and authorize the bounded task. Inspect the actual checks and delivered files. Stop saves completed work; resume is explicit.
 
-The latest local bundle lives in `data/mac-actions-app/Personal Codex.app` when built. Previous bundles and profiles remain available. App bundles are not committed to Git. The launcher needs an installed Ollama binary and the selected model already cached. It does not download a model. If its ports are occupied, use the existing service's normal controls yourself; the launcher never kills it.
+The launcher picks the standard release bundle in `desktop/src-tauri/target/release/bundle/macos/` first. Use `--app` to select a specific bundle. It needs the Ollama CLI and either `qwen3.5:9b` or `qwen2.5-coder:14b` already cached. It selects the first installed model in that order unless you pass `--model`. If port 11434 or 8787 is occupied, quit the existing service through its normal controls before launching.
 
 ## Mac opening actions
 
@@ -22,24 +22,28 @@ The review expires after two minutes and can be used only once. macOS can still 
 
 ## Build the native application
 
-Install the normal vendor toolchains: Python 3.11+ (3.13 tested), Git, Node 22+, Rust/Cargo and Apple's Command Line Tools. Ollama is required only for local inference. Do not install optional gateway/recovery packages unless you need and approve that feature.
+On macOS 14 or later, use Python 3.11+, Git, Node 22+, Rust/Cargo and Apple's Command Line Tools. Build in a separate checkout so the installed Automation Preview and its permissions stay intact.
 
 ```sh
 cd desktop
-npm ci
+npm ci --ignore-scripts
 npm test
-npm run build
-cargo test --locked --manifest-path src-tauri/Cargo.toml -j 2
-npm run tauri -- build --bundles app
+npm run tauri -- build --ci --bundles app -- --locked
 ```
 
 The output is under `desktop/src-tauri/target/release/bundle/macos/`. Local ad-hoc signatures are not notarized distribution. Keep the previous bundle and a verified database snapshot when changing versions; do not bypass macOS security warnings.
 
-On another Mac, supply the built bundle to the launcher:
+From the repository root, launch the candidate against an isolated profile for your first test:
 
 ```sh
-python3 scripts/offline_workstation.py --app '/absolute/path/Personal Codex.app'
+python3 scripts/offline_workstation.py --data-dir "$PWD/data/release-candidate" \
+  --app "$PWD/desktop/src-tauri/target/release/bundle/macos/Personal Codex.app"
 ```
+
+Add `--project-root /absolute/path/to/test-repositories` to use an existing dedicated
+repository directory. Without it, the launcher manages projects under the candidate profile.
+To roll back, quit the candidate and launch the previous checkout's launcher with its matching
+bundle and original profile. Keep the candidate profile and its worktrees for inspection.
 
 ## Backend development preview
 

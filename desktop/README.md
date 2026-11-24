@@ -4,15 +4,13 @@ Native Tauri 2 + React + TypeScript client. Hosted chat products are not runtime
 
 ## Run and build
 
-On the prepared Mac, `python3 scripts/offline_workstation.py` starts its owned local services and newest available bundle. A preexisting service on the reserved ports is preserved and reported as a conflict. Normal coding uses an existing Ollama cache; no model download or cloud fallback is triggered.
+On the prepared Mac, `python3 scripts/offline_workstation.py` starts the loopback services and prefers the standard release bundle when present. A preexisting service on the reserved ports is preserved and reported as a conflict. Local inference uses the existing Ollama cache.
 
 ```sh
 cd desktop
-npm ci
+npm ci --ignore-scripts
 npm test
-npm run build
-cargo test --locked --manifest-path src-tauri/Cargo.toml -j 2
-npm run tauri -- build --bundles app
+npm run tauri -- build --ci --bundles app -- --locked
 ```
 
 The frontend development preview (`npm run dev`) connects only through its loopback proxy and cannot verify native IPC. Local bundles are ad-hoc signed, not notarized; they and private profiles remain outside Git.
