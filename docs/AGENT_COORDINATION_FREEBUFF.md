@@ -229,8 +229,12 @@ public run pages instead:
   `cancel-in-progress` concurrency group when the next commit pushed.
 - Runs #99 (`a1eaba0`), #101 (`cfeaa61`) and #102 (`4e097f6`) **failed**: the checked-out tree held
   the four case-only filename pairs, so `tsc` failed in "Prepare embedded frontend" (R-37).
-- **Run #103 (`35775fb`) completed successfully**, which is the casing fix. That is the hosted
-  verdict for backend, frontend and the macOS native job on this branch.
+- Run #103 (`35775fb`, the casing fix) was **cancelled** by the same concurrency group when the next
+  checkpoint was pushed, so it is not evidence either way.
+- **Run #104 (`dc8fd24`) completed successfully in 2 m 19 s.** That run's tree contains the casing fix
+  and the rename/project-filter checkpoint, and GitHub reports a run successful only when every job
+  succeeds, so backend, frontend and the macOS `native` job all passed on it. Job-level log lines are
+  not readable without authentication from this host.
 
 ### 6. Unfinished work
 
