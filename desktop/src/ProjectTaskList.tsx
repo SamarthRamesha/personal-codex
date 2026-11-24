@@ -15,7 +15,7 @@ export function ProjectTaskList({tasks,projectId,selectedId,onSelect,limit=20}:{
   return <section className="project-tasks">
     <h3>Project tasks<span className="pill">{rows.length}{hidden>0?`+${hidden}`:''}</span></h3>
     <p className="muted small">{taskBoardSummary(rows,hidden)}</p>
-    {!rows.length&&<p className="muted small">Create a coding task from a conversation to start its review trail.</p>}
+    {!rows.length&&<p className="muted small">No saved tasks in this project.</p>}
     {rows.length>0&&<ul className="task-list">{rows.map(row=><li key={row.id}>
       <button className={row.id===selectedId?'chosen':''} aria-pressed={row.id===selectedId} onClick={()=>onSelect(row.id)}>
         <span className="task-title">{shortPrompt(row.prompt)}</span>

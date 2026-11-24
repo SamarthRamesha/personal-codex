@@ -118,8 +118,8 @@ def main():
 
     started = time.monotonic()
     try:
-        parent = out / "chosen"
-        parent.mkdir()
+        parent = server.DATA / "projects"
+        parent.mkdir(parents=True, exist_ok=True)
         info = parent.stat()
         project = api("/api/native/projects", {"parent":str(parent), "name":"Calculator", "device":info.st_dev, "inode":info.st_ino},
                       201, native=True)

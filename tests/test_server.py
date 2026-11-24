@@ -162,6 +162,30 @@ class HttpLifecycleTests(unittest.TestCase):
     status,again=self.request(f"/api/tasks/{task['id']}/cancel",'POST',{'reason':'stop again'})
     self.assertEqual(status,409); self.assertIn('already cancelled',again['error'])
 
+  def test_pending_approvals_can_be_scoped_to_the_exact_task(self):
+    status, project = self.request('/api/projects', 'POST', {'path': str(self.repo)})
+    self.assertEqual(status, 201)
+    first, second = [self.request('/api/tasks', 'POST', {'project_id': project['id'], 'prompt': prompt})[1]['id']
+                     for prompt in ('first change', 'second change')]
+    _, workspace = self.request(f'/api/tasks/{first}/workspace-request', 'POST', {})
+    _, command = self.request(f'/api/tasks/{second}/execution-request', 'POST', {'command': 'python3 -m unittest'})
+    _, proposal = self.request('/api/approvals', 'POST', {
+      'project_id': project['id'], 'kind': 'modify',
+      'detail': server.approval_detail('agent-round-proposal', first),
+    })
+    self.assertEqual({row['id'] for row in self.request('/api/approvals')[1]},
+                     {workspace['id'], command['id'], proposal['id']})
+    code, scoped = self.request(f'/api/approvals?task_id={first}')
+    self.assertEqual(code, 200)
+    self.assertEqual({(row['id'], row['task_id']) for row in scoped},
+                     {(workspace['id'], first), (proposal['id'], first)})
+    code, scoped = self.request(f'/api/approvals?task_id={second}')
+    self.assertEqual(code, 200)
+    self.assertEqual([(row['id'], row['task_id']) for row in scoped], [(command['id'], second)])
+    self.assertEqual(self.request('/api/approvals?task_id=missing')[0], 404)
+    self.assertEqual(self.request(f"/api/approvals/{workspace['id']}", 'PATCH', {'status': 'approved'})[0], 200)
+    self.assertEqual([row['id'] for row in self.request(f'/api/approvals?task_id={first}')[1]], [proposal['id']])
+
   def test_task_list_can_be_filtered_to_one_project(self):
     status,project=self.request('/api/projects','POST',{'name':'filter','path':str(self.repo)}); self.assertEqual(status,201)
     ids=set()

@@ -18,6 +18,8 @@ import { canCancelTask, needsOwnerAttention, taskDetail } from './projectTaskSum
 import { providerForModel } from './providerChoice';
 import { RoundEvidenceView } from './RoundEvidence';
 import { TaskReportPanel } from './TaskReport';
+import type { TaskReport } from './taskReportSummary';
+import { TaskDelivery } from './TaskDelivery';
 import { ConversationHits } from './ConversationHits';
 import { ChatContext } from './ChatContext';
 import { ConversationActions } from './ConversationActions';
@@ -33,6 +35,17 @@ type Delivery={status:string;path:string;workspace:string;files:string[];markdow
 type AgentRun = {status:string;full_task?:boolean;delivery?:Delivery|null;attempt?:number;max_rounds?:number;summary?:string;workspace?:string;files?:string[];
   command?:string;provider_id?:string;evidence:{attempt:number;type:string;exit_code?:number;changed?:string[];feedback?:string;metrics?:InferenceMetrics}[]};
 type FileView={path:string;text:string;sha256:string;truncated:boolean};
+type TaskView={
+  id:string;
+  rounds:RoundReport;
+  approvals:Approval[];
+  activity:ActivityEvent[];
+  executions:{exit_code:number;output:string}[];
+  proposal:{operations:Record<string,unknown>[];summary?:string;status:string}|null;
+  diff:Diff|null;
+  report:TaskReport|null;
+  workspace:{status:string;path?:string;branch?:string};
+};
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 const relative=(time:number)=>new Date(time*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 
@@ -49,11 +62,11 @@ export default function App(){
   const [chatId,setChatId]=useState(''),[detail,setDetail]=useState<Detail|null>(null),[search,setSearch]=useState('');
   const [providerId,setProviderId]=useState(''),[model,setModel]=useState(''),[models,setModels]=useState<string[]>([]),[projectId,setProjectId]=useState('');
   const [modelCatalog,setModelCatalog]=useState<ModelDescriptor[]>([]),[configuredContext,setConfiguredContext]=useState<number|null>(null);
-  const [draft,setDraft]=useState(''),[pane,setPane]=useState<'chat'|'work'>('chat'),[tasks,setTasks]=useState<Task[]>([]),[taskId,setTaskId]=useState('');
-  const [proposal,setProposal]=useState<{operations:Record<string,unknown>[];summary?:string;status:string}|null>(null);
-  const [approvals,setApprovals]=useState<Approval[]>([]),[rounds,setRounds]=useState<RoundReport|null>(null),[diff,setDiff]=useState<Diff|null>(null);
-  const [files,setFiles]=useState<string[]>([]),[file,setFile]=useState<FileView|null>(null),[activity,setActivity]=useState<ActivityEvent[]>([]);
-  const [command,setCommand]=useState('python3 -m unittest discover -s tests -v'),[executions,setExecutions]=useState<{exit_code:number;output:string}[]>([]);
+  const [draft,setDraft]=useState(''),[pane,setPane]=useState<'chat'|'work'>('chat'),[tasks,setTasks]=useState<Task[]>([]),[taskId,setTaskSelection]=useState('');
+  const [taskView,setTaskView]=useState<TaskView|null>(null);
+  const [taskPrompt,setTaskPrompt]=useState('');
+  const [files,setFiles]=useState<string[]>([]),[file,setFile]=useState<FileView|null>(null);
+  const [command,setCommand]=useState('python3 -m unittest discover -s tests -v');
   const [projectPath,setProjectPath]=useState(''),[newProject,setNewProject]=useState(false),[providerEndpoint,setProviderEndpoint]=useState('http://127.0.0.1:11434'),[providerModel,setProviderModel]=useState('');
   const [fullDialog,setFullDialog]=useState<{prompt:string;mode:'new'|'existing'|'registered'}|null>(null);
   const [copiedCommands,setCopiedCommands]=useState(false);
@@ -63,18 +76,32 @@ export default function App(){
   const [agentRun,setAgentRun]=useState<AgentRun|null>(null),[confirmRun,setConfirmRun]=useState(false);
   const [agentChanges,setAgentChanges]=useState<AgentChanges|null>(null),[appliedPath,setAppliedPath]=useState('');
   const sendPending=useRef(false);
+  const taskRequest=useRef(0), taskRef=useRef(taskId);
+  taskRef.current=taskId;
   const streamEpoch=useRef(0),bottom=useRef<HTMLDivElement>(null),chatRef=useRef(chatId),lastSeq=useRef<Record<string,number>>({});
   chatRef.current=chatId;
   const provider=providers.find(x=>x.id===providerId), selectedProject=projects.find(x=>x.id===projectId),active=detail?.active_messages||[];
   const selectedTask=tasks.find(x=>x.id===taskId);
+  const currentTask=taskView?.id===taskId?taskView:null;
+  const {rounds, proposal, diff}=currentTask||{};
   const agentActive=agentRun?.status==='running';
+  function setTaskId(id:string){
+    if(taskRef.current===id)return;
+    taskRequest.current++;taskRef.current=id;
+    setTaskSelection(id);setTaskView(null);
+    setAgentRun(null);setConfirmRun(false);setAgentChanges(null);setAppliedPath('');setCopiedCommands(false);
+  }
+  function selectProvider(id:string){
+    setProviderId(id);
+    setModel(providers.find(item=>item.id===id)?.model||'');
+  }
   useEffect(()=>{
     offlineSession().then(address=>{setOfflineLaunch(!!address);if(address)setOfflineAddress(address);}).catch(e=>setError(errorText(e)));
   },[]);
   const act=useCallback(async(name:string,fn:()=>Promise<void>)=>{setBusy(name);setError('');try{await fn();}catch(e){setError(errorText(e));}finally{setBusy('');}},[]);
   const refresh=useCallback(async()=>{
-    const [c,p,m,t,a]=await Promise.all([api<{conversations:Conversation[]}>('/api/conversations'),api<Project[]>('/api/projects'),api<Provider[]>('/api/providers'),api<Task[]>('/api/tasks'),api<Approval[]>('/api/approvals')]);
-    setChats(c.conversations);setProjects(p);setProviders(m);setTasks(t);setApprovals(a);
+    const [c,p,m,t]=await Promise.all([api<{conversations:Conversation[]}>('/api/conversations'),api<Project[]>('/api/projects'),api<Provider[]>('/api/providers'),api<Task[]>('/api/tasks')]);
+    setChats(c.conversations);setProjects(p);setProviders(m);setTasks(t);
     return {chats:c.conversations,providers:m};
   },[]);
   const loadChat=useCallback(async(id:string)=>{
@@ -83,10 +110,20 @@ export default function App(){
     setDetail(data);setProjectId(data.conversation.project_id||'');setProviderId(data.conversation.provider_id||'');setModel(data.conversation.model||'');
   },[]);
   const loadTask=useCallback(async(id:string)=>{
-    const [r,a,e,ex]=await Promise.all([api<RoundReport>(`/api/tasks/${id}/agent/rounds`),api<Approval[]>('/api/approvals'),api<ActivityEvent[]>(`/api/tasks/${id}/events`),api<{exit_code:number;output:string}[]>(`/api/tasks/${id}/executions`)]);
-    setRounds(r);setApprovals(a);setActivity(e);setExecutions(ex);
-    setProposal(await api(`/api/tasks/${id}/agent`));
-    try{setDiff(await api<Diff>(`/api/tasks/${id}/agent/diff`));}catch{setDiff(null);}
+    const request=++taskRequest.current;
+    const base=`/api/tasks/${id}`;
+    const [rounds,approvals,activity,executions,proposal,diff,workspace,report]=await Promise.all([
+      api<RoundReport>(`${base}/agent/rounds`),
+      api<Approval[]>(`/api/approvals?task_id=${encodeURIComponent(id)}`),
+      api<ActivityEvent[]>(`${base}/events`),
+      api<TaskView['executions']>(`${base}/executions`),
+      api<TaskView['proposal']>(`${base}/agent`),
+      api<Diff>(`${base}/agent/diff`).catch(()=>null),
+      api<TaskView['workspace']>(`${base}/workspace`),
+      api<TaskReport>(`${base}/agent/report`).catch(()=>null),
+    ]);
+    if(taskRef.current===id&&request===taskRequest.current)
+      setTaskView({id,rounds,approvals:approvals.filter(approval=>approval.task_id===id),activity,executions,proposal,diff,workspace,report});
   },[]);
   useEffect(()=>{
     if(!connected)return;
@@ -107,7 +144,6 @@ export default function App(){
     return()=>{stale=true;};
   },[offline,connected,projectId]);
   useEffect(()=>{
-    setAgentRun(null);setConfirmRun(false);setAgentChanges(null);setAppliedPath('');setCopiedCommands(false);
     if(!offline||!connected||!taskId)return;
     let stale=false;
     async function poll(){
@@ -116,7 +152,7 @@ export default function App(){
         if(!stale)setAgentRun(current);
         if(current.full_task){
           const events=await api<ActivityEvent[]>(`/api/tasks/${taskId}/events`);
-          if(!stale)setActivity(events);
+          if(!stale)setTaskView(previous=>previous?.id===taskId?{...previous,activity:events}:previous);
         }
       }catch(e){if(!stale)setError(errorText(e));}
     }
@@ -170,7 +206,8 @@ export default function App(){
   function clearSession(){
     streamEpoch.current++;chatRef.current='';lastSeq.current={};
     setConnected(false);setOffline(false);setHealth('Disconnected');setExecutionEnabled(false);setChatId('');setTaskId('');setProjectId('');setProviderId('');setModel('');
-    setDetail(null);setChats([]);setProjects([]);setProviders([]);setTasks([]);setFiles([]);setRounds(null);setApprovals([]);setDiff(null);setFile(null);setExecutions([]);setActivity([]);setDiagnostics(null);setProposal(null);
+    taskRequest.current++;taskRef.current='';
+    setDetail(null);setChats([]);setProjects([]);setProviders([]);setTasks([]);setFiles([]);setTaskView(null);setFile(null);setDiagnostics(null);setTaskPrompt('');
   }
   async function doConnect(){await act('Connecting',async()=>{
     await disconnect();clearSession();
@@ -198,6 +235,15 @@ export default function App(){
     await loadChat(cid);await refresh();
   });}finally{sendPending.current=false;}}
   async function taskAction(suffix:string,body:unknown={}){await act('Working',async()=>{await api(`/api/tasks/${taskId}/${suffix}`,'POST',body);await loadTask(taskId);await refresh();});}
+  function createProjectTask(){
+    const prompt=taskPrompt.trim();
+    if(!projectId||!prompt)return;
+    void act('Creating task',async()=>{
+      const task=await api<{id:string}>('/api/tasks','POST',{project_id:projectId,prompt});
+      setTaskId(task.id);setTaskPrompt('');
+      await refresh();
+    });
+  }
   async function attachFile(fromDrop:boolean){
     await act('Extracting local attachment',async()=>{
       const attachment=await attachProjectFile(projectId,fromDrop);
@@ -217,7 +263,7 @@ export default function App(){
   }
   async function fullStarted(project:Project,id:string){
     setFullDialog(null);setProjectId(project.id);setTaskId(id);setPane('work');setDraft('');
-    await act('Loading full task',async()=>{await refresh();await loadTask(id);});
+    await act('Loading full task',async()=>{await refresh();});
   }
   async function startAutonomous(){
     await act('Starting local run',async()=>{
@@ -232,7 +278,10 @@ export default function App(){
     if(removedId){const next=selectionAfterDelete(removedId,chatRef.current);setChatId(next);chatRef.current=next;if(!next)setDetail(null);}
     await act('Updating conversations',async()=>{const result=await api<{conversations:Conversation[]}>(listPath(archivedView,search));setChats(result.conversations);});
   }
-  const visibleApprovals=approvals.filter(a=>a.project_id===(selectedTask?.project_id||projectId));
+  const visibleApprovals=currentTask?.approvals||[];
+  const activity=currentTask?.activity||[];
+  const executions=currentTask?.executions||[];
+  const workspaceReady=currentTask?.workspace.status==='ready';
   const activityView=activityRows(activity,30);
   const taskStatus=rounds?.status||selectedTask?.status||'';
   const visibleChats=filterChats(chats,chatFilter);
@@ -251,7 +300,7 @@ export default function App(){
         if(offline&&offlineLaunch){setExistingProject(true);setProjectPrompt('');}
         else{setNewProject(true);setSettings(true);}
       }}><Folder size={14}/></button></div></div>
-      <div className="projects">{projects.map(p=><button className={projectId===p.id?'chosen':''} key={p.id} onClick={()=>{setProjectId(p.id);setTaskId('');setRounds(null);setProposal(null);setDiff(null);setPane('work');}}><Folder size={15}/><span>{p.name}</span><ChevronRight size={13}/></button>)}{!projects.length&&<p className="muted small">Register a repository to start coding.</p>}</div>
+      <div className="projects">{projects.map(p=><button className={projectId===p.id?'chosen':''} key={p.id} disabled={!!busy} onClick={()=>{setProjectId(p.id);setTaskId('');setTaskPrompt('');setPane('work');}}><Folder size={15}/><span>{p.name}</span><ChevronRight size={13}/></button>)}{!projects.length&&<p className="muted small">Register a repository to start coding.</p>}</div>
       <div className="section-label">{archivedView?'ARCHIVED':'CONVERSATIONS'}<div className="project-actions"><span>{visibleChats.length}</span><button title={archivedView?'Show active conversations':'Show archived conversations'} aria-label="Toggle archived conversations" onClick={()=>setArchivedView(value=>!value)}><Archive size={13}/></button></div></div>
       <label className="chat-filter"><select aria-label="Filter conversations by project" value={chatFilter} onChange={e=>setChatFilter(e.target.value)}><option value="">All projects</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <nav className="chat-list">{visibleChats.map(c=><div className={chatId===c.id?'chat-row chosen':'chat-row'} key={c.id}><button data-chat-id={c.id} onClick={()=>{setChatId(c.id);setPane('chat');}}><MessageSquare size={15}/><span>{c.title}<small>{c.last_message?.preview||relative(c.updated_at)}</small></span></button>{chatId===c.id&&<ConversationActions conversation={c} archived={archivedView} onDone={afterChatAction}/>}</div>)}{!visibleChats.length&&<p className="muted small empty-list">{chats.length?(chatFilter?'No conversations in this project.':'No archived conversations.'):'Your conversations stay on your backend.'}</p>}</nav>
@@ -272,15 +321,23 @@ export default function App(){
           {dropReady&&<button disabled={!!busy} onClick={()=>attachFile(true)}>Attach dropped file</button>}
           {attachments.map(item=><details key={item.id}><summary>{item.name} · {item.mechanism}</summary><pre>{item.excerpt}</pre></details>)}
         </div>}
-        <div className="context-row"><select aria-label="Conversation project" value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Personal workspace</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>{chatId&&<ChatContext key={chatId} conversationId={chatId}/>}{chatId&&projectId&&<button disabled={!!busy} onClick={()=>act('Creating task',async()=>{const task=await api<{id:string}>(`/api/conversations/${chatId}/task`,'POST',{project_id:projectId,prompt:draft.trim()||undefined});setTaskId(task.id);setPane('work');await refresh();})}><GitBranch size={13}/>Create coding task</button>}</div><div className="composer"><textarea aria-label="Message" placeholder={connected?'Ask, plan, or build something…':'Connect your backend to begin…'} value={draft} disabled={!connected} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send();}}}/><div className="composer-toolbar"><div className="model-selector"><span className="model-dot"/><select aria-label="Provider" value={providerId} onChange={e=>{const p=providers.find(p=>p.id===e.target.value);setProviderId(e.target.value);setModel(p?.model||'');}}><option value="">Select provider</option>{providers.filter(p=>p.enabled&&!p.cloud_allowed&&p.kind!=='respan-gateway').map(p=><option key={p.id} value={p.id}>{p.kind} · {p.model}</option>)}</select>{models.length>0&&<><ChevronDown size={11}/><select aria-label="Installed model" value={model||provider?.model||''} onChange={e=>{const chosen=e.target.value;const owner=providerForModel(providers,chosen);setModel(chosen);if(owner)setProviderId(owner.id);}}>{models.map(m=><option key={m}>{m}</option>)}</select></>}<span className="local-badge">{offline?'LOCAL OLLAMA':provider?.kind==='mac-worker'?'MAC':'BACKEND'}</span></div>{active.length?<button className="send stop" title="Stop generation" onClick={()=>act('Stopping',async()=>{await api(`/api/conversations/${chatId}/messages/${active[0]}/stop`,'POST');})}><Square size={14} fill="currentColor"/></button>:<button className="send" title="Send message" disabled={!draft.trim()||!connected||!providerId||!!busy} onClick={send}><ArrowUp size={18}/></button>}</div></div><p className="composer-note">{busy||'Changes to your code always go through review and approval.'}<span>↵ Send · ⇧ ↵ New line</span></p></div>
+        <div className="context-row"><select aria-label="Conversation project" value={projectId} onChange={e=>setProjectId(e.target.value)}><option value="">Personal workspace</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>{chatId&&<ChatContext key={chatId} conversationId={chatId}/>}{chatId&&projectId&&<button disabled={!!busy} onClick={()=>act('Creating task',async()=>{const task=await api<{id:string}>(`/api/conversations/${chatId}/task`,'POST',{project_id:projectId,prompt:draft.trim()||undefined});setTaskId(task.id);setPane('work');await refresh();})}><GitBranch size={13}/>Create coding task</button>}</div><div className="composer"><textarea aria-label="Message" placeholder={connected?'Ask, plan, or build something…':'Connect your backend to begin…'} value={draft} disabled={!connected} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send();}}}/><div className="composer-toolbar"><div className="model-selector"><span className="model-dot"/><select aria-label="Provider" value={providerId} onChange={e=>selectProvider(e.target.value)}><option value="">Select provider</option>{providers.filter(p=>p.enabled&&!p.cloud_allowed&&p.kind!=='respan-gateway').map(p=><option key={p.id} value={p.id}>{p.kind} · {p.model}</option>)}</select>{models.length>0&&<><ChevronDown size={11}/><select aria-label="Installed model" value={model||provider?.model||''} onChange={e=>{const chosen=e.target.value;const owner=providerForModel(providers,chosen);setModel(chosen);if(owner)setProviderId(owner.id);}}>{models.map(m=><option key={m}>{m}</option>)}</select></>}<span className="local-badge">{offline?'LOCAL OLLAMA':provider?.kind==='mac-worker'?'MAC':'BACKEND'}</span></div>{active.length?<button className="send stop" title="Stop generation" onClick={()=>act('Stopping',async()=>{await api(`/api/conversations/${chatId}/messages/${active[0]}/stop`,'POST');})}><Square size={14} fill="currentColor"/></button>:<button className="send" title="Send message" disabled={!draft.trim()||!connected||!providerId||!!busy} onClick={send}><ArrowUp size={18}/></button>}</div></div><p className="composer-note">{busy||'Changes to your code always go through review and approval.'}<span>↵ Send · ⇧ ↵ New line</span></p></div>
       </>:<div className="workspace">
         <aside className="file-tree"><div className="section-label">PROJECT FILES<Folder size={13}/></div>{!projectId&&<p className="muted small">Choose a project in the sidebar.</p>} {(agentRun?.files?.length?agentRun.files:files).map(path=><button key={path} className={file?.path===path?'chosen':''} onClick={()=>act('Reading file',async()=>setFile(await api<FileView>(agentRun?.files?.length?`/api/tasks/${taskId}/autonomous/file?path=${encodeURIComponent(path)}`:`/api/projects/${projectId}/file?path=${encodeURIComponent(path)}`)))}><FileCode2 size={13}/><span>{path}</span></button>)}</aside>
-        <div className="work-content"><div className="work-header"><select aria-label="Coding task" value={taskId} onChange={e=>setTaskId(e.target.value)}><option value="">Choose a coding task</option>{tasks.filter(t=>!projectId||t.project_id===projectId).map(t=><option value={t.id} key={t.id}>{t.prompt.slice(0,80)} · {t.id===taskId&&agentRun?.full_task?agentRun.status:t.status}</option>)}</select>{taskId&&canCancelTask(taskStatus||selectedTask?.status||'')&&<button onClick={()=>{api(`/api/tasks/${taskId}/cancel`,'POST',{reason:'Stopped from desktop'}).then(()=>loadTask(taskId)).then(()=>refresh()).catch(e=>setError(errorText(e)));}} disabled={!connected}><Square size={12}/>Cancel task</button>}</div>
+        <div className="work-content"><div className="work-header"><select aria-label="Coding task" value={taskId} onChange={e=>{
+          const chosen=tasks.find(task=>task.id===e.target.value);
+          if(chosen)setProjectId(chosen.project_id);
+          setTaskId(e.target.value);
+        }}><option value="">Choose a coding task</option>{tasks.filter(t=>!projectId||t.project_id===projectId).map(t=><option value={t.id} key={t.id}>{t.prompt.slice(0,80)} · {t.id===taskId&&agentRun?.full_task?agentRun.status:t.status}</option>)}</select>{taskId&&canCancelTask(taskStatus||selectedTask?.status||'')&&<button onClick={()=>{api(`/api/tasks/${taskId}/cancel`,'POST',{reason:'Stopped from desktop'}).then(()=>loadTask(taskId)).then(()=>refresh()).catch(e=>setError(errorText(e)));}} disabled={!connected}><Square size={12}/>Cancel task</button>}</div>
+          {connected&&projectId&&!taskId&&<form className="task-controls" onSubmit={event=>{event.preventDefault();createProjectTask();}}>
+            <label>Requested change<textarea value={taskPrompt} onChange={event=>setTaskPrompt(event.target.value)}/></label>
+            <button className="primary" type="submit" disabled={!!busy||!taskPrompt.trim()}>Create coding task</button>
+          </form>}
           <ProjectTaskList tasks={tasks} projectId={projectId} selectedId={taskId} onSelect={id=>setTaskId(id)}/>
           {offline&&connected&&projectId&&<ProjectDocuments key={projectId} projectId={projectId} attachments={attachments} onImport={()=>attachFile(false)}/>}
           {connected&&projectId&&<ProjectReadiness key={projectId} projectId={projectId}/>}
           {file&&<section className="file-preview"><div><FileCode2 size={14}/><strong>{file.path}</strong><span>Read only · {file.sha256.slice(0,12)}</span><button title="Close file" onClick={()=>setFile(null)}><X size={14}/></button></div><pre>{file.text}</pre>{file.truncated&&<p className="muted">Preview truncated.</p>}</section>}
-          {!taskId&&!file&&<div className="work-empty"><GitBranch size={30}/><h2>Every change has a review trail.</h2><p>Create a coding task from a conversation, then approve its workspace and review each proposed round.</p></div>}
+          {!taskId&&!file&&!projectId&&<div className="work-empty"><GitBranch size={30}/><h2>Choose a project or open a saved task.</h2></div>}
           {taskId&&<>{offline&&executionEnabled&&<section className="local-agent">
             <h3>{agentRun?.full_task?'Full task execution':'Local coding agent'}</h3>
             <p className="muted small">The agent edits a task worktree and reruns your approved validation command.</p>
@@ -319,14 +376,23 @@ export default function App(){
             </div>}
             {agentRun?.evidence.slice(-10).map((item,index)=><details key={index}><summary>Round {item.attempt} · {item.type}{item.exit_code!=null?` · exit ${item.exit_code}`:''}</summary><InferenceStats metrics={item.metrics}/>{item.feedback&&<pre>{item.feedback}</pre>}</details>)}
           </section>}{!agentRun?.full_task&&<>{!executionEnabled&&<p className="notice">Repository execution is disabled on this backend. Chat, planning and review remain available.</p>}{taskStatus&&needsOwnerAttention(taskStatus)&&<p className="notice" role="status">{taskDetail(taskStatus)}</p>}
-            <section className="task-controls"><div><p className="eyebrow">CODING TASK</p><h2>{selectedTask?.prompt}</h2><span className="pill">{rounds?.status||selectedTask?.status}</span></div><div className="button-row"><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('workspace-request')}>Request workspace</button><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('workspace')}>Create approved workspace</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive} onClick={()=>taskAction('agent/round/request',{provider_id:providerId})}>Request round</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive} onClick={()=>taskAction('agent/round/plan',{provider_id:providerId})}>Generate proposal</button></div></section>
+            {workspaceReady&&taskStatus!=='completed'&&<label className="task-provider">Planning model
+              <select value={providerId} disabled={!!busy||agentActive} onChange={event=>selectProvider(event.target.value)}>
+                <option value="">Choose a local provider</option>
+                {providers.filter(item=>item.enabled&&!item.cloud_allowed&&item.kind!=='respan-gateway').map(item=>
+                  <option key={item.id} value={item.id}>{item.kind} · {item.model}</option>)}
+              </select>
+            </label>}
+            <section className="task-controls"><div><p className="eyebrow">CODING TASK</p><h2>{selectedTask?.prompt}</h2><span className="pill">{rounds?.status||selectedTask?.status}</span></div><div className="button-row">{!workspaceReady&&<><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace-request')}>Request workspace</button><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace')}>Create approved workspace</button></>}{workspaceReady&&<><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/request',{provider_id:providerId})}>{taskStatus==='interrupted'?'Request fresh round':'Request round'}</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/plan',{provider_id:providerId})}>Generate proposal</button></>}</div></section>
             {proposal?.status==='pending'&&<section><h3>Proposal operations</h3><p className="muted small">{proposal.summary}</p><pre>{JSON.stringify(proposal.operations,null,2)}</pre></section>}
             {visibleApprovals.length>0&&<section className="approvals"><h3><ShieldCheck size={15}/>Waiting for your approval</h3><p className="muted small">Each approval authorizes exactly one action and lapses ten minutes after you approve it.</p>{visibleApprovals.map(a=><div className="approval" key={a.id}><span className="pill">{a.kind}</span><pre>{a.detail}</pre><div className="button-row"><button disabled={!!busy} className="primary" onClick={()=>act('Approving',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'approved'});await loadTask(taskId);})}>Approve exact request</button><button disabled={!!busy} onClick={()=>act('Rejecting',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'rejected'});await loadTask(taskId);})}>Reject</button></div></div>)}</section>}
             {diff&&<section className="diff-review"><h3>Proposed changes<span className="pill">{diff.stale?'STALE':'Ready for review'}</span></h3><code>{diff.digest}</code>{(diff.files||diff.patches||[]).map((p,i)=><div key={i}><h4>{p.path}</h4><pre>{p.diff.join("\n")}</pre></div>)}<button disabled={!!busy||!executionEnabled||diff.stale||!diff.digest_valid} onClick={()=>taskAction('agent/round/execute')}>Execute approved proposal</button></section>}
             {rounds?.rounds.map(r=><section className="round" key={r.id}><h3>Round {r.round_number}<span className="pill">{r.status}</span></h3><p>{r.summary}</p>{r.error&&<p className="message-error">{r.error}</p>}{r.test_result&&<RoundEvidenceView result={r.test_result}/>}</section>)}
-            <section className="terminal-panel"><h3><Terminal size={15}/>Approved command runner</h3><p className="muted small">Runs an exact approved command in this task’s isolated worktree.</p><input aria-label="Test command" value={command} onChange={e=>setCommand(e.target.value)}/><div className="button-row"><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('execution-request',{command})}>Request command approval</button><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('execute',{command,timeout:120})}>Run approved command</button></div>{executions.map((e,i)=><div key={i}><span className="pill">Exit {e.exit_code}</span><pre>{e.output}</pre></div>)}</section>
+            {currentTask&&taskStatus==='completed'&&<TaskDelivery workspace={currentTask.workspace}
+              disabled={!!busy||!executionEnabled||agentActive} act={taskAction}/>}
+            <section className="terminal-panel"><h3><Terminal size={15}/>Approved command runner</h3><p className="muted small">Runs an exact approved command in this task’s isolated worktree.</p><input aria-label="Test command" value={command} onChange={e=>setCommand(e.target.value)}/><div className="button-row"><button disabled={!!busy||!workspaceReady||!executionEnabled||agentActive} onClick={()=>taskAction('execution-request',{command})}>Request command approval</button><button disabled={!!busy||!workspaceReady||!executionEnabled||agentActive} onClick={()=>taskAction('execute',{command,timeout:120})}>Run approved command</button></div>{executions.map((e,i)=><div key={i}><span className="pill">Exit {e.exit_code}</span><pre>{e.output}</pre></div>)}</section>
             </>}
-            <TaskReportPanel taskId={taskId}/>
+            {currentTask?.report&&<TaskReportPanel report={currentTask.report}/>}
             <section className="activity"><h3>Activity</h3>{activityView.hidden>0&&<p className="muted small">{activityNote(activityView.hidden,activity.length)}</p>}{activityView.rows.map((e,i)=><p key={i}><span>{e.agent}<small>{e.at}</small></span>{e.message}</p>)}</section>
           </>}
         </div>

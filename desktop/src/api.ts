@@ -8,7 +8,7 @@ export type InferenceMetrics = {client_duration_ms:number;first_text_ms:number|n
 export type Attachment = {id:string;name:string;mechanism:string;excerpt:string};
 export type Project = {id:string;name:string;path:string};
 export type Task = {id:string;project_id:string;prompt:string;status:string;updated_at:number};
-export type Approval = {id:string;project_id:string;kind:string;detail:string;status:string};
+export type Approval = {id:string;project_id:string;task_id?:string;kind:string;detail:string;status:string};
 export type Diff = {digest:string;digest_valid:boolean;stale:boolean;files?:{path:string;diff:string[];stale:boolean}[];patches?:{path:string;diff:string[];stale:boolean}[]};
 export type SSE = {id:number;event:string;data:Record<string,unknown>};
 

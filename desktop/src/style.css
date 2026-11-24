@@ -90,3 +90,9 @@
 .project-tasks .pill.complete{background:#2b3a2d;border-color:#456150;color:#b8d3bd}
 .project-tasks .pill.closed,.project-tasks .pill.open{background:#2a2f2c;border-color:#3a423c;color:#9aa79d}
 .activity p span small{display:block;font-size:8px;color:#5f7664;margin-top:2px;letter-spacing:.2px}
+
+form.task-controls { display: grid; gap: 12px; }
+form.task-controls label, .task-provider { display: grid; gap: 6px; }
+form.task-controls textarea { min-height: 76px; padding: 8px; resize: vertical; }
+form.task-controls button { justify-self: start; }
+.task-delivery code { overflow-wrap: anywhere; }

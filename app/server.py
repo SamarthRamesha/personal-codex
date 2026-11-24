@@ -1005,6 +1005,15 @@ def approval_detail(action: str, task_id: str, **refs) -> str:
     """Canonical, immutable description of the exact Git state a user reviewed."""
     return json.dumps({"action": action, "refs": refs, "task_id": task_id}, sort_keys=True, separators=(",", ":"))
 
+def approval_belongs_to_task(detail: str, task_id: str) -> bool:
+    if detail in {f"workspace:{task_id}", f"release:{task_id}"} or detail.startswith(f"execute:{task_id}:"):
+        return True
+    try:
+        value = json.loads(detail)
+    except ValueError:
+        return False
+    return isinstance(value, dict) and value.get("task_id") == task_id
+
 def approval_permits(project_id: str, kind: str, detail: str) -> dict | None:
     """The oldest approved approval for exactly this action that is still fresh.
 
@@ -1346,7 +1355,17 @@ class App(SimpleHTTPRequestHandler):
             return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/events"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
-        if route == "/api/approvals": return self.json(STORE.rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at DESC"))
+        if route == "/api/approvals":
+            task_id = parse_qs(urlparse(self.path).query).get("task_id", [""])[0]
+            if not task_id:
+                return self.json(STORE.rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at DESC"))
+            task = STORE.one("SELECT project_id FROM tasks WHERE id=?", (task_id,))
+            if not task:
+                return self.json({"error": "task not found"}, 404)
+            approvals = STORE.rows("SELECT * FROM approvals WHERE project_id=? AND status='pending' ORDER BY created_at DESC",
+                                   (task["project_id"],))
+            return self.json([{**row, "task_id": task_id} for row in approvals
+                              if approval_belongs_to_task(row["detail"], task_id)])
         if route == "/api/conversations":
             params=parse_qs(urlparse(self.path).query)
             try: limit=int((params.get("limit") or ["100"])[0])
