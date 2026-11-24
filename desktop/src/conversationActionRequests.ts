@@ -49,3 +49,14 @@ export function filterChats<T extends {project_id:string|null}>(chats:T[], proje
 export function selectionAfterDelete(removedId:string, currentId:string):string {
   return removedId===currentId?'':currentId;
 }
+
+/** Arrow-key movement through the visible list: from the search box into the results, then down or
+ * back up. It stops at both ends instead of wrapping, so a held key cannot jump across the list. */
+export function nextChatId<T extends {id:string}>(chats:T[], currentId:string, direction:'down'|'up'):string {
+  if(!chats.length) return '';
+  const index=chats.findIndex(chat=>chat.id===currentId);
+  if(index<0) return direction==='down'?chats[0].id:'';
+  const next=direction==='down'?index+1:index-1;
+  if(next<0||next>=chats.length) return chats[index].id;
+  return chats[next].id;
+}

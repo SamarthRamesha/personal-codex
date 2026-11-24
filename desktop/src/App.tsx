@@ -21,7 +21,7 @@ import { TaskReportPanel } from './TaskReport';
 import { ConversationHits } from './ConversationHits';
 import { ChatContext } from './ChatContext';
 import { ConversationActions } from './ConversationActions';
-import { filterChats, listPath, selectionAfterDelete } from './conversationActionRequests';
+import { filterChats, listPath, nextChatId, selectionAfterDelete } from './conversationActionRequests';
 import type { TestResult } from './roundEvidenceSummary';
 import { MacActions } from './MacActions';
 import { MacAutomation } from './MacAutomation';
@@ -245,7 +245,7 @@ export default function App(){
       {native&&<button className="full-task-button" onClick={()=>{setSettings(false);setMacAutomation(true);}}>Mac automation</button>}
       {offline&&offlineLaunch&&executionEnabled&&<button className="full-task-button"
         onClick={()=>setFullDialog({prompt:draft,mode:selectedProject?'registered':'new'})}>Full task execution</button>}
-      <label className="search"><Search size={15}/><input aria-label="Search conversations" placeholder="Search conversations" value={search} onChange={e=>setSearch(e.target.value)}/><kbd>⌘ K</kbd></label>
+      <label className="search"><Search size={15}/><input aria-label="Search conversations" placeholder="Search conversations" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;const target=nextChatId(visibleChats,chatId,e.key==='ArrowDown'?'down':'up');if(!target)return;e.preventDefault();setChatId(target);setPane('chat');(document.querySelector<HTMLButtonElement>(`[data-chat-id="${target}"]`))?.focus();}}/><kbd>⌘ K</kbd></label>
       <ConversationHits query={search} onOpen={id=>{setChatId(id);setPane('chat');}}/>
       <div className="section-label">PROJECTS<div className="project-actions">{offline&&offlineLaunch&&<button title="New project" onClick={()=>{setExistingProject(false);setProjectPrompt('');}}><Plus size={14}/></button>}<button title={offline&&offlineLaunch?'Open project':'Register project'} onClick={()=>{
         if(offline&&offlineLaunch){setExistingProject(true);setProjectPrompt('');}
@@ -254,7 +254,7 @@ export default function App(){
       <div className="projects">{projects.map(p=><button className={projectId===p.id?'chosen':''} key={p.id} onClick={()=>{setProjectId(p.id);setTaskId('');setRounds(null);setProposal(null);setDiff(null);setPane('work');}}><Folder size={15}/><span>{p.name}</span><ChevronRight size={13}/></button>)}{!projects.length&&<p className="muted small">Register a repository to start coding.</p>}</div>
       <div className="section-label">{archivedView?'ARCHIVED':'CONVERSATIONS'}<div className="project-actions"><span>{visibleChats.length}</span><button title={archivedView?'Show active conversations':'Show archived conversations'} aria-label="Toggle archived conversations" onClick={()=>setArchivedView(value=>!value)}><Archive size={13}/></button></div></div>
       <label className="chat-filter"><select aria-label="Filter conversations by project" value={chatFilter} onChange={e=>setChatFilter(e.target.value)}><option value="">All projects</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-      <nav className="chat-list">{visibleChats.map(c=><div className={chatId===c.id?'chat-row chosen':'chat-row'} key={c.id}><button onClick={()=>{setChatId(c.id);setPane('chat');}}><MessageSquare size={15}/><span>{c.title}<small>{c.last_message?.preview||relative(c.updated_at)}</small></span></button>{chatId===c.id&&<ConversationActions conversation={c} archived={archivedView} onDone={afterChatAction}/>}</div>)}{!visibleChats.length&&<p className="muted small empty-list">{chats.length?(chatFilter?'No conversations in this project.':'No archived conversations.'):'Your conversations stay on your backend.'}</p>}</nav>
+      <nav className="chat-list">{visibleChats.map(c=><div className={chatId===c.id?'chat-row chosen':'chat-row'} key={c.id}><button data-chat-id={c.id} onClick={()=>{setChatId(c.id);setPane('chat');}}><MessageSquare size={15}/><span>{c.title}<small>{c.last_message?.preview||relative(c.updated_at)}</small></span></button>{chatId===c.id&&<ConversationActions conversation={c} archived={archivedView} onDone={afterChatAction}/>}</div>)}{!visibleChats.length&&<p className="muted small empty-list">{chats.length?(chatFilter?'No conversations in this project.':'No archived conversations.'):'Your conversations stay on your backend.'}</p>}</nav>
       <div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={14}/><span>Local first. Yours to control.</span></div><button onClick={()=>setSettings(true)}><Settings2 size={16}/>Settings & connection<span className={`status-dot ${connected?'online':''}`}/></button></div>
     </aside>
     <main>

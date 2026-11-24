@@ -1,3 +1,4 @@
+import { nextChatId } from './conversationActionRequests';
 import {describe,expect,it} from 'vitest';
 import {archiveRequest,canRename,deleteRequest,filterChats,listPath,pinRequest,renameRequest,selectionAfterDelete} from './conversationActionRequests';
 
@@ -36,5 +37,21 @@ describe('conversation actions',()=>{
   it('clears the open conversation only when that conversation was deleted',()=>{
     expect(selectionAfterDelete('c1','c1')).toBe('');
     expect(selectionAfterDelete('c2','c1')).toBe('c1');
+  });
+});
+
+describe('keyboard movement through the conversation list', () => {
+  const chats=[{id:'a'},{id:'b'},{id:'c'}];
+
+  it('enters the list from the search box and stops at the end', () => {
+    expect(nextChatId(chats,'','down')).toBe('a');
+    expect(nextChatId(chats,'c','down')).toBe('c');
+    expect(nextChatId([],'', 'down')).toBe('');
+  });
+
+  it('moves up without wrapping past the first conversation', () => {
+    expect(nextChatId(chats,'b','up')).toBe('a');
+    expect(nextChatId(chats,'a','up')).toBe('a');
+    expect(nextChatId(chats,'','up')).toBe('');
   });
 });
