@@ -290,6 +290,68 @@ def conversation_project_context(project_id, request):
     return context.prompt_block(selection, memory=memory) + references
 
 
+# The bounds a project chat's prompt actually applies. They are reported, not configurable here.
+CONVERSATION_CONTEXT_LIMITS = {"memory_entries": 6, "memory_bytes": 1200,
+                               "attachment_entries": 4, "attachment_bytes": 2200,
+                               "document_reference_bytes": 1600}
+
+def conversation_context_report(conversation_id: str):
+    """What a project chat can draw on, and which bound applies to it.
+
+    Descriptive and read-only: it counts stored sources, reuses the same ranked memory selection the
+    prompt uses, and reports the prompt's own size bound. It reads no project file, calls no model
+    and returns no source text beyond attachment names the panel already shows. A count describes
+    what was available, never what a model used.
+    """
+    conversation = conversations.conversation_detail(STORE, conversation_id)
+    if not conversation:
+        return None
+    history = conversations.message_history(STORE, conversation_id)
+    complete = [m for m in history if m["role"] in ("user", "assistant")
+                and m["status"] == "complete" and str(m["content"] or "").strip()]
+    prompt = conversations.build_prompt(history)
+    report = {"conversation_id": conversation_id, "executed": False,
+              "history": {"stored": len(history), "prompt_input": len(complete),
+                          "excluded": len(history) - len(complete), "prompt_chars": len(prompt),
+                          "limits": {"messages": conversations.MAX_PROMPT_MESSAGES,
+                                     "chars": conversations.MAX_PROMPT_CHARS}},
+              "project": None, "memory": None, "attachments": None, "documents": None,
+              "notes": []}
+    project_id = conversation.get("project_id")
+    if not project_id:
+        report["notes"] = ["This conversation has no project: no project memory, documents or "
+                           "attachments are used."]
+        return report
+    project = STORE.one("SELECT id,name FROM projects WHERE id=?", (project_id,))
+    report["project"] = {"id": project_id, "name": project["name"] if project else None}
+    request = next((str(m["content"] or "") for m in reversed(complete) if m["role"] == "user"), "")
+    lines = memory_lines(project_id, request, (), limit=CONVERSATION_CONTEXT_LIMITS["memory_entries"],
+                         max_bytes=CONVERSATION_CONTEXT_LIMITS["memory_bytes"])
+    stored_memory = STORE.one("SELECT COUNT(*) AS n FROM memory WHERE project_id=?", (project_id,))["n"]
+    report["memory"] = {"stored": int(stored_memory or 0), "included": len(lines),
+                        "included_bytes": sum(len(line.encode("utf-8")) for line in lines),
+                        "limits": {"entries": CONVERSATION_CONTEXT_LIMITS["memory_entries"],
+                                   "bytes": CONVERSATION_CONTEXT_LIMITS["memory_bytes"]},
+                        "note": "Ranked against the newest user message; a stored row that fails the "
+                                "content policy is never included."}
+    attachment_rows = STORE.rows("SELECT name,mechanism FROM project_attachments WHERE project_id=? "
+                                 "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                                 (project_id, CONVERSATION_CONTEXT_LIMITS["attachment_entries"]))
+    stored_attachments = STORE.one("SELECT COUNT(*) AS n FROM project_attachments WHERE project_id=?", (project_id,))["n"]
+    report["attachments"] = {"stored": int(stored_attachments or 0), "included": len(attachment_rows),
+                             "names": [row["name"] for row in attachment_rows],
+                             "limits": {"entries": CONVERSATION_CONTEXT_LIMITS["attachment_entries"],
+                                        "bytes": CONVERSATION_CONTEXT_LIMITS["attachment_bytes"]}}
+    indexed = STORE.one("SELECT COUNT(*) AS n FROM project_documents WHERE project_id=?", (project_id,))["n"]
+    report["documents"] = {"indexed_sources": int(indexed or 0),
+                           "search_available": documents.available(STORE.conn),
+                           "limits": {"reference_bytes": CONVERSATION_CONTEXT_LIMITS["document_reference_bytes"]}}
+    report["notes"] = ["Only complete turns are prompt input; a stopped or failed partial answer is "
+                       "display-only.",
+                       "Counts describe stored and selected sources, not what a given model used.",
+                       "No project file context is read for this report."]
+    return report
+
 conversations.PROJECT_CONTEXT = conversation_project_context
 
 
@@ -1299,6 +1361,9 @@ class App(SimpleHTTPRequestHandler):
             parts=route.split("/")
             if len(parts)==4:
                 report=conversations.conversation_report(STORE,parts[3])
+                return self.json(report) if report else self.json({"error":"conversation not found"},404)
+            if len(parts)==5 and parts[4]=="context":
+                report=conversation_context_report(parts[3])
                 return self.json(report) if report else self.json({"error":"conversation not found"},404)
             if len(parts)==7 and parts[4]=="messages" and parts[6]=="stream":
                 return self.stream_message(parts[3],parts[5],self.last_event_id())

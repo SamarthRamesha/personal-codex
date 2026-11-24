@@ -406,6 +406,80 @@ class ConversationStoreTests(unittest.TestCase):
         self.assertEqual(conversations.wait_for_message(self.store, result["assistant_message_id"], 5)["status"], "stopped")
 
 
+class ConversationContextReportTests(unittest.TestCase):
+    """The context report describes stored sources and the prompt bound, never what was used."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_data, self.old_db, self.old_store = server.DATA, server.DB_PATH, server.STORE
+        server.DATA = Path(self.tmp.name) / "data"
+        server.DB_PATH = server.DATA / "test.db"
+        server.STORE = server.Store()
+        self.store = server.STORE
+        self.old_transport = conversations.TRANSPORT
+        conversations.TRANSPORT = streaming_transport()
+        self.project = self.store.one("SELECT * FROM projects LIMIT 1")
+        if not self.project:
+            pid = "project-fixture"
+            self.store.write("INSERT INTO projects VALUES (?,?,?,?)", (pid, "Fixture", self.tmp.name, server.now()))
+            self.project = self.store.one("SELECT * FROM projects WHERE id=?", (pid,))
+        pid = "provider-fixture"
+        self.store.write("INSERT INTO providers (id,kind,endpoint,model,secret_ref,cloud_allowed,enabled,created_at) "
+                         "VALUES (?,?,?,?,?,?,?,?)", (pid, "ollama", "http://127.0.0.1:11434", "fixture:1b", "", 0, 1, server.now()))
+        self.provider_id = pid
+
+    def tearDown(self):
+        conversations.TRANSPORT = self.old_transport
+        server.STORE.close()
+        server.DATA, server.DB_PATH, server.STORE = self.old_data, self.old_db, self.old_store
+        self.tmp.cleanup()
+
+    def conversation(self, **extra):
+        return conversations.create_conversation(self.store, project_id=self.project["id"], provider_id=self.provider_id, **extra)
+
+    def test_the_report_counts_the_prompt_bound_and_the_project_sources(self):
+        row = self.conversation()
+        result = conversations.start_turn(self.store, row, "Which convention applies?")
+        conversations.wait_for_message(self.store, result["assistant_message_id"], 5)
+        self.store.write("INSERT INTO memory (id,project_id,kind,content,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+                         ("m1", self.project["id"], "convention", "Use tabs for indentation", server.now(), server.now()))
+        self.store.write("INSERT INTO project_attachments VALUES (?,?,?,?,?,?)",
+                         ("a1", self.project["id"], "spec.md", "finder-selection", "excerpt", server.now()))
+        report = server.conversation_context_report(row["id"])
+        self.assertFalse(report["executed"])
+        self.assertEqual(report["history"]["stored"], 2)
+        self.assertEqual(report["history"]["prompt_input"], 2)
+        self.assertEqual(report["history"]["excluded"], 0)
+        self.assertGreater(report["history"]["prompt_chars"], 0)
+        self.assertEqual(report["project"]["id"], self.project["id"])
+        self.assertEqual(report["memory"]["stored"], 1)
+        self.assertEqual(report["memory"]["included"], 1)
+        self.assertEqual(report["attachments"]["names"], ["spec.md"])
+        self.assertEqual(report["documents"]["indexed_sources"], 0)
+        self.assertTrue(any("not what a given model used" in note for note in report["notes"]))
+
+    def test_a_stopped_answer_is_counted_as_excluded_from_the_prompt(self):
+        conversations.TRANSPORT = slow_transport()
+        row = self.conversation()
+        result = conversations.start_turn(self.store, row, "Long answer please")
+        self.assertTrue(conversations.request_stop(result["assistant_message_id"]))
+        self.assertEqual(conversations.wait_for_message(self.store, result["assistant_message_id"], 5)["status"], "stopped")
+        report = server.conversation_context_report(row["id"])
+        self.assertEqual(report["history"]["stored"], 2)
+        self.assertEqual(report["history"]["prompt_input"], 1)
+        self.assertEqual(report["history"]["excluded"], 1)
+
+    def test_a_conversation_without_a_project_says_no_project_context_is_used(self):
+        row = conversations.create_conversation(self.store)
+        report = server.conversation_context_report(row["id"])
+        self.assertIsNone(report["memory"])
+        self.assertIsNone(report["attachments"])
+        self.assertIn("no project", report["notes"][0].lower())
+
+    def test_an_unknown_conversation_has_no_report(self):
+        self.assertIsNone(server.conversation_context_report("absent"))
+
+
 @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
 class ConversationHttpTests(unittest.TestCase):
     def setUp(self):
@@ -448,6 +522,18 @@ class ConversationHttpTests(unittest.TestCase):
 
     def get(self, path):
         return self.request("GET", path)
+
+    def test_http_context_report_describes_sources_without_reading_files(self):
+        conversation = self.post("/api/conversations", {"project_id": self.project["id"], "provider_id": self.provider["id"]})
+        self.post(f"/api/conversations/{conversation['id']}/messages", {"content": "hello"})
+        report = self.get(f"/api/conversations/{conversation['id']}/context")
+        self.assertFalse(report["executed"])
+        self.assertGreaterEqual(report["history"]["stored"], 2)
+        self.assertEqual(report["project"]["id"], self.project["id"])
+        self.assertEqual(report["memory"]["stored"], 0)
+        self.assertTrue(any("No project file context is read" in note for note in report["notes"]))
+        self.assertEqual(set(report) - {"conversation_id", "executed", "history", "project",
+                                       "memory", "attachments", "documents", "notes"}, set())
 
     def test_http_chat_turns_into_a_planned_task_that_still_needs_approval(self):
         # The bridge between a conversation and the coding flow had no test at all: a broken plan,

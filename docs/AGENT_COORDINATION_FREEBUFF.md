@@ -84,13 +84,23 @@ matched without showing where. The panel now lists one attributed hit per conver
 snippet, title) and opens that conversation on click; `desktop/src/searchHits.ts` is pure and
 tested, the list is bounded to eight rows, and a short query is never sent. Tests: 3.
 
+### 5. Context disclosure for a conversation
+
+`GET /api/conversations/{id}/context` reports what the next turn can draw on and which bound
+applies, and the composer shows it in a `Context` disclosure: prompt-input messages against the
+char bound, excluded turns, included versus stored project memory and attachments, indexed document
+count and whether FTS search exists on this backend. It reuses the prompt's own ranked memory
+selection, reads no project file, calls no model and states that a count is not a record of what a
+model used. `server.conversation_context_report` plus `desktop/src/chatContext.ts`; tests: 4 store,
+1 HTTP-gated and 4 frontend.
+
 ## Verification actually run (all on this Linux workspace)
 
 | Check | Result |
 |---|---|
-| `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 440 discovered, 436 passed, 4 skipped, 70.7 s |
+| `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 445 discovered, 441 passed, 4 skipped, 72.3 s |
 | `tests.test_environment` alone | 16 passed |
-| `npm test` in `desktop` | 63 passed (14 files) |
+| `npm test` in `desktop` | 67 passed (15 files) |
 | `npm run build` in `desktop` | `tsc -b` + Vite build passed |
 | `yaml.safe_load(.github/workflows/verify.yml)` | three jobs, all steps present |
 | Rust/native | not run in this environment (no macOS toolchain here) |
