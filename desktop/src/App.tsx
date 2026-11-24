@@ -13,6 +13,7 @@ import { ProjectDocuments } from './ProjectDocuments';
 import { ProjectReadiness } from './ProjectReadiness';
 import { providerForModel } from './providerChoice';
 import { RoundEvidenceView } from './RoundEvidence';
+import { TaskReportPanel } from './TaskReport';
 import type { TestResult } from './roundEvidence';
 import { MacActions } from './MacActions';
 import { MacAutomation } from './MacAutomation';
@@ -305,6 +306,7 @@ export default function App(){
             {rounds?.rounds.map(r=><section className="round" key={r.id}><h3>Round {r.round_number}<span className="pill">{r.status}</span></h3><p>{r.summary}</p>{r.error&&<p className="message-error">{r.error}</p>}{r.test_result&&<RoundEvidenceView result={r.test_result}/>}</section>)}
             <section className="terminal-panel"><h3><Terminal size={15}/>Approved command runner</h3><p className="muted small">Runs an exact approved command in this task’s isolated worktree.</p><input aria-label="Test command" value={command} onChange={e=>setCommand(e.target.value)}/><div className="button-row"><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('execution-request',{command})}>Request command approval</button><button disabled={!!busy||!executionEnabled||agentActive} onClick={()=>taskAction('execute',{command,timeout:120})}>Run approved command</button></div>{executions.map((e,i)=><div key={i}><span className="pill">Exit {e.exit_code}</span><pre>{e.output}</pre></div>)}</section>
             </>}
+            <TaskReportPanel taskId={taskId}/>
             <section className="activity"><h3>Activity</h3>{activity.slice(-30).map((e,i)=><p key={i}><span>{e.agent}</span>{e.message}</p>)}</section>
           </>}
         </div>

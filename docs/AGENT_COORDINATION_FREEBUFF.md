@@ -68,13 +68,22 @@ declared `dev`/`serve`/`start`/`preview` scripts with a port only when the scrip
   bounded output. A round that ran no test is shown as **not** passing instead of as raw JSON.
 - Tests: `providerChoice.test.ts` (2), `roundEvidence.test.tsx` (4).
 
+### 3. Objective task report in the panel
+
+`TaskReportPanel` shows `/api/tasks/{id}/agent/report` — the backend's report built from recorded
+rounds: executed rounds, passing and failing test runs with their commands and exit codes, changed
+files, remaining round budget and the diff stat. The panel previously showed only the model's own
+summary, so a task's actual evidence was not visible. `desktop/src/taskReport.ts` is pure and
+tested; an unreported exit code is shown as unproven, and no state is upgraded to "complete".
+Tests: `taskReport.test.ts` (5).
+
 ## Verification actually run (all on this Linux workspace)
 
 | Check | Result |
 |---|---|
 | `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 440 discovered, 436 passed, 4 skipped, 70.7 s |
 | `tests.test_environment` alone | 16 passed |
-| `npm test` in `desktop` | 55 passed (12 files) |
+| `npm test` in `desktop` | 60 passed (13 files) |
 | `npm run build` in `desktop` | `tsc -b` + Vite build passed |
 | `yaml.safe_load(.github/workflows/verify.yml)` | three jobs, all steps present |
 | Rust/native | not run in this environment (no macOS toolchain here) |
