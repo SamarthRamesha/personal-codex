@@ -145,3 +145,106 @@ run without a job list is a workflow-load failure, not a test failure.
 No force-push, no history rewrite, no merge to `main`, no `personal-codex-diagnostic.txt` access,
 no OS permission changes, no TCC or Automation changes, no browser-profile or credential access, no
 JARVIS/Docker/family-service changes, and no weakening of approval or execution checks.
+
+## Handoff — end of the 24 November Freebuff allocation
+
+### 1. Branch and commit
+
+- Branch `personal-codex/freebuff-implementation`, published at **`cfeaa61`** (upstream `origin`).
+- Base `d15def9` (tip of `personal-codex/mac-automation`). `main` is **`da08db1`** because of the
+  unintended fast-forward in R-36: it contains this branch up to `da08db1` but none of the later
+  checkpoints.
+- `personal-codex/codex-integration` exists on the remote (`bbf5385`) and was never read, checked
+  out or modified here.
+
+### 2. Published and unpublished changes
+
+- Published: every checkpoint up to `cfeaa61` on the feature branch; up to `da08db1` on `main`.
+- Unpublished on this branch: nothing; the working tree is clean.
+- Still outside the branch: `origin/personal-codex/mac-automation` remains at `f6224e2` even though
+  `1a778ff` and `d15def9` are contained in this branch, and the dangling stash `542fd7d` is still
+  reachable only by hash.
+
+### 3. Implemented in this allocation (six checkpoints)
+
+1. Read-only project environment readiness (`GET /api/projects/{id}/environment`, panel section).
+2. Model selection selects the owning provider; round evidence replaces a raw JSON dump.
+3. Objective task report in the workspace (`GET /api/tasks/{id}/agent/report`).
+4. Attributed message-search hits in the sidebar (`GET /api/conversations/search`).
+5. Context disclosure for a conversation (`GET /api/conversations/{id}/context`).
+6. Pin / archive-restore / two-click soft delete and an archived view for conversations.
+
+New tests: 16 (`test_environment.py`), 4 store + 1 HTTP (`test_conversations.py`), 26 frontend tests
+across seven new test files.
+
+### 4. Verification actually run here
+
+| Command | Result |
+|---|---|
+| `PERSONAL_CODEX_HTTP_TESTS=1 PERSONAL_CODEX_DATA=/tmp/pcfinal python3 -m unittest discover -s tests` | **445 discovered, 441 passed, 4 skipped**, 70.7 s |
+| `npm test` (desktop) | **71 passed**, 16 files |
+| `npm run build` (desktop) | `tsc -b` + Vite build passed |
+| `yaml.safe_load(.github/workflows/verify.yml)` | three jobs, all steps present |
+
+Not run: Rust/native (no macOS toolchain), real Ollama model, any JARVIS access, and the macOS-gated
+acceptance scripts — `scripts/full_task_acceptance.py` stops with `The autonomous runner requires the
+verified macOS process sandbox`, which is a platform gate, not a passing check.
+
+### 5. CI outcomes
+
+**Not read.** The unauthenticated GitHub API was rate-limited from this host (HTTP 403) all session,
+and job logs need authentication. The workflow was extended to trigger on this branch at `da08db1`,
+so runs may exist for `da08db1`, `ca75925`, `1db2835`, `a1eaba0` and `cfeaa61`; Codex or the owner
+must read the run and job pages. No hosted-CI claim is made here, and a red run with no job list is a
+workflow-load failure, not a test failure (R-35).
+
+### 6. Unfinished work
+
+- The panel was type-checked, unit-tested and built but **never opened**, so layout and placement of
+  every new section are unverified.
+- No rename control yet, despite `PATCH /api/conversations/{id}` supporting `title`; no per-project
+  chat filter; sending from an archived conversation returns the sidebar to the active list.
+- Dependency installation and dev-server processes remain operator actions; the readiness report is
+  diagnostic only.
+- macOS native acceptance (R-01, R-05, R-06, R-13) and every JARVIS/deployment gate are untouched.
+
+### 7. Integration requirements for Codex
+
+- Review the six checkpoints in order; each is additive and independent, and none adds authority,
+  schema migration or execution path. The only non-read-only additions are the conversation controls,
+  which call routes the backend already had and already tests.
+- Conflict hotspots if you also edited them: `desktop/src/App.tsx` (conversation list markup) and
+  `app/server.py` (module imports and the `GET /api/conversations/` branch).
+- Decide R-36 first: accept `da08db1` as `main`, or reset `main` with owner authorization.
+
+### 8. Risks
+
+R-36 is the only new one and is open until the owner decides. R-01–R-35 are unchanged by this work.
+
+### 9. Next highest-value work
+
+1. Read the hosted CI for `cfeaa61` and fix anything it reports (native job included).
+2. Open the panel on a real Mac and verify the six new sections render and behave.
+3. Add a rename control and a per-project chat filter; keep the archived-list refresh coherent.
+4. Then the listed coding gaps: dependency installation and dev-server lifecycle as explicit,
+   approved actions rather than a report.
+
+### 10. Copyable continuation prompt
+
+```text
+Continue Personal Codex as the Freebuff implementation agent on branch
+personal-codex/freebuff-implementation (last checkpoint cfeaa61, base d15def9). Read
+docs/AGENT_COORDINATION_FREEBUFF.md first, including the R-36 incident: main was fast-forwarded to
+da08db1 unintentionally and needs an owner decision. Do not merge to main, rewrite history or
+force-push, and always pass an explicit branch to cloud_git push.
+
+State: backend 445 discovered / 441 passed / 4 skipped, frontend 71 passed plus TypeScript/Vite.
+Six checkpoints landed: project environment readiness, provider/model consistency with round evidence,
+objective task report, message-search hits, conversation context disclosure, and conversation
+pin/archive/delete. Nothing was opened in a real panel, and hosted CI was never read.
+
+Next: read hosted CI for cfeaa61 and fix what it reports, then implement a conversation rename
+control and per-project chat filtering, then the approved dependency-installation/dev-server
+lifecycle. Verify with the same commands and refresh docs/AGENT_COORDINATION_FREEBUFF.md before
+handing off. Do not claim macOS, native, model or JARVIS acceptance.
+```
