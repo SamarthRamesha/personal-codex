@@ -180,7 +180,7 @@ JARVIS/Docker/family-service changes, and no weakening of approval or execution 
 
 ### 1. Branch and commit
 
-- Branch `personal-codex/freebuff-implementation`, published at **`cfeaa61`** (upstream `origin`).
+- Branch `personal-codex/freebuff-implementation`, published at **`dc8cef6`** (upstream `origin`).
 - Base `d15def9` (tip of `personal-codex/mac-automation`). `main` is **`da08db1`** because of the
   unintended fast-forward in R-36: it contains this branch up to `da08db1` but none of the later
   checkpoints.
@@ -235,6 +235,7 @@ public run pages instead:
   and the rename/project-filter checkpoint, and GitHub reports a run successful only when every job
   succeeds, so backend, frontend and the macOS `native` job all passed on it. Job-level log lines are
   not readable without authentication from this host.
+- **Run #105 (`dc8cef6`, the correction to this record) also completed successfully.**
 
 ### 6. Unfinished work
 
