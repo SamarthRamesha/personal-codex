@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 import app.server as server
 from app import environment
@@ -146,10 +147,52 @@ class EnvironmentReportTests(unittest.TestCase):
         report = environment.inspect(self.root)
         commands = [step["command"] for entry in report["ecosystems"] for step in entry["install_steps"]]
         commands += [item["command"] for entry in report["ecosystems"] for item in entry["dev_servers"]]
+        commands += [item["command"] for entry in report["ecosystems"] for item in entry["checks"]]
         self.assertGreater(len(commands), 4)
         for command in commands:
             self.assertTrue(shlex.split(command), command)
             self.assertFalse(SHELL_OPERATORS & set(shlex.split(command)), command)
+
+    def test_declared_check_scripts_are_reported_with_the_projects_own_command(self):
+        self.write("package.json", json.dumps({"scripts": {"test": "vitest run", "lint": "eslint .",
+                                                           "notachoice": "echo hi"}}))
+        node = self.ecosystem("node")
+        self.assertEqual([check["command"] for check in node["checks"]],
+                         ["npm run test", "npm run lint"])
+        self.assertEqual([check["declared"] for check in node["checks"]], ["vitest run", "eslint ."])
+        self.assertFalse(any(check["script"] == "notachoice" for check in node["checks"]))
+
+    def test_a_project_with_no_check_script_says_so_instead_of_inventing_one(self):
+        self.write("package.json", json.dumps({"scripts": {"dev": "vite"}}))
+        self.assertEqual(self.ecosystem("node")["checks"], [])
+        python = None
+        self.write("requirements.txt", "fixture\n")
+        python = self.ecosystem("python")
+        self.assertEqual(python["checks"], [])
+        self.assertTrue(any("no test command is declared" in note for note in python["notes"]))
+
+    def test_a_missing_toolchain_is_reported_without_running_anything(self):
+        self.write("package.json", json.dumps({"scripts": {"test": "vitest run"}}))
+        with mock.patch.object(environment.shutil, "which", return_value=None):
+            node = self.ecosystem("node")
+        self.assertEqual([tool["name"] for tool in node["tools"]], ["node", "npm"])
+        self.assertTrue(all(tool["present"] is False for tool in node["tools"]))
+        self.assertTrue(any("not on PATH: node, npm" in note for note in node["notes"]))
+        self.assertTrue(all(tool["install"] for tool in node["tools"]))
+
+    def test_a_present_toolchain_is_reported_as_present(self):
+        self.write("Cargo.toml", "[package]\nname='fixture'\n")
+        with mock.patch.object(environment.shutil, "which", return_value="/usr/bin/cargo"):
+            rust = self.ecosystem("rust")
+        self.assertEqual([(tool["name"], tool["present"]) for tool in rust["tools"]], [("cargo", True)])
+        self.assertEqual([check["command"] for check in rust["checks"]], ["cargo test", "cargo check"])
+
+    def test_tool_lookup_is_named_in_the_report_limits(self):
+        self.write("go.mod", "module fixture\n")
+        report = environment.inspect(self.root)
+        self.assertTrue(report["limits"]["runs_no_tool"])
+        self.assertIn("PATH lookup", report["limits"]["tool_lookup"])
+        self.assertFalse(report["executed"])
 
     def test_a_missing_project_directory_is_refused(self):
         with self.assertRaises(ValueError):

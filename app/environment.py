@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import stat
 from pathlib import Path
 
 # A manifest bigger than this is not a manifest; it is reported as unread rather than parsed.
 MAX_MANIFEST_BYTES = 200_000
 DEV_SCRIPT_NAMES = ("dev", "serve", "start", "preview")
+# Only scripts the project itself declares are reported; nothing is assumed to exist.
+CHECK_SCRIPT_NAMES = ("test", "lint", "typecheck", "type-check", "check", "build")
 PORT_RE = re.compile(r"--port[= ]+(\d{2,5})\b")
 ENV_PORT_RE = re.compile(r"\bPORT[= ]+(\d{2,5})\b")
 
@@ -67,8 +70,21 @@ def _first_existing(root: Path, names) -> str | None:
     return None
 
 
+def _tool(name: str, install: str) -> dict:
+    """Whether an executable is on PATH. This is a lookup, never a run."""
+    return {"name": name, "present": shutil.which(name) is not None, "install": install}
+
+
+def _missing_tools(tools: list[dict]) -> list[str]:
+    return [tool["name"] for tool in tools if not tool["present"]]
+
+
 def _declared_dev_scripts(root: Path, manager: str) -> tuple[list[dict], list[str], str | None]:
-    """Parse the bounded package.json for dev/serve scripts; return (servers, notes, error).
+    """Parse the bounded package.json for declared dev and check scripts.
+
+    Returns (servers, checks, notes, error). Only the ``scripts`` object is used; a declared check
+    is reported with the exact command the project owns, and nothing is inferred about tests that
+    were never declared.
 
     Only the ``scripts`` object is used. A package.json that is too large, unreadable or not
     JSON is reported as such instead of being half-interpreted.
@@ -77,19 +93,19 @@ def _declared_dev_scripts(root: Path, manager: str) -> tuple[list[dict], list[st
     try:
         size = path.lstat().st_size
     except OSError as error:
-        return [], [f"package.json could not be examined ({type(error).__name__})"], "unreadable"
+        return [], [], [f"package.json could not be examined ({type(error).__name__})"], "unreadable"
     if size > MAX_MANIFEST_BYTES:
-        return [], [f"package.json is {size} bytes, above the {MAX_MANIFEST_BYTES}-byte read "
-                    "limit; its scripts were not parsed"], "too large"
+        return [], [], [f"package.json is {size} bytes, above the {MAX_MANIFEST_BYTES}-byte read "
+                        "limit; its scripts were not parsed"], "too large"
     try:
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     except (OSError, ValueError) as error:
-        return [], [f"package.json could not be parsed as JSON ({type(error).__name__}); "
-                    "its scripts were not read"], "invalid JSON"
+        return [], [], [f"package.json could not be parsed as JSON ({type(error).__name__}); "
+                        "its scripts were not read"], "invalid JSON"
     scripts = data.get("scripts") if isinstance(data, dict) else None
     if not isinstance(scripts, dict):
-        return [], [], None
-    servers = []
+        return [], [], [], None
+    servers, checks = [], []
     for name in DEV_SCRIPT_NAMES:
         command = scripts.get(name)
         if not isinstance(command, str) or not command.strip():
@@ -99,7 +115,13 @@ def _declared_dev_scripts(root: Path, manager: str) -> tuple[list[dict], list[st
         servers.append({"script": name, "declared": text[:400],
                         "command": f"{NODE_RUNNERS[manager]} {name}",
                         "port": int(match.group(1)) if match else None})
-    return servers, [], None
+    for name in CHECK_SCRIPT_NAMES:
+        command = scripts.get(name)
+        if not isinstance(command, str) or not command.strip():
+            continue
+        checks.append({"script": name, "declared": " ".join(command.split())[:400],
+                       "command": f"{NODE_RUNNERS[manager]} {name}"})
+    return servers, checks, [], None
 
 
 def _node(root: Path) -> dict:
@@ -117,13 +139,22 @@ def _node(root: Path) -> dict:
         entry.update(dependencies="missing",
                      evidence="no node_modules directory; the project's own checks will fail "
                               "until its dependencies are installed")
-    servers, notes, parse_error = _declared_dev_scripts(root, manager)
+    servers, checks, notes, parse_error = _declared_dev_scripts(root, manager)
+    tools = [_tool("node", "install Node.js"), _tool(manager, f"install {manager}")]
     entry["dev_servers"] = servers
+    entry["checks"] = checks
+    entry["tools"] = tools
     entry["notes"] = notes
     if parse_error:
         entry["manifest_problem"] = parse_error
     if servers and all(item["port"] is None for item in servers):
-        entry["notes"] = notes + ["no dev script declares a port; the project's own default applies"]
+        entry["notes"] = entry["notes"] + ["no dev script declares a port; the project's own default applies"]
+    missing = _missing_tools(tools)
+    if missing:
+        entry["notes"] = entry["notes"] + [
+            f"not on PATH: {', '.join(missing)}; its install and check commands cannot run until it is installed"]
+    if not checks:
+        entry["notes"] = entry["notes"] + ["no check script is declared; the project's own test command is not known to this report"]
     return entry
 
 
@@ -157,7 +188,14 @@ def _python(root: Path) -> dict:
         servers.append({"script": "runserver", "declared": "manage.py exists",
                         "command": "python3 manage.py runserver", "port": None})
     entry["dev_servers"] = servers
-    entry["notes"] = ["Django's own default port applies to manage.py runserver"] if servers else []
+    entry["checks"] = []
+    entry["tools"] = [_tool("python3", "install Python 3")]
+    notes = ["Django's own default port applies to manage.py runserver"] if servers else []
+    missing = _missing_tools(entry["tools"])
+    if missing:
+        notes.append(f"not on PATH: {', '.join(missing)}; these commands cannot run until it is installed")
+    notes.append("no test command is declared in a recognised manifest; choose the project's own checks yourself")
+    entry["notes"] = notes
     return entry
 
 
@@ -172,7 +210,12 @@ def _rust(root: Path) -> dict:
     else:
         entry.update(dependencies="unknown",
                      evidence="cargo downloads crates during a build; no local marker proves it")
-    entry["dev_servers"], entry["notes"] = [], []
+    entry["dev_servers"], entry["checks"] = [], [
+        {"script": "test", "declared": "cargo's own test harness", "command": "cargo test"},
+        {"script": "check", "declared": "cargo's own check", "command": "cargo check"},
+    ]
+    entry["tools"] = [_tool("cargo", "install Rust")]
+    entry["notes"] = ["cargo test and cargo check are the toolchain's own commands, not declared by the project"]
     return entry
 
 
@@ -183,7 +226,11 @@ def _go(root: Path) -> dict:
                    "dependencies": "unknown",
                    "evidence": "module downloads are not marked locally in a way this report can "
                                "verify without running go",
-                   "dev_servers": [], "notes": []}
+                   "dev_servers": [], "checks": [
+                       {"script": "test", "declared": "go's own test harness", "command": "go test ./..."},
+                   ],
+                   "tools": [_tool("go", "install Go")],
+                   "notes": ["go test ./... is the toolchain's own command, not declared by the project"]}
     return entry
 
 
@@ -226,5 +273,7 @@ def inspect(root) -> dict:
             "advisories": list(ADVISORIES), "inspected": inspected,
             "limits": {"manifest_bytes": MAX_MANIFEST_BYTES,
                        "reads_lockfiles": False, "declared_scripts_only": True,
-                       "unknown_dependency_state_is_reported": True},
+                       "unknown_dependency_state_is_reported": True,
+                       "runs_no_tool": True,
+                       "tool_lookup": "PATH lookup only (shutil.which); no tool was started"},
             "scope": "declared manifests and local dependency markers only"}

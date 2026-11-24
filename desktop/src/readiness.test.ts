@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readinessEmptyText, readinessRows, serverLabel } from './readiness';
+import { checkCommands, checkNote, readinessEmptyText, readinessRows, serverLabel, toolLine } from './readiness';
 import type { Readiness } from './readiness';
 
 const report: Readiness = {
@@ -36,5 +36,36 @@ describe('readiness display', () => {
       .toBe('No recognised project manifest was found.');
     expect(readinessEmptyText(null)).toContain('Reading');
     expect(readinessRows(null)).toEqual([]);
+  });
+});
+
+describe('project checks and toolchain state', () => {
+  const withChecks:Readiness = {...report,ecosystems:[{...report.ecosystems[0],
+    checks:[{script:'test',declared:'vitest run',command:'npm run test'},
+            {script:'lint',declared:'eslint .',command:'npm run lint'}],
+    tools:[{name:'node',present:true,install:'install Node.js'},
+           {name:'npm',present:false,install:'install npm'}]}]};
+
+  it('lists the declared check commands and copies them unchanged', () => {
+    const [row]=readinessRows(withChecks);
+    expect(checkCommands(row)).toEqual(['npm run test','npm run lint']);
+    expect(row.checks[0].declared).toBe('vitest run');
+  });
+
+  it('reports a missing tool with the action that fixes it', () => {
+    const [row]=readinessRows(withChecks);
+    expect(toolLine(row.tools)).toContain('on PATH: node');
+    expect(toolLine(row.tools)).toContain('missing: npm (install npm)');
+    expect(toolLine([])).toBe('');
+  });
+
+  it('never leaves an undeclared check looking like a pass', () => {
+    const [row]=readinessRows(report);
+    expect(row.checks).toEqual([]);
+    expect(row.tools).toEqual([]);
+    expect(checkNote(row)).toContain('No check command is declared');
+    const [broken]=readinessRows({...report,ecosystems:[{...report.ecosystems[0],manifest_problem:'invalid JSON'}]});
+    expect(checkNote(broken)).toContain('invalid JSON');
+    expect(checkNote(readinessRows(withChecks)[0])).toBe('');
   });
 });

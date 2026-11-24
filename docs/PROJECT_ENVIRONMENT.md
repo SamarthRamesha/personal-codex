@@ -28,8 +28,14 @@ read, and no symlinked manifest is followed.
 - `dev_servers` lists only scripts the project actually declares, with the port taken from that
   script (`--port 1420`, `PORT=3000`). No port is invented; an undeclared one is `null` and said
   so.
-- `executed: false` and `network: false` are part of the reply, and `advisories` repeats the
-  boundary for the reader.
+- `checks` lists the check scripts the project itself declares (`test`, `lint`, `typecheck`,
+  `type-check`, `check`, `build` for Node; Cargo's and Go's own toolchain commands elsewhere), each
+  with the exact command to copy. A project with no declared check reports an empty list and says
+  so — the report never invents a test command and never treats "not declared" as "passing".
+- `tools` names the executables the install and check commands need, whether each is on `PATH`
+  (`shutil.which`, a lookup that starts nothing), and what to install when one is missing.
+- `executed: false` and `network: false` are part of the reply, `limits.runs_no_tool` records that
+  no tool was started, and `advisories` repeats the boundary for the reader.
 
 The report is a statement about declared files, not proof that a project builds or runs. A
 dependency tree can exist and still be wrong; a dev script can be declared and still fail.

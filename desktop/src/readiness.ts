@@ -5,11 +5,14 @@
  * unrun install command as done.
  */
 export type InstallStep = {manager:string;command:string};
+export type ReadinessCheck = {script:string;declared:string;command:string};
+export type ReadinessTool = {name:string;present:boolean;install:string};
 export type ReadinessServer = {script:string;declared:string;command:string;port:number|null};
 export type ReadinessEcosystem = {
   kind:string; manifest:string|null; lockfile:string|null;
   dependencies:'installed'|'missing'|'unknown';
   evidence:string; install_steps:InstallStep[]; dev_servers:ReadinessServer[];
+  checks?:ReadinessCheck[]; tools?:ReadinessTool[];
   notes:string[]; manifest_problem?:string;
 };
 export type Readiness = {
@@ -20,7 +23,7 @@ export type Readiness = {
 export type ReadinessRow = {
   key:string; kind:string; state:ReadinessEcosystem['dependencies'];
   label:string; detail:string; commands:string[]; devServers:ReadinessServer[];
-  notes:string[];
+  checks:ReadinessCheck[]; tools:ReadinessTool[]; notes:string[]; manifestProblem?:string;
 };
 
 const LABELS:Record<ReadinessEcosystem['dependencies'],string> = {
@@ -38,7 +41,10 @@ export function readinessRows(report:Readiness|null|undefined):ReadinessRow[] {
     detail:entry.evidence,
     commands:entry.install_steps.map(step=>step.command),
     devServers:entry.dev_servers,
+    checks:entry.checks||[],
+    tools:entry.tools||[],
     notes:entry.notes,
+    manifestProblem:entry.manifest_problem,
   }));
 }
 
@@ -52,4 +58,27 @@ export function readinessEmptyText(report:Readiness|null|undefined): string {
   if (!report) return 'Reading this project’s declared environment…';
   if (!report.ecosystems.length) return report.summary;
   return '';
+}
+
+/** The project's own declared check commands, ready to copy. Nothing here runs on its own. */
+export function checkCommands(row:ReadinessRow): string[] {
+  return row.checks.map(check=>check.command);
+}
+
+/** Toolchain state as one honest line: a PATH lookup, never a run. */
+export function toolLine(tools:ReadinessTool[]): string {
+  if (!tools.length) return '';
+  const present = tools.filter(tool=>tool.present).map(tool=>tool.name);
+  const missing = tools.filter(tool=>!tool.present);
+  const parts:string[] = [];
+  if (present.length) parts.push(`on PATH: ${present.join(', ')}`);
+  if (missing.length) parts.push(`missing: ${missing.map(tool=>`${tool.name} (${tool.install})`).join(', ')}`);
+  return parts.join(' · ');
+}
+
+/** Checks the report could not read are named as unknown rather than shown as an empty pass. */
+export function checkNote(row:ReadinessRow): string {
+  if (row.checks.length) return '';
+  if (row.manifestProblem) return `The manifest could not be read (${row.manifestProblem}), so no check command is known.`;
+  return 'No check command is declared for this project; choose one yourself.';
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { api } from './api';
-import { readinessEmptyText, readinessRows, serverLabel } from './readiness';
+import { checkNote, readinessEmptyText, readinessRows, serverLabel, toolLine } from './readiness';
 import type { Readiness } from './readiness';
 
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
@@ -41,6 +41,13 @@ export function ProjectReadiness({projectId}:{projectId:string}){
           {copied===command?<Check size={13}/>:<Copy size={13}/>}<code>{command}</code>
         </button>)}
       </div>}
+      {row.tools.length>0&&<p className="muted small">{toolLine(row.tools)}</p>}
+      {row.checks.length>0&&<div className="button-row">
+        {row.checks.map(check=><button key={check.script} title={`Copy: ${check.command}`} onClick={()=>copy(check.command)}>
+          {copied===check.command?<Check size={13}/>:<Copy size={13}/>}<code>{check.command}</code>
+        </button>)}
+      </div>}
+      {row.checks.length===0&&<p className="muted small">{checkNote(row)}</p>}
       {row.devServers.length>0&&<ul className="muted small">
         {row.devServers.map(server=><li key={server.script}>{serverLabel(server)}</li>)}
       </ul>}
