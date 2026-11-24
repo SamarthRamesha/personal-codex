@@ -7,6 +7,7 @@
 - [Mac automation preview and acceptance gates](MAC_AUTOMATION.md)
 - [Mac actions](MAC_ACTIONS.md)
 - [Project-document search](PROJECT_DOCUMENT_SEARCH.md)
+- [Project environment readiness](PROJECT_ENVIRONMENT.md)
 - [Native application](../desktop/README.md)
 
 ## Understanding and developing it

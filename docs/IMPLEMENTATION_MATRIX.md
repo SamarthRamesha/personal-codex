@@ -1,11 +1,12 @@
 # Current implementation and remaining work
 
-Updated 20 November 2026. “Verified locally” does not mean deployed on JARVIS.
+Updated 24 November 2026. “Verified locally” does not mean deployed on JARVIS.
 
 | Area | Implemented and checked | Remaining |
 |---|---|---|
-| Conversations | Persistence, history search, local models, streaming/stop/retry, native connection policy | Actual private remote HTTPS acceptance |
-| Coding | Shared task lifecycle, scoped worktrees, approvals/diffs, contained Mac checks, repair, guarded delivery and explicit resume | Broader stacks, dependency/dev-server lifecycle, editor/PTY, blank-project complex generation |
+| Conversations | Persistence, history search, local models, streaming/stop/retry, native connection policy, attributed message-search hits, a context disclosure of what the next prompt can include, and rename/pin/archive/restore/soft-delete controls, an archived view and a project filter | Actual private remote HTTPS acceptance |
+| Coding | Shared task lifecycle, scoped worktrees, approvals/diffs, contained Mac checks, repair, guarded delivery and explicit resume | Broader stacks, dependency installation and dev-server process lifecycle (readiness is reported, not executed), editor/PTY, blank-project complex generation |
+| Project readiness | Read-only report of detected manifests, dependency state with its evidence, exact single install commands and declared dev scripts/ports; route, panel and 16 tests | Installing dependencies and running a dev server stay operator actions; only node/python/rust/go manifests are detected |
 | Progress | Exact bounded proposal cycles1–3, content-progress resets and context bounds | Semantic/changing-content loop detection and unified traces |
 | Memory/references | Evidence-bound memory, atomic promotion, selected-excerpt FTS5 with hashes/chunks/removal | Broader retrieval evaluation; no automatic private-data ingestion |
 | Models | Existing local models, explicit metadata unknowns, measured calls, no cloud fallback | Routing benchmarks and broader capability acceptance |
@@ -21,7 +22,7 @@ Updated 20 November 2026. “Verified locally” does not mean deployed on JARVI
 
 ## Latest verification
 
-- Backend:377 discovered, 372 passed, 5 skipped; 70.115 seconds.
+- Backend:448 discovered, 444 passed, 4 skipped; 71.2 seconds (HTTP tier enabled, 24 November).
 - Frontend:14 passed; TypeScript/Vite production build passed.
 - Native:7 Rust tests passed; optimized app build passed. New Mac opening UI visual acceptance blocked by connector failure.
 - Linux:17 checks for exact backend source282b90d, clean container stop/restart persistence; not JARVIS.

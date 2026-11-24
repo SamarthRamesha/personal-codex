@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents  # script execution puts app/ on sys.path
+    import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents
+    from app import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -289,6 +289,68 @@ def conversation_project_context(project_id, request):
     memory = memory_lines(project_id, request, [snippet["path"] for snippet in selection["files"]], limit=6, max_bytes=1200)
     return context.prompt_block(selection, memory=memory) + references
 
+
+# The bounds a project chat's prompt actually applies. They are reported, not configurable here.
+CONVERSATION_CONTEXT_LIMITS = {"memory_entries": 6, "memory_bytes": 1200,
+                               "attachment_entries": 4, "attachment_bytes": 2200,
+                               "document_reference_bytes": 1600}
+
+def conversation_context_report(conversation_id: str):
+    """What a project chat can draw on, and which bound applies to it.
+
+    Descriptive and read-only: it counts stored sources, reuses the same ranked memory selection the
+    prompt uses, and reports the prompt's own size bound. It reads no project file, calls no model
+    and returns no source text beyond attachment names the panel already shows. A count describes
+    what was available, never what a model used.
+    """
+    conversation = conversations.conversation_detail(STORE, conversation_id)
+    if not conversation:
+        return None
+    history = conversations.message_history(STORE, conversation_id)
+    complete = [m for m in history if m["role"] in ("user", "assistant")
+                and m["status"] == "complete" and str(m["content"] or "").strip()]
+    prompt = conversations.build_prompt(history)
+    report = {"conversation_id": conversation_id, "executed": False,
+              "history": {"stored": len(history), "prompt_input": len(complete),
+                          "excluded": len(history) - len(complete), "prompt_chars": len(prompt),
+                          "limits": {"messages": conversations.MAX_PROMPT_MESSAGES,
+                                     "chars": conversations.MAX_PROMPT_CHARS}},
+              "project": None, "memory": None, "attachments": None, "documents": None,
+              "notes": []}
+    project_id = conversation.get("project_id")
+    if not project_id:
+        report["notes"] = ["This conversation has no project: no project memory, documents or "
+                           "attachments are used."]
+        return report
+    project = STORE.one("SELECT id,name FROM projects WHERE id=?", (project_id,))
+    report["project"] = {"id": project_id, "name": project["name"] if project else None}
+    request = next((str(m["content"] or "") for m in reversed(complete) if m["role"] == "user"), "")
+    lines = memory_lines(project_id, request, (), limit=CONVERSATION_CONTEXT_LIMITS["memory_entries"],
+                         max_bytes=CONVERSATION_CONTEXT_LIMITS["memory_bytes"])
+    stored_memory = STORE.one("SELECT COUNT(*) AS n FROM memory WHERE project_id=?", (project_id,))["n"]
+    report["memory"] = {"stored": int(stored_memory or 0), "included": len(lines),
+                        "included_bytes": sum(len(line.encode("utf-8")) for line in lines),
+                        "limits": {"entries": CONVERSATION_CONTEXT_LIMITS["memory_entries"],
+                                   "bytes": CONVERSATION_CONTEXT_LIMITS["memory_bytes"]},
+                        "note": "Ranked against the newest user message; a stored row that fails the "
+                                "content policy is never included."}
+    attachment_rows = STORE.rows("SELECT name,mechanism FROM project_attachments WHERE project_id=? "
+                                 "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                                 (project_id, CONVERSATION_CONTEXT_LIMITS["attachment_entries"]))
+    stored_attachments = STORE.one("SELECT COUNT(*) AS n FROM project_attachments WHERE project_id=?", (project_id,))["n"]
+    report["attachments"] = {"stored": int(stored_attachments or 0), "included": len(attachment_rows),
+                             "names": [row["name"] for row in attachment_rows],
+                             "limits": {"entries": CONVERSATION_CONTEXT_LIMITS["attachment_entries"],
+                                        "bytes": CONVERSATION_CONTEXT_LIMITS["attachment_bytes"]}}
+    indexed = STORE.one("SELECT COUNT(*) AS n FROM project_documents WHERE project_id=?", (project_id,))["n"]
+    report["documents"] = {"indexed_sources": int(indexed or 0),
+                           "search_available": documents.available(STORE.conn),
+                           "limits": {"reference_bytes": CONVERSATION_CONTEXT_LIMITS["document_reference_bytes"]}}
+    report["notes"] = ["Only complete turns are prompt input; a stopped or failed partial answer is "
+                       "display-only.",
+                       "Counts describe stored and selected sources, not what a given model used.",
+                       "No project file context is read for this report."]
+    return report
 
 conversations.PROJECT_CONTEXT = conversation_project_context
 
@@ -1276,7 +1338,12 @@ class App(SimpleHTTPRequestHandler):
             try: return self.json(task_service().inspect_task(agent_route[1]))
             except LookupError as error: return self.json({"error": str(error)}, 404)
             except ExecutionDisabledError as error: return self.json({"error": str(error)}, 403)
-        if route == "/api/tasks": return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
+        if route == "/api/tasks":
+            # Read-only filter so a client can fetch one project's history without every other task.
+            project_filter = parse_qs(urlparse(self.path).query).get("project_id", [""])[0]
+            if project_filter:
+                return self.json(STORE.rows("SELECT * FROM tasks WHERE project_id=? ORDER BY updated_at DESC", (project_filter,)))
+            return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/events"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
         if route == "/api/approvals": return self.json(STORE.rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at DESC"))
@@ -1322,6 +1389,9 @@ class App(SimpleHTTPRequestHandler):
             parts=route.split("/")
             if len(parts)==4:
                 report=conversations.conversation_report(STORE,parts[3])
+                return self.json(report) if report else self.json({"error":"conversation not found"},404)
+            if len(parts)==5 and parts[4]=="context":
+                report=conversation_context_report(parts[3])
                 return self.json(report) if report else self.json({"error":"conversation not found"},404)
             if len(parts)==7 and parts[4]=="messages" and parts[6]=="stream":
                 return self.stream_message(parts[3],parts[5],self.last_event_id())
@@ -1387,6 +1457,13 @@ class App(SimpleHTTPRequestHandler):
             if name not in inventory: return self.json({"error":"file is not in the permitted project inventory"},403)
             try: return self.json(tools.read_file(root,name,64_000))
             except (ValueError,OSError): return self.json({"error":"file unavailable"},404)
+        if route.startswith("/api/projects/") and route.endswith("/environment"):
+            # Read-only: this reports declared manifests, local dependency markers and the exact
+            # install/run commands. It installs nothing and starts no server.
+            pid=route.split("/")[3]; project=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
+            if not project: return self.json({"error":"project not found"},404)
+            try: return self.json(environment.inspect(safe_project_path(project["path"])))
+            except (ValueError,OSError) as error: return self.json({"error":str(error)},400)
         if route.startswith("/api/projects/") and route.endswith("/summary"):
             pid=route.split("/")[3]; p=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             return self.json(repository_summary(Path(p["path"]))) if p else self.json({"error":"not found"},404)
@@ -2062,7 +2139,11 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/tasks/") and route.endswith("/cancel"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
-                if task["status"]=="completed": return self.json({"error":"completed task cannot be cancelled"},409)
+                # Cancelling a delivered task would overwrite the only durable record that it was delivered.
+                if task["status"] in ("completed","complete"):
+                    return self.json({"error":f"a {task['status']} task cannot be cancelled; the delivered work stands"},409)
+                if task["status"]=="cancelled":
+                    return self.json({"error":"this task is already cancelled"},409)
                 return self.json(cancel_task(tid, str(data.get("reason") or "task cancelled by user")),202)
             if route.startswith("/api/tasks/") and route.endswith("/agent/budget/reset"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
