@@ -287,3 +287,48 @@ control and per-project chat filtering, then the approved dependency-installatio
 lifecycle. Verify with the same commands and refresh docs/AGENT_COORDINATION_FREEBUFF.md before
 handing off. Do not claim macOS, native, model or JARVIS acceptance.
 ```
+
+## Sprint 2 — 24 November 2026 (Freebuff, five checkpoints)
+
+This section supersedes the counts in the handoff above. Branch `personal-codex/freebuff-implementation`,
+published at **`a79bdee`**; `main` untouched at `da08db1` (R-36 still open); Codex's branch untouched.
+
+| Commit | What it added |
+|---|---|
+| `ec8a532` | Per-project task list in the workspace: newest tasks first, attention first, backend status label, tested explanation for statuses that need a person, click to open the task. `GET /api/tasks?project_id=…` read-only filter (unknown id → `200 []`). |
+| `c1363fd` | Readiness report now carries the project's declared check scripts with copyable commands and a `PATH` lookup per required executable (`limits.runs_no_tool: true`). An undeclared check stays "no check command is declared" instead of looking like a pass. |
+| `216b125` | A task needing the owner leads with its explanation instead of a bare pill; Activity timestamps each event and states how many older events are hidden. |
+| `277e3ef` | `POST /api/tasks/{id}/cancel` answers 409 for `completed`/`complete` (a delivered task's status can no longer be overwritten) and for an already cancelled task; the desktop hides Cancel for those states. |
+| `a79bdee` | Arrow keys walk the visible conversation list from the search box; stops at both ends; never lands on a conversation the filter hides. |
+
+### Verification actually run here
+
+| Check | Result |
+|---|---|
+| `PERSONAL_CODEX_HTTP_TESTS=1 PERSONAL_CODEX_DATA=/tmp/pcC python3 -m unittest discover -s tests` | **454 discovered, OK (4 skipped)**, 70.6 s — after `c1363fd` |
+| `python3 -m unittest tests.test_server` (HTTP tier) | 21 tests OK — after `277e3ef` |
+| `python3 -m unittest tests.test_environment` | 21 tests, OK, 2 HTTP-tier skipped |
+| `npm test` in `desktop` | **95 passed (18 files)** — after `a79bdee` |
+| `npm run build` (tsc -b + Vite) | passed after every commit |
+
+### Hosted CI
+
+Runs #107–#110 were **cancelled by the workflow's own `cancel-in-progress` group**, because each was
+superseded by the next push within its run time. They are not failures and prove nothing.
+**Run #111 (`a79bdee`) completed successfully in 4 m 3 s**, and its tree contains all five commits, so
+backend, frontend and the macOS `native` job all passed on the full sprint. Every later commit needs
+its own run.
+
+### Not verified here
+
+The desktop panel was never rendered in this workspace (no browser, no macOS): the task list, the
+readiness additions, the notice and the Activity timestamps are covered by unit tests and static
+rendering only. Native GUI acceptance remains outstanding. Job log text still needs authentication
+from this host; job status badges and run conclusions are what was read.
+
+### Next highest-value work
+
+1. Per-project task visibility inside the archived/older conversation view (the list is bounded at 20).
+2. A reviewed dependency-install / dev-server action proposal, using the existing approval machinery.
+3. Round-level resume: today an interrupted round needs a new proposal; say so in the round view.
+4. Codex review of the five commits above before any merge consideration.
