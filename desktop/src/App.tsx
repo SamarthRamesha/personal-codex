@@ -30,7 +30,8 @@ import { MacActions } from './MacActions';
 import { MacAutomation } from './MacAutomation';
 
 type Detail={conversation:Conversation&{messages:Message[];tasks:Task[]};active_messages:string[]};
-type RoundReport={rounds:{id:string;round_number:number;status:string;summary?:string;error?:string;test_result?:TestResult}[];budget?:unknown;status:string};
+type RoundReport={rounds:{id:string;round_number:number;status:string;summary?:string;error?:string;test_result?:TestResult;
+  ledger?:{id:string;tool:string;status:string}[]}[];budget?:unknown;status:string};
 type AgentChanges={digest:string;can_apply:boolean;files:{path:string;diff:string[];truncated:boolean}[]};
 type Delivery={status:string;path:string;workspace:string;files:string[];markdown:string;commands:string};
 type AgentRun = {status:string;full_task?:boolean;delivery?:Delivery|null;attempt?:number;max_rounds?:number;summary?:string;workspace?:string;files?:string[];
@@ -243,7 +244,37 @@ export default function App(){
     // Loading persisted chunks and then resuming after their last sequence prevents replay duplication.
     await loadChat(cid);await refresh();
   });}finally{sendPending.current=false;}}
-  async function taskAction(suffix:string,body:unknown={}){await act('Working',async()=>{await api(`/api/tasks/${taskId}/${suffix}`,'POST',body);await loadTask(taskId);await refresh();});}
+  async function taskAction(suffix:string,body:unknown={}){
+    const id=taskId,base=`/api/tasks/${id}`;
+    const executing=suffix==='agent/round/execute';
+    await act(executing?'Executing approved round':'Working',async()=>{
+      let finished=false,checking=false;
+      const poll=executing?window.setInterval(async()=>{
+        if(finished||checking||taskRef.current!==id)return;
+        checking=true;
+        try {
+          const rounds=await api<RoundReport>(`${base}/agent/rounds`);
+          if(!finished&&taskRef.current===id)
+            setTaskView(previous=>previous?.id===id?{...previous,rounds}:previous);
+        } catch {
+          // The final refresh reports the request outcome if a progress read fails.
+        } finally {
+          checking=false;
+        }
+      },850):undefined;
+      try {
+        await api(`${base}/${suffix}`,'POST',body);
+      } catch(error) {
+        finished=true;
+        await loadTask(id).catch(()=>{});
+        throw error;
+      } finally {
+        finished=true;
+        window.clearInterval(poll);
+      }
+      await Promise.all([loadTask(id),refresh()]);
+    });
+  }
   function createProjectTask(){
     const prompt=taskPrompt.trim();
     if(!projectId||!prompt)return;
@@ -398,7 +429,14 @@ export default function App(){
             {diff&&<section className="diff-review"><h3>Proposed changes<span className="pill">{diff.stale?'STALE':'Ready for review'}</span></h3><code>{diff.digest}</code>{(diff.files||diff.patches||[]).map((p,i)=><div key={i}><h4>{p.path}</h4><pre>{p.diff.join("\n")}</pre></div>)}</section>}
             {visibleApprovals.length>0&&<section className="approvals"><h3><ShieldCheck size={15}/>Waiting for your approval</h3><p className="muted small">Each approval authorizes exactly one action and lapses ten minutes after you approve it.</p>{visibleApprovals.map(a=><div className="approval" key={a.id}><span className="pill">{a.kind}</span><pre>{a.detail}</pre><div className="button-row"><button disabled={!!busy} className="primary" onClick={()=>act('Approving',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'approved'});await loadTask(taskId);})}>Approve exact request</button><button disabled={!!busy} onClick={()=>act('Rejecting',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'rejected'});await loadTask(taskId);})}>Reject</button></div></div>)}</section>}
             {diff&&<button disabled={!!busy||!executionEnabled||diff.stale||!diff.digest_valid} onClick={()=>taskAction('agent/round/execute')}>Execute approved proposal</button>}
-            {rounds?.rounds.map(r=><section className="round" key={r.id}><h3>Round {r.round_number}<span className="pill">{r.status}</span></h3><p>{r.summary}</p>{r.error&&<p className="message-error">{r.error}</p>}{r.test_result&&<RoundEvidenceView result={r.test_result}/>}</section>)}
+            {rounds?.rounds.map(r=><section className="round" key={r.id}>
+              <h3>Round {r.round_number}<span className="pill" aria-live="polite">{r.status}</span></h3>
+              <p>{r.summary}</p>
+              {r.ledger&&r.ledger.length>0&&<ol aria-label="Round operations">{r.ledger.map(operation=>
+                <li key={operation.id}>{operation.tool.replaceAll('_',' ')} · {operation.status==='ok'?'finished':operation.status}</li>)}</ol>}
+              {r.error&&<p className="message-error">{r.error}</p>}
+              {r.test_result&&<RoundEvidenceView result={r.test_result}/>}
+            </section>)}
             {currentTask&&taskStatus==='completed'&&<TaskDelivery workspace={currentTask.workspace}
               disabled={!!busy||!executionEnabled||agentActive} act={taskAction}/>}
             <section className="terminal-panel"><h3><Terminal size={15}/>Approved command runner</h3><p className="muted small">Runs an exact approved command in this task’s isolated worktree.</p><input aria-label="Test command" value={command} onChange={e=>setCommand(e.target.value)}/><div className="button-row"><button disabled={!!busy||!workspaceReady||!executionEnabled||agentActive} onClick={()=>taskAction('execution-request',{command})}>Request command approval</button><button disabled={!!busy||!workspaceReady||!executionEnabled||agentActive} onClick={()=>taskAction('execute',{command,timeout:120})}>Run approved command</button></div>{executions.map((e,i)=><div key={i}><span className="pill">Exit {e.exit_code}</span><pre>{e.output}</pre></div>)}</section>
