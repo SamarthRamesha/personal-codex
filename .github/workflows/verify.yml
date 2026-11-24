@@ -73,6 +73,8 @@ jobs:
         run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml -j 2
       - name: Disposable calculator task with scripted inference
         run: python3 scripts/full_task_acceptance.py --output "$RUNNER_TEMP/personal-codex-calculator"
+      - name: Stop and resume a disposable task within its original scope
+        run: python3 scripts/full_task_acceptance.py --cancel --output "$RUNNER_TEMP/personal-codex-cancel-resume"
       - name: Build and verify the native application bundle
         working-directory: desktop
         env:
@@ -95,5 +97,6 @@ jobs:
           path: |
             ${{ runner.temp }}/Personal-Codex-macOS.zip
             ${{ runner.temp }}/personal-codex-calculator/evidence.json
+            ${{ runner.temp }}/personal-codex-cancel-resume/evidence.json
           if-no-files-found: error
           retention-days: 14
