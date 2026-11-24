@@ -93,3 +93,12 @@ Phase 1 is a mandatory acceptance gate and it is blocked, so phases 2–5 do not
    stage, so the fix does not require guessing.
 
 Nothing above needs a token, permission change or TCC edit from this session, and none was made.
+
+
+## 24 November integration findings
+
+| ID | Severity | Component | Evidence | Mitigation | Verification method | Status | Remaining limitation |
+|---|---|---|---|---|---|---|---|
+| R-36 | High | Cancellation of legacy proposal execution | `/agent/execute` passed stop only to the command runner; three negative controls observed an initial or subsequent file mutation after task cancellation/shutdown | Pass the same stop callback to the operation loop; preserve completed edits and record cancellation without replay | `tests.test_proposal_cancellation`: task cancelled before execution, real concurrent cancellation between writes, shutdown between writes; three existing proposal lifecycle checks also pass | **Verified resolved** on the Mac synthetic HTTP path | An already-running atomic filesystem operation may finish; cancellation acts before the next operation. This is not target-server acceptance. |
+
+Current host and exact baseline/skip evidence are in [Codex coordination](AGENT_COORDINATION_CODEX.md). Older Linux-only environment statements are historical.

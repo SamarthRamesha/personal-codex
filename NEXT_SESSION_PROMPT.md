@@ -1,5 +1,10 @@
 # Personal Codex: current continuation
 
+## 24 November technical-lead update
+
+The current integration work is on `personal-codex/codex-integration`, based on verified f6224e2, in an isolated macOS worktree. Read `docs/AGENT_COORDINATION_CODEX.md` first. The Linux-only host and symbolic-ref publishing descriptions below are historical; do not apply them to this Mac. Normal Git publication of the integration branch is authorized; stable main and Freebuff’s branch remain untouched. Independent security, recovery and integration work is authorized while native acceptance remains open. The installed preview must stay unchanged.
+
+
 Updated 22 November 2026. Continue the same active mission on `personal-codex/mac-automation`.
 Stable source `64189ef30177922481d17da242d11a90baf3c599` (`main` and
 `personal-codex/stabilization`) is untouched and must stay that way until acceptance justifies more.

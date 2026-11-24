@@ -565,3 +565,8 @@ deleted or repaired.
 Hosted CI was last read green at `f26ae74` (run #50). Runs #44 and #45 failed with no retrievable
 failing job from this host, and the runs for the last three commits were not yet listed; that is
 recorded as unverified rather than green.
+
+
+## 24 November 2026 — Codex integration baseline and cancellation boundary
+
+Resumed in a separate macOS worktree at f6224e2, with green hosted baseline. Mac baseline: 422 backend tests, five named platform/optional skips; 41 frontend tests/build; 42 helper checks; 13 Rust tests, one optional model test ignored. No approved preview replacement. Reproduced legacy proposal mutations after cancellation using three disposable HTTP negative controls, then corrected per-operation stop propagation and cancelled terminal state. All six focused tests pass. The first draft reproduction expected cancellation HTTP200 instead of the existing202; that fixture assertion was corrected before collecting all three negative controls. Added integration-branch CI trigger and Codex coordination record. No new Freebuff batch is published on its assigned branch yet.

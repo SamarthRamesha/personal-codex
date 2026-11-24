@@ -2098,12 +2098,16 @@ class App(SimpleHTTPRequestHandler):
                 permitted=approval_permits(task["project_id"],"modify",detail)
                 if not permitted: return self.json({"error":"approved agent proposal for this exact workspace and digest required"},403)
                 if STORE.claim_execution(proposal["id"])!="ok": return self.json({"error":"Proposal is already being executed"},409)
-                outcome=tools.execute_operations(safe_workspace_path(workspace), operations, runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=lambda: STOPPING.is_set() or bool(cancellation_row(tid))))
-                final="executed" if outcome["ok"] else "failed"
+                def stop_check():
+                    return STOPPING.is_set() or bool(cancellation_row(tid))
+                outcome=tools.execute_operations(safe_workspace_path(workspace), operations,
+                    runner=lambda command,timeout: execute_in_workspace(workspace["path"],command,timeout,stop_check=stop_check),
+                    stop_check=stop_check)
+                final="cancelled" if outcome["cancelled"] else "executed" if outcome["ok"] else "failed"
                 STORE.write("UPDATE proposals SET status=?, results=? WHERE id=?",(final,json.dumps(outcome["operations"]),proposal["id"]))
                 for entry in outcome["operations"]:
                     task_event(tid,"executor","info" if entry["status"]=="ok" else "warning",f"Tool {entry['tool']} #{entry['index']+1}: {entry['status']}{(' — '+entry['error']) if entry.get('error') else ''}.")
-                return self.json({"proposal_id":proposal["id"],"status":final,"ok":outcome["ok"],"results":outcome["operations"]})
+                return self.json({"proposal_id":proposal["id"],"status":final,"ok":outcome["ok"],"cancelled":outcome["cancelled"],"results":outcome["operations"]})
             if route.startswith("/api/tasks/") and route.endswith("/provider-request"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
