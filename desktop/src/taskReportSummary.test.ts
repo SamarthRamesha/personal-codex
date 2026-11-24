@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
-import {summarizeReport} from './taskReport';
-import type {TaskReport} from './taskReport';
+import {summarizeReport} from './taskReportSummary';
+import type {TaskReport} from './taskReportSummary';
 
 const base:TaskReport={task_id:'t',status:'needs-another-round',rounds:2,changed_files:['a.py'],
   limits:{max_rounds:3,rounds_used:2,next_round:3,remaining:1,max_task_seconds:1800,elapsed_seconds:60},

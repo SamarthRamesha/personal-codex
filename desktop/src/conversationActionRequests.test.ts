@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {archiveRequest,deleteRequest,listPath,pinRequest,selectionAfterDelete} from './conversationActions';
+import {archiveRequest,deleteRequest,listPath,pinRequest,selectionAfterDelete} from './conversationActionRequests';
 
 describe('conversation actions',()=>{
   it('pins and unpins by flipping the stored flag',()=>{

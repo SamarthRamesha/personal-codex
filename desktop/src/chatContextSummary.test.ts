@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
-import {contextSummary} from './chatContext';
-import type {ChatContextReport} from './chatContext';
+import {contextSummary} from './chatContextSummary';
+import type {ChatContextReport} from './chatContextSummary';
 
 const report:ChatContextReport={
   conversation_id:'c1',executed:false,

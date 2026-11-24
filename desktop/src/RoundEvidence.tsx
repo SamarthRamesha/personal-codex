@@ -1,5 +1,5 @@
-import { roundEvidence } from './roundEvidence';
-import type { TestResult } from './roundEvidence';
+import { roundEvidence } from './roundEvidenceSummary';
+import type { TestResult } from './roundEvidenceSummary';
 
 /** A round's evidence: what ran, whether it passed, what changed, and the bounded output. */
 export function RoundEvidenceView({result}:{result:TestResult|null|undefined}){

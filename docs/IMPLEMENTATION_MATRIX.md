@@ -22,7 +22,7 @@ Updated 24 November 2026. “Verified locally” does not mean deployed on JARVI
 
 ## Latest verification
 
-- Backend:445 discovered, 441 passed, 4 skipped; 72.3 seconds (HTTP tier enabled, 24 November).
+- Backend:448 discovered, 444 passed, 4 skipped; 71.2 seconds (HTTP tier enabled, 24 November).
 - Frontend:14 passed; TypeScript/Vite production build passed.
 - Native:7 Rust tests passed; optimized app build passed. New Mac opening UI visual acceptance blocked by connector failure.
 - Linux:17 checks for exact backend source282b90d, clean container stop/restart persistence; not JARVIS.

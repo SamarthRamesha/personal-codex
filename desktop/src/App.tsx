@@ -17,8 +17,8 @@ import { TaskReportPanel } from './TaskReport';
 import { ConversationHits } from './ConversationHits';
 import { ChatContext } from './ChatContext';
 import { ConversationActions } from './ConversationActions';
-import { listPath, selectionAfterDelete } from './conversationActions';
-import type { TestResult } from './roundEvidence';
+import { listPath, selectionAfterDelete } from './conversationActionRequests';
+import type { TestResult } from './roundEvidenceSummary';
 import { MacActions } from './MacActions';
 import { MacAutomation } from './MacAutomation';
 

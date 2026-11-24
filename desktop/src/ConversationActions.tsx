@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Archive, Pin, Trash2 } from 'lucide-react';
 import { api } from './api';
-import { archiveRequest, deleteRequest, pinRequest } from './conversationActions';
-import type { ChatRequest } from './conversationActions';
+import { archiveRequest, deleteRequest, pinRequest } from './conversationActionRequests';
+import type { ChatRequest } from './conversationActionRequests';
 
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 

@@ -108,11 +108,32 @@ Known limit: sending from a conversation opened through the archived view refres
 the active list (the conversation stays open). The list refresh used after each action is separate
 from the send path, which was left alone to avoid restarting streams.
 
+### 7. Native CI casing failure and its fix
+
+The hosted native job failed at "Prepare embedded frontend": `tsc -b` reported TS1261/TS1149
+("file name differs from already included file name only in casing") and then missing exports. The
+cause was mine, from checkpoints 2–6: four pairs of files whose names differed only in case —
+`RoundEvidence.tsx`/`roundEvidence.ts`, `TaskReport.tsx`/`taskReport.ts`,
+`ChatContext.tsx`/`chatContext.ts`, `ConversationActions.tsx`/`conversationActions.ts`. A
+case-insensitive checkout cannot hold both, so the helper module and its importer disagree on the
+Mac runner.
+
+Fix: the four helper modules and their tests were renamed to unambiguous names, with the components
+unchanged — `roundEvidenceSummary.ts`, `taskReportSummary.ts`, `chatContextSummary.ts`,
+`conversationActionRequests.ts`. Imports were updated; the Linux build stayed green at every step,
+which is exactly why the Linux-only checks had not caught it.
+
+Regression check: `tests/test_frontend_filenames.py` (3 tests, in the backend job) fails when two
+files in `desktop/src` or `desktop/src-tauri` have stems that differ only in case (the same stem with
+different extensions, such as `icon.png`/`icon.icns`, is allowed), and when a relative import does not
+resolve to exactly one real file. A deliberately re-created collision (`SearchHits.ts` beside
+`searchHits.ts`) was used as a negative control: the check failed, and passed again once removed.
+
 ## Verification actually run (all on this Linux workspace)
 
 | Check | Result |
 |---|---|
-| `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 445 discovered, 441 passed, 4 skipped, 72.3 s |
+| `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 448 discovered, 444 passed, 4 skipped, 72.3 s |
 | `tests.test_environment` alone | 16 passed |
 | `npm test` in `desktop` | 71 passed (16 files) |
 | `npm run build` in `desktop` | `tsc -b` + Vite build passed |
@@ -181,7 +202,7 @@ across seven new test files.
 
 | Command | Result |
 |---|---|
-| `PERSONAL_CODEX_HTTP_TESTS=1 PERSONAL_CODEX_DATA=/tmp/pcfinal python3 -m unittest discover -s tests` | **445 discovered, 441 passed, 4 skipped**, 70.7 s |
+| `PERSONAL_CODEX_HTTP_TESTS=1 PERSONAL_CODEX_DATA=/tmp/pcfinal python3 -m unittest discover -s tests` | **448 discovered, 444 passed, 4 skipped**, 71.2 s |
 | `npm test` (desktop) | **71 passed**, 16 files |
 | `npm run build` (desktop) | `tsc -b` + Vite build passed |
 | `yaml.safe_load(.github/workflows/verify.yml)` | three jobs, all steps present |

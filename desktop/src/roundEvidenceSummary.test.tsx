@@ -1,7 +1,7 @@
 import {renderToStaticMarkup} from 'react-dom/server';
 import {describe,expect,it} from 'vitest';
 import {RoundEvidenceView} from './RoundEvidence';
-import {roundEvidence} from './roundEvidence';
+import {roundEvidence} from './roundEvidenceSummary';
 
 describe('round evidence',()=>{
   it('calls a clean exit a pass and shows what changed',()=>{

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import { summarizeReport } from './taskReport';
-import type { TaskReport } from './taskReport';
+import { summarizeReport } from './taskReportSummary';
+import type { TaskReport } from './taskReportSummary';
 
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 

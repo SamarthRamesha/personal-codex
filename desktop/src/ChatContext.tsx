@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import { contextSummary } from './chatContext';
-import type { ChatContextReport } from './chatContext';
+import { contextSummary } from './chatContextSummary';
+import type { ChatContextReport } from './chatContextSummary';
 
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 
