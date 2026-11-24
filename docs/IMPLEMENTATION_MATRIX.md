@@ -4,7 +4,7 @@ Updated 24 November 2026. “Verified locally” does not mean deployed on JARVI
 
 | Area | Implemented and checked | Remaining |
 |---|---|---|
-| Conversations | Persistence, history search, local models, streaming/stop/retry, native connection policy, attributed message-search hits and a context disclosure of what the next prompt can include | Actual private remote HTTPS acceptance |
+| Conversations | Persistence, history search, local models, streaming/stop/retry, native connection policy, attributed message-search hits, a context disclosure of what the next prompt can include, and pin/archive/restore/soft-delete controls with an archived view | Actual private remote HTTPS acceptance |
 | Coding | Shared task lifecycle, scoped worktrees, approvals/diffs, contained Mac checks, repair, guarded delivery and explicit resume | Broader stacks, dependency installation and dev-server process lifecycle (readiness is reported, not executed), editor/PTY, blank-project complex generation |
 | Project readiness | Read-only report of detected manifests, dependency state with its evidence, exact single install commands and declared dev scripts/ports; route, panel and 16 tests | Installing dependencies and running a dev server stay operator actions; only node/python/rust/go manifests are detected |
 | Progress | Exact bounded proposal cycles1–3, content-progress resets and context bounds | Semantic/changing-content loop detection and unified traces |

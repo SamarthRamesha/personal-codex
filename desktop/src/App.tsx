@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { listen } from '@tauri-apps/api/event';
 import { NewProjectDialog } from './NewProjectDialog';
 import { FullTaskDialog } from './FullTaskDialog';
-import { ArrowUp, ChevronDown, ChevronRight, Circle, Code2, Copy, FileCode2, Folder, GitBranch, LayoutPanelLeft, MessageSquare, Plus, Paperclip, RefreshCw, Search, Settings2, ShieldCheck, Square, Terminal, Unplug, X } from 'lucide-react';
+import { ArrowUp, Archive, ChevronDown, ChevronRight, Circle, Code2, Copy, FileCode2, Folder, GitBranch, LayoutPanelLeft, MessageSquare, Plus, Paperclip, RefreshCw, Search, Settings2, ShieldCheck, Square, Terminal, Unplug, X } from 'lucide-react';
 import { api, attachProjectFile, openFullDestination, connect, disconnect, native, offlineSession, OFFLINE_BACKEND, stream } from './api';
 import { messageMeta, messageState, regenerateLabel } from './messageState';
 import type { Approval, Attachment, Conversation, Diff, InferenceMetrics, Message, ModelDescriptor, Project, Provider, Task } from './api';
@@ -16,6 +16,8 @@ import { RoundEvidenceView } from './RoundEvidence';
 import { TaskReportPanel } from './TaskReport';
 import { ConversationHits } from './ConversationHits';
 import { ChatContext } from './ChatContext';
+import { ConversationActions } from './ConversationActions';
+import { listPath, selectionAfterDelete } from './conversationActions';
 import type { TestResult } from './roundEvidence';
 import { MacActions } from './MacActions';
 import { MacAutomation } from './MacAutomation';
@@ -39,6 +41,7 @@ export default function App(){
   const [settings,setSettings]=useState(true),[url,setUrl]=useState(localStorage.getItem('pc.backend')||'http://127.0.0.1:8787');
   const [token,setToken]=useState(''),[busy,setBusy]=useState(''),[error,setError]=useState('');
   const [chats,setChats]=useState<Conversation[]>([]),[projects,setProjects]=useState<Project[]>([]),[providers,setProviders]=useState<Provider[]>([]);
+  const [archivedView,setArchivedView]=useState(false);
   const [chatId,setChatId]=useState(''),[detail,setDetail]=useState<Detail|null>(null),[search,setSearch]=useState('');
   const [providerId,setProviderId]=useState(''),[model,setModel]=useState(''),[models,setModels]=useState<string[]>([]),[projectId,setProjectId]=useState('');
   const [modelCatalog,setModelCatalog]=useState<ModelDescriptor[]>([]),[configuredContext,setConfiguredContext]=useState<number|null>(null);
@@ -83,9 +86,9 @@ export default function App(){
   },[]);
   useEffect(()=>{
     if(!connected)return;
-    const timer=setTimeout(()=>{api<{conversations:Conversation[]}>(`/api/conversations?q=${encodeURIComponent(search)}`).then(r=>setChats(r.conversations)).catch(e=>setError(errorText(e)));},220);
+    const timer=setTimeout(()=>{api<{conversations:Conversation[]}>(listPath(archivedView,search)).then(r=>setChats(r.conversations)).catch(e=>setError(errorText(e)));},220);
     return()=>clearTimeout(timer);
-  },[search,connected]);
+  },[search,connected,archivedView]);
   useEffect(()=>{
     if(!native||!offlineLaunch)return;
     const subscription=listen('personal-codex-attachment-drop',()=>setDropReady(true));
@@ -221,6 +224,10 @@ export default function App(){
     });
   }
   function resetChat(){setChatId('');chatRef.current='';setDetail(null);setDraft('');setPane('chat');}
+  async function afterChatAction(removedId?:string){
+    if(removedId){const next=selectionAfterDelete(removedId,chatRef.current);setChatId(next);chatRef.current=next;if(!next)setDetail(null);}
+    await act('Updating conversations',async()=>{const result=await api<{conversations:Conversation[]}>(listPath(archivedView,search));setChats(result.conversations);});
+  }
   const visibleApprovals=approvals.filter(a=>a.project_id===(selectedTask?.project_id||projectId));
 
   return <div className="app-shell">
@@ -238,8 +245,8 @@ export default function App(){
         else{setNewProject(true);setSettings(true);}
       }}><Folder size={14}/></button></div></div>
       <div className="projects">{projects.map(p=><button className={projectId===p.id?'chosen':''} key={p.id} onClick={()=>{setProjectId(p.id);setTaskId('');setRounds(null);setProposal(null);setDiff(null);setPane('work');}}><Folder size={15}/><span>{p.name}</span><ChevronRight size={13}/></button>)}{!projects.length&&<p className="muted small">Register a repository to start coding.</p>}</div>
-      <div className="section-label">CONVERSATIONS<span>{chats.length}</span></div>
-      <nav className="chat-list">{chats.map(c=><button className={chatId===c.id?'chosen':''} key={c.id} onClick={()=>{setChatId(c.id);setPane('chat');}}><MessageSquare size={15}/><span>{c.title}<small>{c.last_message?.preview||relative(c.updated_at)}</small></span></button>)}{!chats.length&&<p className="muted small empty-list">Your conversations stay on your backend.</p>}</nav>
+      <div className="section-label">{archivedView?'ARCHIVED':'CONVERSATIONS'}<div className="project-actions"><span>{chats.length}</span><button title={archivedView?'Show active conversations':'Show archived conversations'} aria-label="Toggle archived conversations" onClick={()=>setArchivedView(value=>!value)}><Archive size={13}/></button></div></div>
+      <nav className="chat-list">{chats.map(c=><div className={chatId===c.id?'chat-row chosen':'chat-row'} key={c.id}><button onClick={()=>{setChatId(c.id);setPane('chat');}}><MessageSquare size={15}/><span>{c.title}<small>{c.last_message?.preview||relative(c.updated_at)}</small></span></button>{chatId===c.id&&<ConversationActions conversation={c} archived={archivedView} onDone={afterChatAction}/>}</div>)}{!chats.length&&<p className="muted small empty-list">{archivedView?'No archived conversations.':'Your conversations stay on your backend.'}</p>}</nav>
       <div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={14}/><span>Local first. Yours to control.</span></div><button onClick={()=>setSettings(true)}><Settings2 size={16}/>Settings & connection<span className={`status-dot ${connected?'online':''}`}/></button></div>
     </aside>
     <main>

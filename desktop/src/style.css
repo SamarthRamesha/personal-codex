@@ -64,3 +64,12 @@
 .chat-context{font-size:10px;color:#85988b;max-width:min(420px,46vw)}
 .chat-context summary{cursor:pointer;font-size:10px;color:#9caea2}
 .chat-context p{margin:.3rem 0;line-height:1.6}
+
+.chat-row{display:flex;align-items:center;gap:2px;border-radius:7px;margin:2px 0}
+.chat-row>button:first-child{flex:1;min-width:0;text-align:left;align-items:flex-start;justify-content:flex-start;padding:10px;color:#a3ada6}
+.chat-row.chosen{background:#28312a}
+.chat-row.chosen>button:first-child{color:#e0e8e2}
+.chat-actions{display:flex;align-items:center;gap:1px;padding-right:4px}
+.chat-actions button{padding:4px;color:#8b9a90}
+.chat-actions button.danger{color:#e1a89a;background:#3a2a24}
+.chat-actions .message-error{font-size:9px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

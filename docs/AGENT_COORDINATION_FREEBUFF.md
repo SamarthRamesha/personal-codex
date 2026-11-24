@@ -94,13 +94,27 @@ selection, reads no project file, calls no model and states that a count is not 
 model used. `server.conversation_context_report` plus `desktop/src/chatContext.ts`; tests: 4 store,
 1 HTTP-gated and 4 frontend.
 
+### 6. Conversation management in the sidebar
+
+The backend already supported pinning, archiving, archived listing and soft delete, with tests, but
+the panel offered none of it: an old conversation could not be pinned, hidden or removed from the
+client. The selected conversation now has pin, archive/restore and a two-click delete, and the
+conversation list can switch between active and archived.
+
+Requests are built by `desktop/src/conversationActions.ts` (pure, 4 tests), so the route, method and
+body are testable; deleting the open conversation clears the view instead of leaving a dead id.
+
+Known limit: sending from a conversation opened through the archived view refreshes the sidebar to
+the active list (the conversation stays open). The list refresh used after each action is separate
+from the send path, which was left alone to avoid restarting streams.
+
 ## Verification actually run (all on this Linux workspace)
 
 | Check | Result |
 |---|---|
 | `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 445 discovered, 441 passed, 4 skipped, 72.3 s |
 | `tests.test_environment` alone | 16 passed |
-| `npm test` in `desktop` | 67 passed (15 files) |
+| `npm test` in `desktop` | 71 passed (16 files) |
 | `npm run build` in `desktop` | `tsc -b` + Vite build passed |
 | `yaml.safe_load(.github/workflows/verify.yml)` | three jobs, all steps present |
 | Rust/native | not run in this environment (no macOS toolchain here) |
