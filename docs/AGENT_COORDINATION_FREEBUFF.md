@@ -3,6 +3,17 @@
 Freebuff implementation agent owns this branch. OpenAI Codex is the technical lead, security
 reviewer and integration agent. Updated 24 November 2026.
 
+> **Incident, 24 November — `main` was fast-forwarded unintentionally.** A `cloud_git push` without
+> an explicit `branch` pushed this checkout's HEAD, which fast-forwarded `origin/main` from
+> `64189ef` to `da08db1`. Nothing was rewritten, no force-push was used and no commit was lost: it
+> is a plain fast-forward, and it carried the 62 automation-branch commits plus the two checkpoints
+> of this branch. It was still a move to `main` without Codex review, which the operating rules
+> forbid. It was **not** reverted here, because reverting would need a force-push or a revert commit
+> over 62 commits, and both are outside this agent's authority. `main` now contains this branch's
+> head, so it must be treated as the integration target Codex reviews, not as a reviewed baseline.
+> Every later push from this chat names the branch explicitly. Owner/Codex decision required:
+> accept `da08db1` as `main`, or reset `main` to `64189ef` with owner authorization.
+
 ## Branch and base
 
 | Item | Value |
@@ -46,13 +57,24 @@ declared `dev`/`serve`/`start`/`preview` scripts with a port only when the scrip
 - Docs: `docs/PROJECT_ENVIRONMENT.md`, `docs/API.md`, `docs/README.md`, `docs/IMPLEMENTATION_MATRIX.md`.
 - Tests: `tests/test_environment.py` (16: 14 unit, 2 HTTP-gated), `desktop/src/readiness.test.ts` (4).
 
+
+### 2. Composer consistency and round evidence
+
+- Selecting an installed model now also selects the provider that owns it (`desktop/src/providerChoice.ts`),
+  because offline mode seeds one provider row per allowed model and the backend refuses a model the
+  chosen provider does not own. The panel no longer offers a model that cannot be sent.
+- A coding round's `test_result` is rendered as evidence (`desktop/src/roundEvidence.ts`,
+  `RoundEvidence.tsx`): the command and exit code, the failing test lines, the changed files and the
+  bounded output. A round that ran no test is shown as **not** passing instead of as raw JSON.
+- Tests: `providerChoice.test.ts` (2), `roundEvidence.test.tsx` (4).
+
 ## Verification actually run (all on this Linux workspace)
 
 | Check | Result |
 |---|---|
 | `PERSONAL_CODEX_HTTP_TESTS=1 python3 -m unittest discover -s tests` | 440 discovered, 436 passed, 4 skipped, 70.7 s |
 | `tests.test_environment` alone | 16 passed |
-| `npm test` in `desktop` | 49 passed (10 files) |
+| `npm test` in `desktop` | 55 passed (12 files) |
 | `npm run build` in `desktop` | `tsc -b` + Vite build passed |
 | `yaml.safe_load(.github/workflows/verify.yml)` | three jobs, all steps present |
 | Rust/native | not run in this environment (no macOS toolchain here) |

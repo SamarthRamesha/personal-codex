@@ -42,3 +42,11 @@
 .readiness .button-row button{font-family:"SFMono-Regular",Consolas,monospace;gap:6px;max-width:100%;overflow-wrap:anywhere}
 .readiness .button-row code{font-size:10px;overflow-wrap:anywhere}
 .readiness ul{padding-left:1.1rem;margin:.4rem 0}
+
+.round-evidence{margin:.5rem 0;padding:.55rem .7rem;border:1px solid #36483b;border-radius:.5rem}
+.round-evidence.pass{border-color:#3f5b46;background:#1e2a22}
+.round-evidence.fail{border-color:#6a4a3e;background:#2a211d}
+.round-evidence p{margin:.2rem 0;font-size:11px}
+.round-evidence ul{margin:.3rem 0;padding-left:1.1rem;font-size:10px;color:#e1a89a}
+.round-evidence summary{cursor:pointer;font-size:10px}
+.round-evidence pre{max-height:220px;font-size:10px}
