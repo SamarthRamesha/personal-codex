@@ -1,7 +1,7 @@
 name: Verify Personal Codex
 on:
   push:
-    branches: [main, personal-codex/stabilization, personal-codex/mac-automation]
+    branches: [main, personal-codex/stabilization, personal-codex/mac-automation, personal-codex/freebuff-implementation]
   pull_request:
   workflow_dispatch:
 permissions:
