@@ -28,10 +28,16 @@ On macOS 14 or later, use Python 3.11+, Git, Node 22+, Rust/Cargo and Apple's Co
 cd desktop
 npm ci --ignore-scripts
 npm test
-npm run tauri -- build --ci --bundles app -- --locked
+APPLE_SIGNING_IDENTITY=- npm run tauri -- build --ci --bundles app -- --locked
 ```
 
 The output is under `desktop/src-tauri/target/release/bundle/macos/`. Local ad-hoc signatures are not notarized distribution. Keep the previous bundle and a verified database snapshot when changing versions; do not bypass macOS security warnings.
+
+On a successful integration run with an uploaded candidate, download the artifact matching your
+Mac's architecture (`ARM64` for the M3), unpack `Personal-Codex-macOS.zip` into a separate folder,
+and pass the extracted app to `--app`. The artifact expires after 14 days. Use the checkout matching
+the artifact's commit for the launcher and backend. The included calculator receipt uses scripted
+inference. Interactive Mac acceptance and a live-model run remain separate checks.
 
 From the repository root, launch the candidate against an isolated profile for your first test:
 

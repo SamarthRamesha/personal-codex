@@ -10,7 +10,7 @@ On the prepared Mac, `python3 scripts/offline_workstation.py` starts the loopbac
 cd desktop
 npm ci --ignore-scripts
 npm test
-npm run tauri -- build --ci --bundles app -- --locked
+APPLE_SIGNING_IDENTITY=- npm run tauri -- build --ci --bundles app -- --locked
 ```
 
 The frontend development preview (`npm run dev`) connects only through its loopback proxy and cannot verify native IPC. Local bundles are ad-hoc signed, not notarized; they and private profiles remain outside Git.

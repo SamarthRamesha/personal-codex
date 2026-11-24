@@ -75,8 +75,25 @@ jobs:
         run: python3 scripts/full_task_acceptance.py --output "$RUNNER_TEMP/personal-codex-calculator"
       - name: Build and verify the native application bundle
         working-directory: desktop
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
         run: |
           npm run tauri -- build --ci --bundles app -- --locked
           app="src-tauri/target/release/bundle/macos/Personal Codex.app"
           test -x "$app/Contents/MacOS/personal-codex"
           test -x "$app/Contents/Resources/automation/Personal Codex Automation.app/Contents/MacOS/personal-codex-automation"
+          codesign --verify --deep --strict "$app"
+      - name: Archive the integration candidate
+        if: github.ref == 'refs/heads/personal-codex/codex-integration'
+        working-directory: desktop
+        run: ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/release/bundle/macos/Personal Codex.app" "$RUNNER_TEMP/Personal-Codex-macOS.zip"
+      - name: Upload the integration candidate and synthetic task evidence
+        if: github.ref == 'refs/heads/personal-codex/codex-integration'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Personal-Codex-macOS-${{ runner.arch }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/Personal-Codex-macOS.zip
+            ${{ runner.temp }}/personal-codex-calculator/evidence.json
+          if-no-files-found: error
+          retention-days: 14
