@@ -19,11 +19,12 @@ const STATUS:Record<string,{phase:TaskPhase;label:string;detail:string}> = {
   running:{phase:'running',label:'Running',detail:'A round is executing now. Stop it before starting another.'},
   iterating:{phase:'running',label:'Iterating',detail:'A round is executing now. Stop it before starting another.'},
   'needs-another-round':{phase:'needs-action',label:'Needs another round',detail:'The last round did not finish the task. Its evidence is kept; request a fresh round.'},
+  'ready-to-complete':{phase:'needs-action',label:'Checks passed',detail:'Review the passing results and request the completion round.'},
   interrupted:{phase:'needs-action',label:'Interrupted',detail:'The backend restarted mid-task. Completed work is saved; the interrupted step is not replayed and needs a new review.'},
   'budget-exhausted':{phase:'needs-action',label:'Budget exhausted',detail:'The round budget ran out before completion. Reset the budget deliberately or split the task.'},
   complete:{phase:'complete',label:'Delivered',detail:'The reviewed work was applied. The delivery report and evidence remain available.'},
   completed:{phase:'complete',label:'Completed',detail:'The task completed. Its report and evidence remain available.'},
-  cancelled:{phase:'closed',label:'Cancelled',detail:'You stopped this task. Nothing further will run for it.'},
+  cancelled:{phase:'closed',label:'Cancelled',detail:'You stopped this task. Continuing reviewed work requires a fresh round and new approvals.'},
   failed:{phase:'failed',label:'Failed',detail:'The last attempt failed. The error and evidence are recorded for review.'},
   error:{phase:'failed',label:'Failed',detail:'The last attempt failed. The error and evidence are recorded for review.'},
 };

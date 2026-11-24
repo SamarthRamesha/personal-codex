@@ -81,7 +81,9 @@ export default function App(){
   const chatListRequest=useRef(0), chatListPath=useRef('');
   chatListPath.current=listPath(archivedView,search);
   const taskRequest=useRef(0), taskRef=useRef(taskId);
+  const paneRef=useRef(pane);
   taskRef.current=taskId;
+  paneRef.current=pane;
   const streamEpoch=useRef(0),bottom=useRef<HTMLDivElement>(null),chatRef=useRef(chatId),lastSeq=useRef<Record<string,number>>({});
   chatRef.current=chatId;
   const provider=providers.find(x=>x.id===providerId), selectedProject=projects.find(x=>x.id===projectId),active=detail?.active_messages||[];
@@ -113,10 +115,15 @@ export default function App(){
     setProjects(p);setProviders(m);setTasks(t);
     return {providers:m};
   },[refreshChats]);
-  const loadChat=useCallback(async(id:string)=>{
+  const loadChat=useCallback(async(id:string,openConversation=false)=>{
     const data=await api<Detail>(`/api/conversations/${id}`);if(chatRef.current!==id)return;
     for(const message of data.conversation.messages)lastSeq.current[message.id]=message.last_seq||0;
-    setDetail(data);setProjectId(data.conversation.project_id||'');setProviderId(data.conversation.provider_id||'');setModel(data.conversation.model||'');
+    setDetail(data);
+    if(openConversation&&paneRef.current==='chat'){
+      setProjectId(data.conversation.project_id||'');
+      setProviderId(data.conversation.provider_id||'');
+      setModel(data.conversation.model||'');
+    }
   },[]);
   const loadTask=useCallback(async(id:string)=>{
     const request=++taskRequest.current;
@@ -169,7 +176,7 @@ export default function App(){
     const timer=setInterval(poll,1800);
     return()=>{stale=true;clearInterval(timer);};
   },[offline,connected,taskId]);
-  useEffect(()=>{if(!chatId||!connected)return;setDetail(null);act('Loading',()=>loadChat(chatId));},[chatId,connected,loadChat,act]);
+  useEffect(()=>{if(!chatId||!connected)return;setDetail(null);act('Loading',()=>loadChat(chatId,true));},[chatId,connected,loadChat,act]);
   useEffect(()=>{
     if(!providerId||!connected){setModels([]);setModelCatalog([]);setConfiguredContext(null);return;}
     setModels([]);setModelCatalog([]);setConfiguredContext(null);
@@ -348,7 +355,7 @@ export default function App(){
     </aside>
     <main>
       <header className="topbar" data-tauri-drag-region><div className="breadcrumbs"><LayoutPanelLeft size={16}/><span>{selectedProject?.name||'Personal workspace'}</span><ChevronRight size={13}/><strong>{pane==='chat'?'Conversation':'Coding workspace'}</strong></div><div className="top-actions"><span className={`connection ${connected?'online':''}`}><Circle size={6} fill="currentColor"/>{health}</span><button title="Refresh saved state" disabled={!connected||!!busy} onClick={()=>act('Refreshing',async()=>{await refresh();if(chatId)await loadChat(chatId);if(taskId)await loadTask(taskId);})}><RefreshCw size={15}/></button></div></header>
-      <div className="view-tabs"><button className={pane==='chat'?'active':''} onClick={()=>setPane('chat')}><MessageSquare size={14}/>Conversation</button><button className={pane==='work'?'active':''} onClick={()=>setPane('work')}><Code2 size={15}/>Workspace{visibleApprovals.length>0&&<span className="count">{visibleApprovals.length}</span>}</button><div className="tab-spacer"/><span className="private-label"><ShieldCheck size={12}/>Private by default</span></div>
+      <div className="view-tabs"><button className={pane==='chat'?'active':''} onClick={()=>setPane('chat')}><MessageSquare size={14}/>Conversation</button><button className={pane==='work'?'active':''} onClick={()=>{if(selectedTask)setProjectId(selectedTask.project_id);setPane('work');}}><Code2 size={15}/>Workspace{visibleApprovals.length>0&&<span className="count">{visibleApprovals.length}</span>}</button><div className="tab-spacer"/><span className="private-label"><ShieldCheck size={12}/>Private by default</span></div>
       {error&&<div className="error" role="alert"><span>{error}</span><button title="Dismiss error" onClick={()=>setError('')}><X size={14}/></button></div>}
       {pane==='chat'?<>
         <div className="conversation-scroll">

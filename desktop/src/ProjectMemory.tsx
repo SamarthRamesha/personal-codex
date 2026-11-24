@@ -28,6 +28,7 @@ export function ProjectMemory({projectId}:{projectId:string}) {
   const [proposals,setProposals]=useState<Proposal[]>([]);
   const [kind,setKind]=useState('convention'),[content,setContent]=useState('');
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [removing,setRemoving]=useState('');
   const path=`/api/projects/${projectId}/memory`;
 
   async function update(mutation?:()=>Promise<unknown>){
@@ -57,19 +58,26 @@ export function ProjectMemory({projectId}:{projectId:string}) {
       {memory.memory.map(entry=><article key={entry.id}>
         <strong>{entry.kind}</strong> <small>{provenance[entry.verification]||entry.verification}</small>
         <p>{entry.content}</p>
+        {removing===entry.id?<div className="button-row">
+          <button disabled={busy} onClick={()=>void update(async()=>{
+            await api(`${path}/delete`,'POST',{id:entry.id});
+            setRemoving('');
+          })}>Confirm removal</button>
+          <button disabled={busy} onClick={()=>setRemoving('')}>Keep note</button>
+        </div>:<button disabled={busy} onClick={()=>setRemoving(entry.id)}>Remove note</button>}
       </article>)}
       {proposals.length>0&&<h3>Notes awaiting review</h3>}
       {proposals.map(proposal=>{
         const evidence=readEvidence(proposal.evidence);
         return <article key={proposal.id}>
-        <strong>{proposal.kind}</strong>
-        <p>{proposal.content}</p>
-        {evidence&&<p className="muted small">Round {evidence.round} · {evidence.tests} · exit {evidence.exit_code}</p>}
-        <div className="button-row">
-          <button disabled={busy} onClick={()=>void update(()=>api(`/api/memory-proposals/${proposal.id}/decide`,'POST',{status:'approved'}))}>Save reviewed note</button>
-          <button disabled={busy} onClick={()=>void update(()=>api(`/api/memory-proposals/${proposal.id}/decide`,'POST',{status:'rejected'}))}>Dismiss note</button>
-        </div>
-      </article>;
+          <strong>{proposal.kind}</strong>
+          <p>{proposal.content}</p>
+          {evidence&&<p className="muted small">Round {evidence.round} · {evidence.tests} · exit {evidence.exit_code}</p>}
+          <div className="button-row">
+            <button disabled={busy} onClick={()=>void update(()=>api(`/api/memory-proposals/${proposal.id}/decide`,'POST',{status:'approved'}))}>Save reviewed note</button>
+            <button disabled={busy} onClick={()=>void update(()=>api(`/api/memory-proposals/${proposal.id}/decide`,'POST',{status:'rejected'}))}>Dismiss note</button>
+          </div>
+        </article>;
       })}
       <form onSubmit={event=>{
         event.preventDefault();

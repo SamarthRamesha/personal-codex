@@ -104,3 +104,11 @@ form.task-controls button { justify-self: start; }
 .project-memory form { margin-top: 12px; }
 .project-memory textarea { min-height: 64px; padding: 8px; resize: vertical; }
 .project-memory form button { justify-self: start; }
+
+@media (max-width: 760px) {
+  .sidebar { width: clamp(130px, 31vw, 185px); }
+  .brand small { display: none; }
+  .workspace { flex-direction: column; min-height: 0; }
+  .file-tree { width: auto; max-height: 100px; border-right: 0; border-bottom: 1px solid #384a3d; }
+  .work-content { min-height: 0; padding-inline: 12px; }
+}

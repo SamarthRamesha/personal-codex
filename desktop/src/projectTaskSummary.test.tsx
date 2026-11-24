@@ -20,6 +20,7 @@ describe('project task summary',()=>{
     expect(taskPhase('iterating')).toBe('running');
     expect(taskPhase('interrupted')).toBe('needs-action');
     expect(taskPhase('needs-another-round')).toBe('needs-action');
+    expect(taskPhase('ready-to-complete')).toBe('needs-action');
     expect(taskPhase('budget-exhausted')).toBe('needs-action');
     expect(taskPhase('completed')).toBe('complete');
     expect(taskPhase('cancelled')).toBe('closed');
