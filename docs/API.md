@@ -27,6 +27,7 @@ The HTTP surface retains `/api/` routes for compatibility; `/api/connection` and
 | `POST /api/conversations/{id}/messages/{message}/stop` | Owner/session | Stop current inference; partial text remains display-only |
 | `POST /api/conversations/{id}/regenerate` | Owner/session | New explicitly requested attempt, never background invocation retry |
 | `GET/POST /api/projects`, `GET /api/projects/{id}/files`, `/file?path=…`, `/search?q=…` | Owner/session | Explicit roots and contained, bounded, secret-filtered files/search; symlinks excluded |
+| `GET /api/projects/{id}/environment` | Owner/session | Read-only readiness: detected manifests, dependency state with its evidence, and the exact single install/dev commands the owner may run. Installs, starts and downloads nothing; never reads a lockfile or `.env`; an unmarked dependency state is `unknown`. See [project environment](PROJECT_ENVIRONMENT.md) |
 | `POST /api/tasks`, `GET /api/tasks/{id}/…` | Owner/session | Plans, workspace, events, agent/rounds/report/diff, execution evidence and operation ledger |
 | `PATCH /api/approvals/{id}` | Owner/session | One atomic pending → approved/rejected decision, bound operations revalidated at execution |
 | `POST /api/tasks/{id}/workspace-request`, `/workspace`, `/execution-request`, `/execute`, `/agent/round/request`, `/agent/round/plan`, `/agent/round/execute` | Owner/session | Exact separate approvals; code proposal, patch, execution/worktree/Git operations refused in disabled profile |

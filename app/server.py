@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents  # script execution puts app/ on sys.path
+    import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents
+    from app import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -1364,6 +1364,13 @@ class App(SimpleHTTPRequestHandler):
             if name not in inventory: return self.json({"error":"file is not in the permitted project inventory"},403)
             try: return self.json(tools.read_file(root,name,64_000))
             except (ValueError,OSError): return self.json({"error":"file unavailable"},404)
+        if route.startswith("/api/projects/") and route.endswith("/environment"):
+            # Read-only: this reports declared manifests, local dependency markers and the exact
+            # install/run commands. It installs nothing and starts no server.
+            pid=route.split("/")[3]; project=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
+            if not project: return self.json({"error":"project not found"},404)
+            try: return self.json(environment.inspect(safe_project_path(project["path"])))
+            except (ValueError,OSError) as error: return self.json({"error":str(error)},400)
         if route.startswith("/api/projects/") and route.endswith("/summary"):
             pid=route.split("/")[3]; p=STORE.one("SELECT * FROM projects WHERE id=?",(pid,))
             return self.json(repository_summary(Path(p["path"]))) if p else self.json({"error":"not found"},404)
