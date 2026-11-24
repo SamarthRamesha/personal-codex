@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { taskBoardSummary, orderedTaskRows, projectTaskRows, taskHistoryHidden, taskTime, shortPrompt } from './projectTaskSummary';
 import type { TaskLike } from './projectTaskSummary';
 
@@ -9,9 +10,11 @@ import type { TaskLike } from './projectTaskSummary';
 export function ProjectTaskList({tasks,projectId,selectedId,onSelect,limit=20}:{
   tasks:TaskLike[]; projectId:string; selectedId:string; onSelect:(id:string)=>void; limit?:number;
 }){
+  const [older,setOlder]=useState(0);
   if(!projectId) return null;
-  const rows = orderedTaskRows(projectTaskRows(tasks,projectId,limit));
-  const hidden = taskHistoryHidden(tasks,projectId,limit);
+  const shown=limit+older;
+  const rows = orderedTaskRows(projectTaskRows(tasks,projectId,shown));
+  const hidden = taskHistoryHidden(tasks,projectId,shown);
   return <section className="project-tasks">
     <h3>Project tasks<span className="pill">{rows.length}{hidden>0?`+${hidden}`:''}</span></h3>
     <p className="muted small">{taskBoardSummary(rows,hidden)}</p>
@@ -24,5 +27,6 @@ export function ProjectTaskList({tasks,projectId,selectedId,onSelect,limit=20}:{
       </button>
       {row.attention&&<p className="muted small">{row.detail}</p>}
     </li>)}</ul>}
+    {hidden>0&&<button onClick={()=>setOlder(count=>count+limit)}>Show older tasks</button>}
   </section>;
 }

@@ -10,7 +10,7 @@ const base:TaskReport={task_id:'t',status:'needs-another-round',rounds:2,changed
 describe('task report summary',()=>{
   it('counts passing and failing rounds separately and never claims completion',()=>{
     const summary=summarizeReport(base);
-    expect(summary.headline).toContain('2 executed rounds');
+    expect(summary.headline).toContain('2 recorded rounds');
     expect(summary.headline).toContain('1 passing test run');
     expect(summary.headline).toContain('1 failing test run');
     expect(summary.headline).toContain('1 changed file');

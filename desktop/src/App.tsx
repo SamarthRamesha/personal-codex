@@ -10,6 +10,7 @@ import type { Approval, Attachment, Conversation, Diff, InferenceMetrics, Messag
 import { ModelDetails } from './ModelDetails';
 import { InferenceStats } from './InferenceStats';
 import { ProjectDocuments } from './ProjectDocuments';
+import { ProjectMemory } from './ProjectMemory';
 import { ProjectReadiness } from './ProjectReadiness';
 import { ProjectTaskList } from './ProjectTaskList';
 import { activityNote, activityRows } from './activityFeed';
@@ -76,6 +77,8 @@ export default function App(){
   const [agentRun,setAgentRun]=useState<AgentRun|null>(null),[confirmRun,setConfirmRun]=useState(false);
   const [agentChanges,setAgentChanges]=useState<AgentChanges|null>(null),[appliedPath,setAppliedPath]=useState('');
   const sendPending=useRef(false);
+  const chatListRequest=useRef(0), chatListPath=useRef('');
+  chatListPath.current=listPath(archivedView,search);
   const taskRequest=useRef(0), taskRef=useRef(taskId);
   taskRef.current=taskId;
   const streamEpoch=useRef(0),bottom=useRef<HTMLDivElement>(null),chatRef=useRef(chatId),lastSeq=useRef<Record<string,number>>({});
@@ -99,11 +102,16 @@ export default function App(){
     offlineSession().then(address=>{setOfflineLaunch(!!address);if(address)setOfflineAddress(address);}).catch(e=>setError(errorText(e)));
   },[]);
   const act=useCallback(async(name:string,fn:()=>Promise<void>)=>{setBusy(name);setError('');try{await fn();}catch(e){setError(errorText(e));}finally{setBusy('');}},[]);
-  const refresh=useCallback(async()=>{
-    const [c,p,m,t]=await Promise.all([api<{conversations:Conversation[]}>('/api/conversations'),api<Project[]>('/api/projects'),api<Provider[]>('/api/providers'),api<Task[]>('/api/tasks')]);
-    setChats(c.conversations);setProjects(p);setProviders(m);setTasks(t);
-    return {chats:c.conversations,providers:m};
+  const refreshChats=useCallback(async()=>{
+    const request=++chatListRequest.current, path=chatListPath.current;
+    const {conversations}=await api<{conversations:Conversation[]}>(path);
+    if(request===chatListRequest.current&&path===chatListPath.current)setChats(conversations);
   },[]);
+  const refresh=useCallback(async()=>{
+    const [p,m,t]=await Promise.all([api<Project[]>('/api/projects'),api<Provider[]>('/api/providers'),api<Task[]>('/api/tasks'),refreshChats()]);
+    setProjects(p);setProviders(m);setTasks(t);
+    return {providers:m};
+  },[refreshChats]);
   const loadChat=useCallback(async(id:string)=>{
     const data=await api<Detail>(`/api/conversations/${id}`);if(chatRef.current!==id)return;
     for(const message of data.conversation.messages)lastSeq.current[message.id]=message.last_seq||0;
@@ -127,9 +135,9 @@ export default function App(){
   },[]);
   useEffect(()=>{
     if(!connected)return;
-    const timer=setTimeout(()=>{api<{conversations:Conversation[]}>(listPath(archivedView,search)).then(r=>setChats(r.conversations)).catch(e=>setError(errorText(e)));},220);
+    const timer=setTimeout(()=>{void refreshChats().catch(e=>setError(errorText(e)));},220);
     return()=>clearTimeout(timer);
-  },[search,connected,archivedView]);
+  },[search,connected,archivedView,refreshChats]);
   useEffect(()=>{
     if(!native||!offlineLaunch)return;
     const subscription=listen('personal-codex-attachment-drop',()=>setDropReady(true));
@@ -204,6 +212,7 @@ export default function App(){
     window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);
   },[]);
   function clearSession(){
+    chatListRequest.current++;
     streamEpoch.current++;chatRef.current='';lastSeq.current={};
     setConnected(false);setOffline(false);setHealth('Disconnected');setExecutionEnabled(false);setChatId('');setTaskId('');setProjectId('');setProviderId('');setModel('');
     taskRequest.current++;taskRef.current='';
@@ -276,7 +285,7 @@ export default function App(){
   function resetChat(){setChatId('');chatRef.current='';setDetail(null);setDraft('');setPane('chat');}
   async function afterChatAction(removedId?:string){
     if(removedId){const next=selectionAfterDelete(removedId,chatRef.current);setChatId(next);chatRef.current=next;if(!next)setDetail(null);}
-    await act('Updating conversations',async()=>{const result=await api<{conversations:Conversation[]}>(listPath(archivedView,search));setChats(result.conversations);});
+    await act('Updating conversations',refreshChats);
   }
   const visibleApprovals=currentTask?.approvals||[];
   const activity=currentTask?.activity||[];
@@ -333,7 +342,8 @@ export default function App(){
             <label>Requested change<textarea value={taskPrompt} onChange={event=>setTaskPrompt(event.target.value)}/></label>
             <button className="primary" type="submit" disabled={!!busy||!taskPrompt.trim()}>Create coding task</button>
           </form>}
-          <ProjectTaskList tasks={tasks} projectId={projectId} selectedId={taskId} onSelect={id=>setTaskId(id)}/>
+          <ProjectTaskList key={projectId} tasks={tasks} projectId={projectId} selectedId={taskId} onSelect={id=>setTaskId(id)}/>
+          {connected&&projectId&&<ProjectMemory key={`memory-${projectId}`} projectId={projectId}/>}
           {offline&&connected&&projectId&&<ProjectDocuments key={projectId} projectId={projectId} attachments={attachments} onImport={()=>attachFile(false)}/>}
           {connected&&projectId&&<ProjectReadiness key={projectId} projectId={projectId}/>}
           {file&&<section className="file-preview"><div><FileCode2 size={14}/><strong>{file.path}</strong><span>Read only · {file.sha256.slice(0,12)}</span><button title="Close file" onClick={()=>setFile(null)}><X size={14}/></button></div><pre>{file.text}</pre>{file.truncated&&<p className="muted">Preview truncated.</p>}</section>}
@@ -385,8 +395,9 @@ export default function App(){
             </label>}
             <section className="task-controls"><div><p className="eyebrow">CODING TASK</p><h2>{selectedTask?.prompt}</h2><span className="pill">{rounds?.status||selectedTask?.status}</span></div><div className="button-row">{!workspaceReady&&<><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace-request')}>Request workspace</button><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace')}>Create approved workspace</button></>}{workspaceReady&&<><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/request',{provider_id:providerId})}>{taskStatus==='interrupted'?'Request fresh round':'Request round'}</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/plan',{provider_id:providerId})}>Generate proposal</button></>}</div></section>
             {proposal?.status==='pending'&&<section><h3>Proposal operations</h3><p className="muted small">{proposal.summary}</p><pre>{JSON.stringify(proposal.operations,null,2)}</pre></section>}
+            {diff&&<section className="diff-review"><h3>Proposed changes<span className="pill">{diff.stale?'STALE':'Ready for review'}</span></h3><code>{diff.digest}</code>{(diff.files||diff.patches||[]).map((p,i)=><div key={i}><h4>{p.path}</h4><pre>{p.diff.join("\n")}</pre></div>)}</section>}
             {visibleApprovals.length>0&&<section className="approvals"><h3><ShieldCheck size={15}/>Waiting for your approval</h3><p className="muted small">Each approval authorizes exactly one action and lapses ten minutes after you approve it.</p>{visibleApprovals.map(a=><div className="approval" key={a.id}><span className="pill">{a.kind}</span><pre>{a.detail}</pre><div className="button-row"><button disabled={!!busy} className="primary" onClick={()=>act('Approving',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'approved'});await loadTask(taskId);})}>Approve exact request</button><button disabled={!!busy} onClick={()=>act('Rejecting',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'rejected'});await loadTask(taskId);})}>Reject</button></div></div>)}</section>}
-            {diff&&<section className="diff-review"><h3>Proposed changes<span className="pill">{diff.stale?'STALE':'Ready for review'}</span></h3><code>{diff.digest}</code>{(diff.files||diff.patches||[]).map((p,i)=><div key={i}><h4>{p.path}</h4><pre>{p.diff.join("\n")}</pre></div>)}<button disabled={!!busy||!executionEnabled||diff.stale||!diff.digest_valid} onClick={()=>taskAction('agent/round/execute')}>Execute approved proposal</button></section>}
+            {diff&&<button disabled={!!busy||!executionEnabled||diff.stale||!diff.digest_valid} onClick={()=>taskAction('agent/round/execute')}>Execute approved proposal</button>}
             {rounds?.rounds.map(r=><section className="round" key={r.id}><h3>Round {r.round_number}<span className="pill">{r.status}</span></h3><p>{r.summary}</p>{r.error&&<p className="message-error">{r.error}</p>}{r.test_result&&<RoundEvidenceView result={r.test_result}/>}</section>)}
             {currentTask&&taskStatus==='completed'&&<TaskDelivery workspace={currentTask.workspace}
               disabled={!!busy||!executionEnabled||agentActive} act={taskAction}/>}

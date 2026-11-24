@@ -1,6 +1,7 @@
 """Agent tool-call validation, workspace containment, and approval-gated execution."""
 import json
 import os
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -423,6 +424,29 @@ class MultiRoundApiTests(RoundApiFixture):
         self.assertEqual(memory["memory"], [])
         _, events = self.call(f"/api/tasks/{self.task_id}/events")
         self.assertTrue(any("Round 2 passed" in e["message"] for e in events))
+
+        task = f"/api/tasks/{self.task_id}"
+        self.assertEqual((self.repo / "README.md").read_text(), "hi\n")
+        self.assertEqual(self.call(f"{task}/workspace-release", "POST", {})[0], 403)
+        subprocess.run(["git", "add", "--", "README.md"], cwd=self.workspace, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Reviewed task output"], cwd=self.workspace, check=True, capture_output=True)
+        status, release = self.call(f"{task}/workspace-release-request", "POST", {})
+        self.assertEqual(status, 201, release)
+        self.assertEqual(self.approve(release["id"]), 200)
+        self.assertEqual(self.call(f"{task}/workspace-release", "POST", {})[0], 200)
+        self.assertEqual(self.call(f"{task}/merge", "POST", {})[0], 403)
+        status, merge = self.call(f"{task}/merge-request", "POST", {})
+        self.assertEqual(status, 201, merge)
+        self.assertTrue(merge["can_merge"])
+        self.assertEqual(self.approve(merge["id"]), 200)
+        self.assertEqual(self.call(f"{task}/merge", "POST", {})[0], 200)
+        self.assertEqual((self.repo / "README.md").read_text(), "final\n")
+        persisted = sqlite3.connect(server.DB_PATH)
+        try:
+            self.assertEqual(persisted.execute("SELECT status FROM tasks WHERE id=?", (self.task_id,)).fetchone(), ("completed",))
+            self.assertEqual(persisted.execute("SELECT status FROM workspaces WHERE task_id=?", (self.task_id,)).fetchone(), ("merged",))
+        finally:
+            persisted.close()
 
     def test_each_round_needs_its_own_approval_and_stale_files_fail(self):
         self.responses = [json.dumps({"summary": "patch", "status": "continue", "operations": [

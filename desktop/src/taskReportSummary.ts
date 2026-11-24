@@ -36,8 +36,8 @@ export function summarizeReport(report:TaskReport|null|undefined):ReportSummary 
     tone:(test.exit_code===0?'pass':'fail') as 'pass'|'fail',
   }));
   const headline=report.rounds===0
-    ? 'No executed round has been recorded, so this task has no verified result.'
-    : `${count(report.rounds,'executed round')} · ${count(passing.length,'passing test run')} · ${count(failing.length,'failing test run')} · ${count((report.changed_files||[]).length,'changed file')}`;
+    ? 'No round has been recorded, so this task has no verified result.'
+    : `${count(report.rounds,'recorded round')} · ${count(passing.length,'passing test run')} · ${count(failing.length,'failing test run')} · ${count((report.changed_files||[]).length,'changed file')}`;
   const limits=report.limits;
   const rounds=limits?`Round ${limits.next_round} next · ${limits.remaining} of ${limits.max_rounds} remaining`:'';
   const remaining=rounds;
