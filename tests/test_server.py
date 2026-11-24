@@ -148,6 +148,22 @@ class HttpLifecycleTests(unittest.TestCase):
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
     status,deleted=self.request(f'/api/tasks/{task_id}/branch-delete','POST',{}); self.assertEqual((status,deleted['branch_deleted']),(200,True))
 
+  def test_task_list_can_be_filtered_to_one_project(self):
+    status,project=self.request('/api/projects','POST',{'name':'filter','path':str(self.repo)}); self.assertEqual(status,201)
+    ids=set()
+    for prompt in ('first filtered task','second filtered task'):
+      status,task=self.request('/api/tasks','POST',{'project_id':project['id'],'prompt':prompt}); self.assertEqual(status,201); ids.add(task['id'])
+    status,listed=self.request(f"/api/tasks?project_id={project['id']}")
+    self.assertEqual(status,200); self.assertEqual({row['id'] for row in listed},ids)
+    self.assertTrue(all(row['project_id']==project['id'] for row in listed))
+    self.assertEqual(listed[0].keys().__contains__('status'),True)
+    status,other=self.request('/api/tasks?project_id=00000000-0000-4000-8000-000000000000')
+    self.assertEqual((status,other),(200,[]))
+    status,unfiltered=self.request('/api/tasks')
+    self.assertEqual(status,200); self.assertTrue(ids.issubset({row['id'] for row in unfiltered}))
+    status,denied=self.request('/api/tasks?project_id=not-a-project')
+    self.assertEqual((status,denied),(200,[]))
+
 class ExecutionClaimTests(unittest.TestCase):
     """The execution claim shares one sqlite connection with streamed chat writes."""
 

@@ -1315,7 +1315,12 @@ class App(SimpleHTTPRequestHandler):
             try: return self.json(task_service().inspect_task(agent_route[1]))
             except LookupError as error: return self.json({"error": str(error)}, 404)
             except ExecutionDisabledError as error: return self.json({"error": str(error)}, 403)
-        if route == "/api/tasks": return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
+        if route == "/api/tasks":
+            # Read-only filter so a client can fetch one project's history without every other task.
+            project_filter = parse_qs(urlparse(self.path).query).get("project_id", [""])[0]
+            if project_filter:
+                return self.json(STORE.rows("SELECT * FROM tasks WHERE project_id=? ORDER BY updated_at DESC", (project_filter,)))
+            return self.json(STORE.rows("SELECT * FROM tasks ORDER BY updated_at DESC"))
         if route.startswith("/api/tasks/") and route.endswith("/events"):
             tid=route.split("/")[3]; return self.json(STORE.rows("SELECT * FROM events WHERE task_id=? ORDER BY created_at",(tid,)))
         if route == "/api/approvals": return self.json(STORE.rows("SELECT * FROM approvals WHERE status='pending' ORDER BY created_at DESC"))

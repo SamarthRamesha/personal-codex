@@ -77,3 +77,15 @@
 .chat-filter{margin:0 4px .3rem;display:block}
 .chat-filter select{width:100%;background:#1a211c;border:1px solid #2d3731;color:#95a79b;font-size:10px;padding:4px 6px}
 .chat-rename{width:100%;font-size:11px;padding:5px 7px;background:#1a211c;border:1px solid #46604e}
+.project-tasks .task-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.project-tasks .task-list li{border:1px solid #2f3c33;border-radius:7px;padding:2px 4px}
+.project-tasks .task-list li:has(.chosen){border-color:#4c6655}
+.project-tasks .task-list button{width:100%;justify-content:flex-start;gap:9px;padding:7px 6px;font-size:11px;text-align:left}
+.project-tasks .task-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-tasks .task-time{font-size:9px;color:#71836f;white-space:nowrap}
+.project-tasks .task-list li>p{margin:0 6px 7px;line-height:1.6}
+.project-tasks .pill.needs-action{background:#3b3427;border-color:#6a5b35;color:#e0c99a}
+.project-tasks .pill.failed{background:#3e2c28;border-color:#6a443b;color:#e6b4a5}
+.project-tasks .pill.running{background:#283a31;border-color:#3f6450;color:#a9d6b8}
+.project-tasks .pill.complete{background:#2b3a2d;border-color:#456150;color:#b8d3bd}
+.project-tasks .pill.closed,.project-tasks .pill.open{background:#2a2f2c;border-color:#3a423c;color:#9aa79d}
