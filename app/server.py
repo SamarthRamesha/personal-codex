@@ -2116,7 +2116,11 @@ class App(SimpleHTTPRequestHandler):
             if route.startswith("/api/tasks/") and route.endswith("/cancel"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
-                if task["status"]=="completed": return self.json({"error":"completed task cannot be cancelled"},409)
+                # Cancelling a delivered task would overwrite the only durable record that it was delivered.
+                if task["status"] in ("completed","complete"):
+                    return self.json({"error":f"a {task['status']} task cannot be cancelled; the delivered work stands"},409)
+                if task["status"]=="cancelled":
+                    return self.json({"error":"this task is already cancelled"},409)
                 return self.json(cancel_task(tid, str(data.get("reason") or "task cancelled by user")),202)
             if route.startswith("/api/tasks/") and route.endswith("/agent/budget/reset"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))

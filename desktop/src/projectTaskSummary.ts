@@ -47,6 +47,12 @@ export function needsOwnerAttention(status:string):boolean {
   return phase==='needs-action' || phase==='failed';
 }
 
+/** A delivered or already-stopped task has nothing to cancel; the backend refuses both with 409. */
+export function canCancelTask(status:string):boolean {
+  const phase = taskPhase(status);
+  return phase!=='complete' && phase!=='closed';
+}
+
 /** Newest first, bounded so a long history stays readable; the selected task is always kept. */
 export function projectTaskRows(tasks:TaskLike[], projectId:string, limit=12):TaskRow[] {
   if(!projectId) return [];

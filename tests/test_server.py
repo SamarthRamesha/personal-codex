@@ -148,6 +148,20 @@ class HttpLifecycleTests(unittest.TestCase):
     self.assertEqual(self.request(f"/api/approvals/{approval['id']}",'PATCH',{'status':'approved'})[0],200)
     status,deleted=self.request(f'/api/tasks/{task_id}/branch-delete','POST',{}); self.assertEqual((status,deleted['branch_deleted']),(200,True))
 
+  def test_a_delivered_task_cannot_be_cancelled_into_a_cancelled_one(self):
+    status,project=self.request('/api/projects','POST',{'name':'cancel','path':str(self.repo)}); self.assertEqual(status,201)
+    status,task=self.request('/api/tasks','POST',{'project_id':project['id'],'prompt':'deliver this'}); self.assertEqual(status,201)
+    for delivered in ('completed','complete'):
+      server.STORE.write("UPDATE tasks SET status=? WHERE id=?",(delivered,task['id']))
+      status,refused=self.request(f"/api/tasks/{task['id']}/cancel",'POST',{'reason':'cleanup'})
+      self.assertEqual(status,409); self.assertIn(delivered,refused['error'])
+      self.assertEqual(server.STORE.one("SELECT status FROM tasks WHERE id=?",(task['id'],))['status'],delivered)
+    server.STORE.write("UPDATE tasks SET status='planned' WHERE id=?",(task['id'],))
+    status,cancelled=self.request(f"/api/tasks/{task['id']}/cancel",'POST',{'reason':'stop'}); self.assertEqual(status,202)
+    self.assertEqual(cancelled['task_status'],'cancelled')
+    status,again=self.request(f"/api/tasks/{task['id']}/cancel",'POST',{'reason':'stop again'})
+    self.assertEqual(status,409); self.assertIn('already cancelled',again['error'])
+
   def test_task_list_can_be_filtered_to_one_project(self):
     status,project=self.request('/api/projects','POST',{'name':'filter','path':str(self.repo)}); self.assertEqual(status,201)
     ids=set()

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  needsOwnerAttention, orderedTaskRows, projectTaskRows, shortPrompt, taskBoardSummary, taskCounts, taskDetail,
+  canCancelTask, needsOwnerAttention, orderedTaskRows, projectTaskRows, shortPrompt, taskBoardSummary, taskCounts, taskDetail,
   taskHistoryHidden, taskLabel, taskPhase, taskTime,
 } from './projectTaskSummary';
 import { ProjectTaskList } from './ProjectTaskList';
@@ -33,6 +33,16 @@ describe('project task summary',()=>{
     expect(needsOwnerAttention('running')).toBe(false);
     expect(needsOwnerAttention('completed')).toBe(false);
     expect(needsOwnerAttention('quarantined')).toBe(false);
+  });
+
+  it('offers cancellation only while a task can still be stopped',()=>{
+    expect(canCancelTask('planned')).toBe(true);
+    expect(canCancelTask('running')).toBe(true);
+    expect(canCancelTask('needs-another-round')).toBe(true);
+    expect(canCancelTask('interrupted')).toBe(true);
+    expect(canCancelTask('completed')).toBe(false);
+    expect(canCancelTask('complete')).toBe(false);
+    expect(canCancelTask('cancelled')).toBe(false);
   });
 
   it('keeps an unrecognised status visible instead of guessing a bucket',()=>{
