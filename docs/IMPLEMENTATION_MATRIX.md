@@ -4,11 +4,11 @@ Updated 24 November 2026. “Verified locally” does not mean deployed on JARVI
 
 | Area | Implemented and checked | Remaining |
 |---|---|---|
-| Conversations | Persistence, history search, local models, streaming/stop/retry, native connection policy, attributed message-search hits, a context disclosure of what the next prompt can include, and rename/pin/archive/restore/soft-delete controls, an archived view and a project filter | Actual private remote HTTPS acceptance |
-| Coding | Shared task lifecycle, scoped worktrees, approvals/diffs, contained Mac checks, repair, guarded delivery and explicit resume | Broader stacks, dependency installation and dev-server process lifecycle (readiness is reported, not executed), editor/PTY, blank-project complex generation |
-| Project readiness | Read-only report of detected manifests, dependency state with its evidence, exact single install commands and declared dev scripts/ports; route, panel and 16 tests | Installing dependencies and running a dev server stay operator actions; only node/python/rust/go manifests are detected |
+| Conversations | Persisted history and search, streaming and stop, regeneration of the newest answer with the selected local model, context disclosure, project filter, and pin/rename/archive/restore/delete | Installed-model acceptance on the M3 and actual private remote HTTPS acceptance |
+| Coding | Project task creation, scoped worktrees and approvals, proposal diffs, live operation ledger, check output, repair, exact Git delivery after a reviewed worktree commit, and explicit full-task resume | Broader stack support, dependency installation and dev-server lifecycle, editor/PTY, complex blank-project generation, hands-on M3 acceptance |
+| Project readiness | Read-only report of manifests, dependency and toolchain state, declared checks, install commands, and declared dev scripts and ports | Detection covers Node, Python, Rust and Go. The owner runs install and dev commands. |
 | Progress | Exact bounded proposal cycles1–3, content-progress resets and context bounds | Semantic/changing-content loop detection and unified traces |
-| Memory/references | Evidence-bound memory, atomic promotion, selected-excerpt FTS5 with hashes/chunks/removal | Broader retrieval evaluation; no automatic private-data ingestion |
+| Memory/references | Project memory panel with owner notes, explicit evidence-backed promotion and removal, selected-excerpt FTS5 with hashes/chunks/removal | Broader retrieval evaluation |
 | Models | Existing local models, explicit metadata unknowns, measured calls, no cloud fallback | Routing benchmarks and broader capability acceptance |
 | ML | Real-model existing-project repair with independent tests, artifact checks and a frontend | General complete-project generation and production fairness/quality guarantees |
 | Mac opening actions | Native catalogue/Finder selection, exact expiring one-use review; tests/build pass | Visual opening acceptance, cross-app clicking/typing/reading and natural-language workflows |
@@ -22,10 +22,10 @@ Updated 24 November 2026. “Verified locally” does not mean deployed on JARVI
 
 ## Latest verification
 
-- Backend:448 discovered, 444 passed, 4 skipped; 71.2 seconds (HTTP tier enabled, 24 November).
-- Frontend:14 passed; TypeScript/Vite production build passed.
-- Native:7 Rust tests passed; optimized app build passed. New Mac opening UI visual acceptance blocked by connector failure.
-- Linux:17 checks for exact backend source282b90d, clean container stop/restart persistence; not JARVIS.
-- JARVIS read-only check: MagicDNS resolves and dashboard 80 accepts TCP;443 and 8787 refuse connections. No credentials, HTTP requests, inference, SSH commands or target changes. Remote integration is **not accepted**.
+- Linux backend HTTP tier: 466 discovered, 462 passed, four skipped.
+- Frontend: 95 passed across 18 files. TypeScript and Vite production build passed.
+- Integration CI #115 passed backend, frontend and native macOS, including scripted full-task delivery and native bundling. Interactive Mac acceptance is pending.
+- A browser test on a disposable Git project exercised review, failure, repair, delivery, and persisted results after backend restart with scripted inference.
+- JARVIS is offline per the owner and outside the Session 1 scope.
 
 See [documentation index](README.md), [ML evidence](ML_WORKFLOW_ACCEPTANCE.md), [progress guards](AGENT_PROGRESS_GUARDS.md), [document search](PROJECT_DOCUMENT_SEARCH.md) and [deployment](../DEPLOYMENT.md). Historical milestones remain in Git history and the changelog; this page supersedes their old status tables.

@@ -4,9 +4,15 @@
 
 1. Open a terminal in the repository and run `python3 scripts/offline_workstation.py`.
 2. Choose **Connect backend**. Local mode authenticates from its private owner file.
-3. Choose the installed model, create a conversation, or open **Full task execution**.
-4. For coding, choose an existing Git project or a parent folder for a new one. Describe the behavior and a concrete example. Attach only the references you want included.
-5. Review the destination and authorize the bounded task. Inspect the actual checks and delivered files. Stop saves completed work; resume is explicit.
+3. Choose an installed model and start a conversation. The latest answer can be stopped or regenerated with a different installed model.
+4. Open a Git project and choose **Create coding task** in its workspace. Request and approve the task worktree, then request and approve local inference for a proposal.
+5. Review the proposed changes and separately approve execution. Inspect the running operations, command output and test results. Request a fresh round after a failed or interrupted round.
+6. Once the task is complete, review and commit the intended files in the worktree shown under **Deliver changes**. Request release, then review and approve the exact merge into the project. Reopen the task from project history to see its saved result.
+
+**Full task execution** authorizes a bounded local run that can deliver after checks pass. Choose the
+destination and review the scope before authorizing it. This mode supports explicit resume within
+the original scope. **Project memory** shows saved notes and evidence from completed rounds before
+you decide whether to save a proposed note.
 
 The launcher picks the standard release bundle in `desktop/src-tauri/target/release/bundle/macos/` first. Use `--app` to select a specific bundle. It needs the Ollama CLI and either `qwen3.5:9b` or `qwen2.5-coder:14b` already cached. It selects the first installed model in that order unless you pass `--model`. If port 11434 or 8787 is occupied, quit the existing service through its normal controls before launching.
 

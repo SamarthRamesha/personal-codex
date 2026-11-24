@@ -1,6 +1,6 @@
 # Mac acceptance runbook (owner-run, MacBook Air M3)
 
-This closes the only remaining Phase 1 gate. Everything here runs on your Mac against **synthetic
+This verifies the interactive Mac automation gate. Everything here runs on your Mac against **synthetic
 fixtures only**; nothing in it reads a personal app, personal window, real credential or existing
 browser tab. Do the stages in order and stop at the first failure — each failure names its stage or
 check, so no guessing is needed.
@@ -33,7 +33,8 @@ A green CI run does not prove any row in the "Stages" tables below. Only your ru
 ## Preconditions
 
 1. macOS 14 or later, Xcode command line tools present (`xcode-select -p` succeeds).
-2. The branch checked out: `git switch personal-codex/mac-automation` (tip at or after `7366121`).
+2. A separate checkout of `personal-codex/codex-integration` at the candidate commit. Keep the
+   permission-approved Automation Preview in place.
 3. Embedded frontend built once: `cd desktop && npm ci --ignore-scripts && npm run build`.
 
 ## Stage 0 — build and self-test (no permissions, ~2 min)
@@ -55,7 +56,7 @@ separate path, and never overwrites the installed permission-approved app.
 cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml -j 2
 ```
 
-Expect 13 passing tests, one of them `#[ignore]` for the installed-model case.
+Expect the Rust policy tests to pass. The installed-model case is explicitly ignored.
 
 ```sh
 cd desktop/automation && ./.build/Personal\ Codex\ Automation.app/Contents/MacOS/personal-codex-automation --status

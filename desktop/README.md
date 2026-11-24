@@ -35,6 +35,8 @@ Mac actions are local named IPC commands, independent of backend authority; no r
 
 ## Current limits and evidence
 
-14frontend tests,7 Rust tests, TypeScript/Vite and optimized native build pass. Earlier chat/stream/stop/files/task/native authentication and document-search UI checks were performed on the Mac. The newest Mac opening panel's visual verification was blocked by the UI connector; app builds are not UI acceptance.
+The integration frontend passed 95 tests and the TypeScript/Vite production build. Hosted native CI
+passed the Rust and Swift policy checks and built the candidate app. The integrated candidate still
+needs hands-on Mac acceptance and a run with an installed model.
 
 JARVIS is not deployed; actual remote HTTPS/worker/reconnect/sleep/server restart and denied-client acceptance remain pending. General editor/PTY, autonomous cross-app interaction, broad browser control, notarized distribution and auto-updates remain open. [Current status](../docs/IMPLEMENTATION_MATRIX.md).

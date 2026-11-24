@@ -33,3 +33,52 @@ Direct workspace read/list/patch tools used an older filename list than context 
 ## Process-group cancellation
 
 A resistant child kept writing after its cooperative parent exited on SIGTERM. Cleanup previously returned as soon as the leader was reaped. The new bounded group check waits only the grace period and then kills surviving members. A black-box heartbeat regression failed on the previous code (10 writes versus1 after cancellation) and passes now. Six targeted cases pass with one named Linux-only /proc skip on this Mac. No owner daemon or unrelated process is signalled.
+
+## Session 1 takeover and release candidate
+
+The integration merge `a98ec00` joined `c23411b` and `4e27eb2` with both histories intact.
+The shared base was `f6224e2`. The workflow kept both branch triggers. The continuation prompt now
+targets this integration branch. This workspace ran Linux rather than the Mac described above.
+
+The merge brought project readiness, coherent provider selection, task reports and history,
+conversation context and administration, search hits, keyboard navigation, the frontend casing
+regression check, and protection against cancelling a delivered task. The earlier Codex cancellation,
+sensitive-file and process-group corrections remain in the merged history.
+
+| Checkpoint | Product change |
+|---|---|
+| `2fbcfd9` | Prefer the current standard bundle, pick a supported cached model, document isolated launch and rollback, and run scripted Mac acceptance and bundle verification in CI. |
+| `31bd1f2` | Start coding tasks from a project, scope approvals to one task, refresh the objective report, and deliver reviewed work through separate release and exact merge approvals. Git commit of the reviewed files stays an explicit operator step. |
+| `17367bd` | Read and review project memory, show older tasks when requested, and retain the archived/query view after refresh. The HTTP regression now tests reviewed delivery and durable status. |
+| `0644125` | Regenerate the newest answer with the selected model and preserve that choice in history. |
+| `77213b2` | Read the task's existing operation ledger during reviewed execution so running and finished work is visible. |
+| `ef2d459` | Verify the ad-hoc signature, set macOS 14 as the minimum, and package a 14-day architecture-labelled candidate on integration CI. |
+| `5707dc4` | Translate the exact loopback Vite origin for development mutations. Foreign origins and untrusted forwarded metadata still return 403. |
+| `e321f4f` | Keep the selected task's project when returning from chat, retain a usable narrow workspace, and require a second step to remove a memory note. |
+| `65a7503` | Run the disposable macOS stop-and-resume scenario alongside the delivery scenario and collect both receipts. |
+
+### Verification
+
+- The Linux HTTP suite discovered **466 tests, 462 passed and four skipped**. The desktop passed
+  **95 tests across 18 files**, TypeScript and the Vite production build.
+- Cloud browser, real loopback development backend and disposable calculator repository.
+  Scripted proposals produced failure (exit 1), repair (exit 0), and a completion check.
+  Reviewed worktree commit `7a6b046` and merge `2900a8c` belong to the disposable repository.
+  The source stayed unchanged until merge. The destination passed the independent calculator
+  test, and a new backend process returned `completed`, `merged` and the two test exit codes.
+  The test-only preview bridge translated cloud browser request framing for this fixture.
+- Additional browser checks covered live ledger progress during a three-second command,
+  archived search across refresh, saving an evidence-bound project note, and stop, regeneration
+  after stop, regeneration after success, model switching and continuation with scripted chat.
+  A 432-pixel browser check kept the task's project and delivery panel visible after switching
+  from a personal conversation. Note removal left another note in place.
+- Integration run [#115](https://github.com/SamarthRamesha/personal-codex/actions/runs/45425256839)
+  passed backend, frontend and macOS, including the scripted full-task demo and native app bundle.
+  Run [#114](https://github.com/SamarthRamesha/personal-codex/actions/runs/45423263718) passed the
+  earlier startup checkpoint. Run #113 was superseded by #114.
+- Run #116 passed all three jobs for `ef2d459`, verified the bundle's ad-hoc signature, and
+  published the ARM64 candidate and scripted calculator receipt. [Run #116](https://github.com/SamarthRamesha/personal-codex/actions/runs/45426866817)
+
+Hands-on M3 acceptance, the owner's installed-model run and Developer ID notarization remain
+open. The Linux full-task attempt reached the deliberate macOS process-sandbox gate. JARVIS is
+offline per the owner. R-36 remains open on `main`.

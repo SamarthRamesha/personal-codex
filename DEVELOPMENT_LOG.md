@@ -574,3 +574,17 @@ Resumed in a separate macOS worktree at f6224e2, with green hosted baseline. Mac
 24 November: aligned direct workspace tools with context credential exclusions through a shared filename policy. Negative controls showed direct reads/listing/patches bypassing context exclusions. Five new tool policy checks plus context/containment checks pass. The positive control uses ordinary secret_parser.py; its first draft asserted the wrong read response key (content instead of existing text), corrected before collecting the negative control. No actual secret or protected diagnostic was read.
 
 24 November: process-group stop no longer assumes a terminated parent means all descendants stopped. A child ignoring SIGTERM reproduced continued file writes after cancellation; cleanup now checks the entire owned group for a bounded grace period before SIGKILL. Focused group/cancellation checks pass (six cases, one /proc skip). No persistent owner processes or system settings changed.
+
+## 24 November 2026 · Codex takeover, Session 1
+
+Integrated Freebuff `4e27eb2` into Codex `c23411b` in merge `a98ec00`. The integration
+branch now builds an isolated offline candidate, creates reviewed tasks directly from projects,
+shows scoped approvals and operation progress, delivers via exact Git merge, surfaces project
+memory, keeps archive search stable and regenerates the latest answer with the selected model.
+
+A cloud browser drove a disposable calculator through failure, repair, review, release and merge.
+The destination test passed independently. Task status, delivery and exit codes survived a backend
+restart. Proposal and chat inference were scripted. The Mac CI job compiled Rust and the helper,
+ran its policy tests, exercised scripted full-task delivery and built the candidate app. See
+[the integration record](docs/AGENT_COORDINATION_CODEX.md) for exact runs and
+[the Session 2 prompt](NEXT_SESSION_PROMPT.md) for the remaining M3 and live-model gates.
