@@ -154,6 +154,7 @@ def main():
                 env={**env, "PERSONAL_CODEX_INFERENCE_POLICY": "offline", "PERSONAL_CODEX_HOST": "127.0.0.1",
                      "PERSONAL_CODEX_DATA": str(data), "PERSONAL_CODEX_TOKEN_FILE": str(token),
                      "PERSONAL_CODEX_PROJECT_ROOTS": str(projects), "PERSONAL_CODEX_OFFLINE_MODEL": model,
+                     "PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS": ",".join(name for name in network_policy.OFFLINE_MODELS if name in names),
                      "PERSONAL_CODEX_MAX_CONTEXT_BYTES": "12000", "PERSONAL_CODEX_NATIVE_GRANT": native_grant},
             )
         processes.append(backend)

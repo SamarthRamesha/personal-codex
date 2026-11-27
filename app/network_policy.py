@@ -40,7 +40,11 @@ def offline_models():
     preferred = os.getenv("PERSONAL_CODEX_OFFLINE_MODEL", OFFLINE_MODELS[0])
     if preferred not in OFFLINE_MODELS:
         raise ValueError("Offline default must be one of the two configured Qwen tags")
-    return (preferred, *(model for model in OFFLINE_MODELS if model != preferred))
+    inventory = os.getenv("PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS")
+    available = set(inventory.split(",")) if inventory is not None else set(OFFLINE_MODELS)
+    if preferred not in available:
+        raise ValueError("Offline default is missing from the launcher’s installed-model inventory")
+    return (preferred, *(model for model in OFFLINE_MODELS if model != preferred and model in available))
 
 
 def provider_allowed(provider):
@@ -50,7 +54,7 @@ def provider_allowed(provider):
                 and not any(provider.get(key) for key in ("endpoint", "secret_ref", "cloud_allowed")))
     if policy == "offline":
         return (provider.get("kind") == "ollama" and provider.get("endpoint") == OLLAMA_ENDPOINT
-                and provider.get("model") in OFFLINE_MODELS
+                and provider.get("model") in offline_models()
                 and not provider.get("secret_ref") and not provider.get("cloud_allowed"))
     return True
 

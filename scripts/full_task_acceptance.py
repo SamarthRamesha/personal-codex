@@ -13,12 +13,15 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from app import network_policy, providers
 
 
 def main():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--model", choices=network_policy.OFFLINE_MODELS,
+                        default=network_policy.OFFLINE_MODELS[0])
     parser.add_argument("--existing", action="store_true")
     parser.add_argument("--conflict", action="store_true")
     parser.add_argument("--cancel", action="store_true")
@@ -28,10 +31,18 @@ def main():
     args = parser.parse_args()
     if args.proposal_cycle and (args.live or args.repeat_proposal or args.existing or args.cancel or args.conflict):
         parser.error("--proposal-cycle is a standalone deterministic acceptance scenario")
+    if args.live:
+        try:
+            installed = providers.discover_models(network_policy.OLLAMA_ENDPOINT, timeout=5.0)
+        except providers.ProviderTransportError as error:
+            parser.error(providers.redact_provider_text(str(error)))
+        if args.model not in installed:
+            parser.error(f"{args.model} was not reported by the local Ollama installation")
     out = args.output.resolve()
     out.mkdir(mode=0o700)
     os.environ.update(PERSONAL_CODEX_DATA=str(out / "state"), PERSONAL_CODEX_PROJECT_ROOTS=str(out / "managed"),
-                      PERSONAL_CODEX_INFERENCE_POLICY="offline", PERSONAL_CODEX_NATIVE_GRANT=secrets.token_urlsafe(32))
+                      PERSONAL_CODEX_INFERENCE_POLICY="offline", PERSONAL_CODEX_NATIVE_GRANT=secrets.token_urlsafe(32),
+                      PERSONAL_CODEX_OFFLINE_MODEL=args.model, PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS=args.model)
     from app import security, server
     token = secrets.token_urlsafe(32)
     server.AUTH = security.OwnerAuth(token)
@@ -40,7 +51,7 @@ def main():
     http = server.runtime.ControlServer(("127.0.0.1", 0), server.App)
     thread = threading.Thread(target=http.serve_forever, daemon=True)
     thread.start()
-    ev = {"live": args.live, "existing": args.existing, "checks": []}
+    ev = {"live": args.live, "model": args.model, "existing": args.existing, "checks": []}
     request = ("Build a Python calculator CLI. Create a separate calculator.py, tests/test_calculator.py and a README. "
                "The CLI runs as python3 calculator.py 2 + 3 and prints 5. Also implement the operation requested in the "
                "two attached requirements files. Use only the Python standard library. Use unittest, with tests that "
@@ -146,7 +157,7 @@ def main():
         if not args.live:
             server.PROVIDER_TRANSPORT = fixture
         body = {"project_id":project["id"], "prompt":request, "attachments":refs,
-                "provider_id":"offline-ollama-qwen3.5:9b", "rounds":8, "confirm":True}
+                "provider_id":"offline-ollama-" + args.model, "rounds":8, "confirm":True}
         api("/api/full-tasks", body, 401, authorized=False)
         api("/api/full-tasks", {**body,"confirm":False}, 400)
         api("/api/full-tasks", {**body,"attachments":["00000000-0000-0000-0000-000000000000"]}, 400)

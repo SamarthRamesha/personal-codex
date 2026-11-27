@@ -58,6 +58,14 @@ class OfflineProviderTests(unittest.TestCase):
         self.addCleanup(env.stop)
         self.row = {"kind": "ollama", "endpoint": policy.OLLAMA_ENDPOINT, "model": policy.OFFLINE_MODELS[0]}
 
+    def test_launcher_inventory_filters_saved_provider_rows(self):
+        first, second = policy.OFFLINE_MODELS
+        with patch.dict(os.environ, {"PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS": second,
+                                     "PERSONAL_CODEX_OFFLINE_MODEL": second}):
+            self.assertEqual(policy.offline_models(), (second,))
+            self.assertFalse(policy.provider_allowed({**self.row, "model": first}))
+            self.assertTrue(policy.provider_allowed({**self.row, "model": second}))
+
     def test_offline_policy_requires_exact_endpoint_and_configured_tag_before_transport(self):
         for alternate in (
             {"endpoint": "http://localhost:11434"},
