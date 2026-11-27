@@ -64,6 +64,8 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+      - name: Exercise the private offline launcher with a scripted Ollama inventory
+        run: python3 scripts/offline_launcher_acceptance.py
       - name: Prepare embedded frontend
         working-directory: desktop
         run: npm ci --ignore-scripts && npm run build
@@ -71,8 +73,6 @@ jobs:
         run: python3 scripts/build_mac_automation.py --self-test
       - name: Native policy and one-use action tests
         run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml -j 2
-      - name: Exercise the private offline launcher with a scripted Ollama inventory
-        run: python3 scripts/offline_launcher_acceptance.py
       - name: Disposable calculator task with scripted inference
         run: python3 scripts/full_task_acceptance.py --output "$RUNNER_TEMP/personal-codex-calculator"
       - name: Stop and resume a disposable task within its original scope

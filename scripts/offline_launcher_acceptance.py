@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 
 import offline_workstation as launcher
 
@@ -59,7 +60,17 @@ HTTPServer(("127.0.0.1", 11434), Fixture).serve_forever()
                 stdout=log, stderr=subprocess.STDOUT,
             )
             try:
-                launcher.wait_ready(process, launcher.BACKEND_PORT, "/api/health")
+                deadline = time.monotonic() + 35
+                while True:
+                    if process.poll() is not None:
+                        raise RuntimeError(f"Launcher exited during startup with status {process.returncode}")
+                    try:
+                        launcher.get_json(launcher.BACKEND_PORT, "/api/health")
+                        break
+                    except (OSError, ValueError) as error:
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError("Fixture backend did not become ready") from error
+                        time.sleep(0.2)
                 assert catalog()[0] == 401
                 token = (profile / "owner.token").read_text().strip()
                 status, providers = catalog(token)
@@ -73,7 +84,12 @@ HTTPServer(("127.0.0.1", 11434), Fixture).serve_forever()
                     process.kill()
                     process.wait()
                 log.seek(0)
-                print(log.read().decode(errors="replace"), end="")
+                output = log.read().decode(errors="replace")
+                print(output, end="")
+                if sys.exc_info()[0] is not None:
+                    for path in sorted(profile.glob("session-*/*.log")):
+                        output += f"\n{path.name}: {path.read_text(errors='replace')[-1200:]}"
+                    print("::error title=Launcher fixture startup::" + output[-3500:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
         assert process.returncode == 130
         for port in (launcher.BACKEND_PORT, launcher.OLLAMA_PORT):
             try:
@@ -85,4 +101,8 @@ HTTPServer(("127.0.0.1", 11434), Fixture).serve_forever()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        print(f"::error title=Offline launcher fixture::{type(error).__name__}: {error}")
+        raise
