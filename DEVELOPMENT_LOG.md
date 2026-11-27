@@ -588,3 +588,20 @@ restart. Proposal and chat inference were scripted. The Mac CI job compiled Rust
 ran its policy tests, exercised scripted full-task delivery and built the candidate app. See
 [the integration record](docs/AGENT_COORDINATION_CODEX.md) for exact runs and
 [the Session 2 prompt](NEXT_SESSION_PROMPT.md) for the remaining M3 and live-model gates.
+
+## 27 November 2026 · Final owner-test candidate
+
+Started from `dae8901` and independently verified the published ARM64 artifact and green run #118.
+This Linux workspace had no Ollama executable or reachable loopback Ollama. The live fixture refused
+before creating its output directory. Interactive candidate acceptance requires the owner's Mac.
+Managed offline launches now restrict the picker and provider policy to supported models present at
+startup. Live fixture runs can choose either supported model and check discovery before setup.
+
+Readiness now follows the task worktree and can be refreshed after operator setup. The desktop
+exposes the exact directory and declared start command for a dedicated terminal. Installation and
+dev-server processes stay operator-managed because the contained runner denies network and limits
+writes to named output directories. The CI artifact contains a checksum for the app archive.
+
+The owner reports JARVIS online. The existing private HTTPS, outbound worker, isolated service,
+capacity and rollback plan was reviewed locally. No authorized JARVIS connection was available
+here. Target checks and deployment remain pending separate owner action. [Owner guide](docs/FINAL_TESTING_GUIDE.md)

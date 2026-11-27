@@ -88,7 +88,11 @@ jobs:
       - name: Archive the integration candidate
         if: github.ref == 'refs/heads/personal-codex/codex-integration'
         working-directory: desktop
-        run: ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/release/bundle/macos/Personal Codex.app" "$RUNNER_TEMP/Personal-Codex-macOS.zip"
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/release/bundle/macos/Personal Codex.app" "$RUNNER_TEMP/Personal-Codex-macOS.zip"
+          cd "$RUNNER_TEMP"
+          shasum -a 256 Personal-Codex-macOS.zip > Personal-Codex-macOS.sha256
+          shasum -a 256 -c Personal-Codex-macOS.sha256
       - name: Upload the integration candidate and synthetic task evidence
         if: github.ref == 'refs/heads/personal-codex/codex-integration'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -96,6 +100,7 @@ jobs:
           name: Personal-Codex-macOS-${{ runner.arch }}-${{ github.sha }}
           path: |
             ${{ runner.temp }}/Personal-Codex-macOS.zip
+            ${{ runner.temp }}/Personal-Codex-macOS.sha256
             ${{ runner.temp }}/personal-codex-calculator/evidence.json
             ${{ runner.temp }}/personal-codex-cancel-resume/evidence.json
           if-no-files-found: error

@@ -14,7 +14,7 @@ Exact API source `282b90d759c2cf76e3306fe87ee6a1f74f7922f2` passed 17 actual con
 
 These results do not prove JARVIS's Docker identity mapping, importer behavior, service configuration, quota, TLS, access policy or coding executor. The disposable machine is stopped and its snapshot is preserved.
 
-Latest read-only target check: private DNS resolves and the dashboard port accepts TCP; private HTTPS 443 and proposed API 8787 refuse connections. No HTTP request, credential, inference request, SSH command or configuration change was sent. This is a connectivity check, not successful integration.
+The owner reported JARVIS online on 27 November. No authorized target connection was available in the release workspace. The earlier connectivity check observed private DNS and a reachable dashboard port, with private HTTPS 443 and proposed API 8787 refusing connections. Target readiness needs a fresh authorized check.
 
 ## Required facts before installation approval
 

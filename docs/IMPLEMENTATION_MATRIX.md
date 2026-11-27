@@ -1,12 +1,12 @@
 # Current implementation and remaining work
 
-Updated 24 November 2026. “Verified locally” does not mean deployed on JARVIS.
+Updated 27 November 2026.
 
 | Area | Implemented and checked | Remaining |
 |---|---|---|
 | Conversations | Persisted history and search, streaming and stop, regeneration of the newest answer with the selected local model, context disclosure, project filter, and pin/rename/archive/restore/delete | Installed-model acceptance on the M3 and actual private remote HTTPS acceptance |
 | Coding | Project task creation, scoped worktrees and approvals, proposal diffs, live operation ledger, check output, repair, exact Git delivery after a reviewed worktree commit, and explicit full-task resume | Broader stack support, dependency installation and dev-server lifecycle, editor/PTY, complex blank-project generation, hands-on M3 acceptance |
-| Project readiness | Read-only report of manifests, dependency and toolchain state, declared checks, install commands, and declared dev scripts and ports | Detection covers Node, Python, Rust and Go. The owner runs install and dev commands. |
+| Project readiness | Read-only report of manifests, dependency and toolchain state, declared checks, install commands, and declared dev scripts and ports. The workspace reports its own dependency markers and supports refresh after setup. | Detection covers Node, Python, Rust and Go. The owner manages install and development-server commands in a dedicated terminal. |
 | Progress | Exact bounded proposal cycles1–3, content-progress resets and context bounds | Semantic/changing-content loop detection and unified traces |
 | Memory/references | Project memory panel with owner notes, explicit evidence-backed promotion and removal, selected-excerpt FTS5 with hashes/chunks/removal | Broader retrieval evaluation |
 | Models | Existing local models, explicit metadata unknowns, measured calls, no cloud fallback | Routing benchmarks and broader capability acceptance |
@@ -26,6 +26,6 @@ Updated 24 November 2026. “Verified locally” does not mean deployed on JARVI
 - Frontend: 95 passed across 18 files. TypeScript and Vite production build passed.
 - Integration CI #115 passed backend, frontend and native macOS, including scripted full-task delivery and native bundling. Interactive Mac acceptance is pending.
 - A browser test on a disposable Git project exercised review, failure, repair, delivery, and persisted results after backend restart with scripted inference.
-- JARVIS is offline per the owner and outside the Session 1 scope.
+- The owner reports JARVIS online. The private deployment plan remains ready for authorized target review.
 
 See [documentation index](README.md), [ML evidence](ML_WORKFLOW_ACCEPTANCE.md), [progress guards](AGENT_PROGRESS_GUARDS.md), [document search](PROJECT_DOCUMENT_SEARCH.md) and [deployment](../DEPLOYMENT.md). Historical milestones remain in Git history and the changelog; this page supersedes their old status tables.
