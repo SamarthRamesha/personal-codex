@@ -43,8 +43,8 @@ NODE_MANAGERS = (
 NODE_RUNNERS = {"npm": "npm run", "pnpm": "pnpm run", "yarn": "yarn", "bun": "bun run"}
 ADVISORIES = (
     "This report is read-only: nothing was installed, started or downloaded.",
-    "Run a command yourself, or request it through the approved command runner; each listed "
-    "command is a single command with no shell operators.",
+    "Review install and server commands before running them in your own terminal. "
+    "The approved runner handles supported checks.",
 )
 
 

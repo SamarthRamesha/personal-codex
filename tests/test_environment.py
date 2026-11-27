@@ -239,6 +239,24 @@ class EnvironmentHttpTests(unittest.TestCase):
             self.request("GET", "/api/projects/00000000-0000-4000-8000-000000000000/environment")
         self.assertEqual(raised.exception.code, 404)
 
+    def test_task_readiness_reports_worktree_dependencies_only(self):
+        task = self.request("POST", "/api/tasks", {"project_id": self.project["id"], "prompt": "fixture"})
+        route = f"/api/tasks/{task['id']}/environment"
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            self.request("GET", route)
+        self.assertEqual(raised.exception.code, 404)
+        root = server.workspace_path(task["id"])
+        root.mkdir(parents=True)
+        (root / "package.json").write_text("{}")
+        (root / "node_modules").mkdir()
+        server.STORE.write("INSERT INTO workspaces VALUES (?,?,?,?,?,?)",
+                           (task["id"], self.project["id"], str(root), "fixture", "ready", 0))
+        report = self.request("GET", route)
+        self.assertEqual(report["path"], str(root))
+        self.assertEqual(report["ecosystems"][0]["dependencies"], "installed")
+        self.assertFalse((self.repo / "node_modules").exists())
+        self.assertFalse(report["executed"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1476,6 +1476,18 @@ class App(SimpleHTTPRequestHandler):
             if name not in inventory: return self.json({"error":"file is not in the permitted project inventory"},403)
             try: return self.json(tools.read_file(root,name,64_000))
             except (ValueError,OSError): return self.json({"error":"file unavailable"},404)
+        task_environment = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/environment", route)
+        if task_environment:
+            workspace = STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'", (task_environment[1],))
+            if not workspace:
+                return self.json({"error": "Ready task worktree required"}, 404)
+            try:
+                path = safe_workspace_path(workspace)
+                if (DATA / "workspaces").resolve() not in path.parents:
+                    raise ValueError("Stored workspace is outside the dedicated workspace root")
+                return self.json(environment.inspect(path))
+            except (ValueError, OSError) as error:
+                return self.json({"error": str(error)}, 400)
         if route.startswith("/api/projects/") and route.endswith("/environment"):
             # Read-only: this reports declared manifests, local dependency markers and the exact
             # install/run commands. It installs nothing and starts no server.

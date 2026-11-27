@@ -11,19 +11,20 @@ const errorText=(error:unknown)=>error instanceof Error?error.message:String(err
  * Every command here is shown for the owner to run deliberately. Nothing on this panel installs a
  * dependency or starts a server, and it never labels an unverified state as ready.
  */
-export function ProjectReadiness({projectId}:{projectId:string}){
+export function ProjectReadiness({projectId, taskId}:{projectId:string;taskId?:string}){
   const [report,setReport]=useState<Readiness|null>(null);
   const [error,setError]=useState('');
   const [copied,setCopied]=useState('');
+  const [revision,setRevision]=useState(0);
   useEffect(()=>{
     setReport(null);setError('');setCopied('');
     if(!projectId)return;
     let stale=false;
-    api<Readiness>(`/api/projects/${projectId}/environment`)
+    api<Readiness>(taskId?`/api/tasks/${taskId}/environment`:`/api/projects/${projectId}/environment`)
       .then(value=>{if(!stale)setReport(value);})
       .catch(reason=>{if(!stale)setError(errorText(reason));});
     return()=>{stale=true;};
-  },[projectId]);
+  },[projectId,taskId,revision]);
   if(!projectId)return null;
   const rows=readinessRows(report);
   async function copy(command:string){
@@ -31,8 +32,13 @@ export function ProjectReadiness({projectId}:{projectId:string}){
     catch(reason){setError(errorText(reason));}
   }
   return <section className="readiness">
-    <h3>Project readiness<span className="pill">read-only</span></h3>
+    <h3>{taskId?'Task worktree readiness':'Project readiness'}<span className="pill">read-only</span></h3>
     <p className="muted small">{error||readinessEmptyText(report)||report?.summary}</p>
+    {report&&<p><code>{report.path}</code></p>}
+    <div className="button-row">
+      {report&&<button onClick={()=>copy(report.path)}>Copy directory</button>}
+      <button onClick={()=>setRevision(value=>value+1)}>Refresh readiness</button>
+    </div>
     {rows.map(row=><details key={row.key} open={row.state==='missing'}>
       <summary><strong>{row.kind}</strong> · {row.label}</summary>
       <p className="muted small">{row.detail}</p>
@@ -49,8 +55,11 @@ export function ProjectReadiness({projectId}:{projectId:string}){
       </div>}
       {row.checks.length===0&&<p className="muted small">{checkNote(row)}</p>}
       {row.devServers.length>0&&<ul className="muted small">
-        {row.devServers.map(server=><li key={server.script}>{serverLabel(server)}</li>)}
+        {row.devServers.map(server=><li key={server.script}>{serverLabel(server)}{' '}
+          <button onClick={()=>copy(server.command)}>{copied===server.command?'Copied':'Copy start command'}</button>
+        </li>)}
       </ul>}
+      {row.devServers.length>0&&<p className="muted small">Review the declared script and its bind address, then run it from the displayed directory in a dedicated terminal. Press Ctrl+C there to stop it.</p>}
       {row.notes.map(note=><p className="muted small" key={note}>{note}</p>)}
     </details>)}
     {report&&<p className="muted small">{report.advisories.join(' ')}</p>}

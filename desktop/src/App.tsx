@@ -383,7 +383,7 @@ export default function App(){
           <ProjectTaskList key={`tasks-${projectId}`} tasks={tasks} projectId={projectId} selectedId={taskId} onSelect={id=>setTaskId(id)}/>
           {connected&&projectId&&<ProjectMemory key={`memory-${projectId}`} projectId={projectId}/>}
           {offline&&connected&&projectId&&<ProjectDocuments key={`documents-${projectId}`} projectId={projectId} attachments={attachments} onImport={()=>attachFile(false)}/>}
-          {connected&&projectId&&<ProjectReadiness key={`readiness-${projectId}`} projectId={projectId}/>}
+          {connected&&projectId&&<ProjectReadiness key={`readiness-${workspaceReady?taskId:projectId}`} projectId={projectId} taskId={workspaceReady?taskId:undefined}/>}
           {file&&<section className="file-preview"><div><FileCode2 size={14}/><strong>{file.path}</strong><span>Read only · {file.sha256.slice(0,12)}</span><button title="Close file" onClick={()=>setFile(null)}><X size={14}/></button></div><pre>{file.text}</pre>{file.truncated&&<p className="muted">Preview truncated.</p>}</section>}
           {!taskId&&!file&&!projectId&&<div className="work-empty"><GitBranch size={30}/><h2>Choose a project or open a saved task.</h2></div>}
           {taskId&&<>{offline&&executionEnabled&&<section className="local-agent">
