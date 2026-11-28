@@ -61,7 +61,7 @@ The Python backend owns approvals, persistence and task state. The native bridge
 
 ## Verification
 
-Current Mac regression: **505 passed, 5 skipped, 510 discovered**. Frontend: **101 passed** plus TypeScript/Vite build. Native Rust: **14 passed, one ignored**. Integration [CI #129](https://github.com/SamarthRamesha/personal-codex/actions/runs/46147661571) passed all jobs. Hosted tests use scripted inference; installed-model and GUI evidence is recorded separately.
+Current Mac regression: **505 passed, 5 skipped, 510 discovered**. Frontend: **101 passed** plus TypeScript/Vite build. Native Rust: **17 passed, one ignored**. Integration [CI #129](https://github.com/SamarthRamesha/personal-codex/actions/runs/46147661571) passed all jobs. Hosted tests use scripted inference; installed-model and GUI evidence is recorded separately.
 
 Real qwen3.5:9b repair and a web calculator from supplied manifest/independent tests passed. Actual desktop settings, opening proposal/cancel, dependency installation, preview readiness and chat controls were exercised. Product cross-app automation still requires owner permission/acceptance; no universal coding or system-automation success is claimed. [Acceptance inventory](docs/PRODUCT_COMPLETION.md)
 

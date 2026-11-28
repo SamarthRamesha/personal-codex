@@ -1,0 +1,34 @@
+{
+  "date": "2026-11-28",
+  "environment": "Isolated ARM64 Mac candidate and disposable synthetic profile",
+  "observed_passes": [
+    "authenticated startup and settings close",
+    "opening catalogue search and Calculator proposal/cancel; no app launch",
+    "reviewed locked npm install with verified HTTPS and refreshed readiness",
+    "reviewed owned Node preview start and browser page load",
+    "preview stopped state retained after candidate/backend restart; no automatic restart",
+    "real qwen3.5:9b chat and regeneration",
+    "pin, rename, archive and restore",
+    "messages and title/pin metadata restored after restart",
+    "persisted message search",
+    "generation stop with retained partial text",
+    "project note save and owner correction",
+    "public Markdown selection/import via asynchronous native sheet",
+    "explicit document indexing and search with excerpt ranges/fingerprint",
+    "search entry removal retained imported document",
+    "native picker cancellation"
+  ],
+  "not_accepted": [
+    "product native click/type/scroll automation",
+    "product capture/OCR and browser helper",
+    "actual Mac destination opening/Finder reveal",
+    "general framework projects",
+    "notarized distribution",
+    "JARVIS runtime"
+  ],
+  "permissions_changed": false,
+  "approved_preview_replaced": false,
+  "personal_documents_used": false,
+  "jarvis_accessed": false,
+  "qualification": "Manual computer-use observations; not a headless end-to-end regression suite. Native picker observation initially stalled; asynchronous sheet flow and cancellation completed on retry. No claim about the original stall being exclusively application or connector caused."
+}

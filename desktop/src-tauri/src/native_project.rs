@@ -152,28 +152,6 @@ pub(super) async fn create_selected_project(destination: String, state: State<'_
     Ok(Reply { status, body })
 }
 
-#[cfg(target_os = "macos")]
-fn pick_attachment() -> Result<Option<std::path::PathBuf>, String> {
-    use objc2::MainThreadMarker;
-    use objc2_app_kit::NSOpenPanel;
-    use objc2_foundation::NSString;
-
-    let main = MainThreadMarker::new().ok_or("Finder must run on the main thread")?;
-    let panel = NSOpenPanel::openPanel(main);
-    panel.setTitle(Some(&NSString::from_str("Choose one project attachment")));
-    panel.setCanChooseFiles(true);
-    panel.setCanChooseDirectories(false);
-    panel.setAllowsMultipleSelection(false);
-    if panel.runModal() != 1 { return Ok(None); }
-    let path = panel.URL().and_then(|url| url.path()).ok_or("Finder returned no file")?;
-    Ok(Some(std::path::PathBuf::from(path.to_string())))
-}
-
-#[cfg(not(target_os = "macos"))]
-fn pick_attachment() -> Result<Option<std::path::PathBuf>, String> {
-    Err("The native attachment picker requires macOS".into())
-}
-
 #[tauri::command]
 pub(super) async fn attach_project_file(app: AppHandle, project_id: String, from_drop: bool,
                                        state: State<'_, Arc<Bridge>>) -> Result<Option<Reply>, String> {
@@ -188,10 +166,8 @@ pub(super) async fn attach_project_file(app: AppHandle, project_id: String, from
         if when.elapsed() > Duration::from_secs(90) { return Err("Drop the file again to renew the selection".into()); }
         Some(file)
     } else {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        app.run_on_main_thread(move || { let _ = sender.send(pick_attachment()); })
-            .map_err(|_| "Cannot open Finder")?;
-        receiver.await.map_err(|_| "Finder selection interrupted")??
+        // Keep Tauri's main event loop responsive while the owner chooses or cancels.
+        pick_paths(&app, "Choose one project attachment", false, 1).await?.pop()
     };
     let Some(path) = selected else { return Ok(None); };
     let (path, device, inode) = file_identity(path)?;
@@ -314,4 +290,65 @@ pub(super) async fn open_full_destination(task_id: String, state: State<'_, Arc<
     let status = std::process::Command::new("/usr/bin/open").args(["-a", "Finder", path]).status()
         .map_err(|_| "Cannot open Finder")?;
     if status.success() { Ok(()) } else { Err("Finder could not open the project".into()) }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, symlink};
+
+    struct Fixture(std::path::PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!("pc-attachment-{}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)));
+            std::fs::DirBuilder::new().mode(0o700).create(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    }
+
+    #[test]
+    fn selected_document_is_bound_to_its_file_identity() {
+        let root = Fixture::new();
+        let file = root.0.join("reference.md");
+        std::fs::write(&file, "Synthetic public reference").unwrap();
+        let expected = file.metadata().unwrap();
+        let (path, device, inode) = file_identity(file.clone()).unwrap();
+        assert_eq!(path, file.canonicalize().unwrap().to_str().unwrap());
+        assert_eq!((device, inode), (expected.dev(), expected.ino()));
+    }
+
+    #[test]
+    fn cancellation_and_duplicate_selections_do_not_create_a_batch() {
+        assert!(attachment_batch(Vec::new()).unwrap().is_empty());
+        let root = Fixture::new();
+        let file = root.0.join("reference.md");
+        std::fs::write(&file, "Synthetic reference").unwrap();
+        assert!(attachment_batch(vec![file.clone(), file]).is_err());
+        assert!(attachment_batch(vec![root.0.clone()]).is_err());
+    }
+
+    #[test]
+    fn picker_results_cannot_import_links_or_oversized_files() {
+        let root = Fixture::new();
+        let file = root.0.join("reference.md");
+        std::fs::write(&file, "Synthetic reference").unwrap();
+        let alias = root.0.join("alias.md");
+        symlink(&file, &alias).unwrap();
+        assert!(file_identity(alias).is_err());
+        let hardlink = root.0.join("hardlink.md");
+        std::fs::hard_link(&file, &hardlink).unwrap();
+        assert!(file_identity(hardlink).is_err());
+        assert!(file_identity(file).is_err());
+        let oversized = root.0.join("oversized.md");
+        std::fs::File::create(&oversized).unwrap().set_len(12_000_001).unwrap();
+        assert!(file_identity(oversized).is_err());
+    }
 }
