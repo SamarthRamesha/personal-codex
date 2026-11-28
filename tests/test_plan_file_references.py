@@ -33,6 +33,14 @@ class PlanFileReferenceTests(unittest.TestCase):
         self.plan['files'].append('src/new_model.py')
         self.assertNotIn('new_model.py',self.parsed('Implement new_model.py'))
 
+    def test_explicit_new_root_creation_cannot_be_relocated_by_the_plan(self):
+        self.plan['files']=['src/model.py','tests/test_model.py']
+        with self.assertRaisesRegex(ValueError,'root path'):
+            self.parsed('Create model.py with the implementation')
+
+    def test_explicit_root_creation_is_preserved_when_included_in_plan(self):
+        self.assertIn('model.py',self.parsed('Create model.py with the implementation'))
+
     def test_ambiguous_basename_is_not_guessed(self):
         (self.root/'other').mkdir();(self.root/'other/test_model.py').write_text('pass\n')
         self.assertIn('test_model.py',self.parsed('Inspect test_model.py'))

@@ -84,6 +84,27 @@ def production_file(path, stack):
             and not re.search(r"(^test_|_test\.|\.test\.|\.spec\.|^conftest\.)", filename.name, re.I))
 
 
+def development_entries(root):
+    """Read declared Node listener entries without executing project configuration."""
+    if not (root / "package.json").exists():
+        return set()
+    _, text = project_files.text_file(root, "package.json")
+    manifest = json.loads(text)
+    scripts = manifest.get("scripts", {}) if isinstance(manifest, dict) else {}
+    result = set()
+    if isinstance(scripts, dict):
+        for name in ("dev", "start", "serve", "preview"):
+            if not isinstance(scripts.get(name), str):
+                continue
+            try:
+                parts = shlex.split(scripts[name])
+            except ValueError:
+                continue
+            if len(parts) >= 2 and parts[0] == "node" and not parts[1].startswith("-"):
+                result.add(parts[1])
+    return result
+
+
 def smoke_spec(value, root, stack, outputs):
     if value is None:
         return None
@@ -100,6 +121,8 @@ def smoke_spec(value, root, stack, outputs):
     if any(arg.startswith(("/", "~", "$")) or arg in {"&&", "||", ";", ">", ">>", "|"}
            or ".." in Path(arg).parts for arg in argv[2:]):
         raise ValueError("Smoke-test arguments must stay within the project")
+    if stack == "node" and argv[1] in development_entries(root):
+        raise ValueError("A declared development server requires a separately reviewed managed preview, not a CLI smoke test; use smoke null and independent unit tests")
     return {"command": shlex.join(argv), "expect": expect, "entry": argv[1]}
 
 
@@ -111,6 +134,9 @@ def plan_prompt(request, listed, inbound, env):
         'Build can be null, npm-build, npm-lint, or npm-typecheck. '
         'For an application executable through a local CLI, provide smoke as {"argv":["python3","calculator.py","2","+","3"],"expect":"5"} '
         'using actual representative arguments and expected output for THIS task. '
+        'For HTTP/web applications, use smoke null: contained checks cannot bind sockets or start long-running development servers. '
+        'Use independent unit tests; the owner separately reviews the managed preview after implementation. '
+
         "Name every important implementation file and every test or asset needed by the requested task. Include at least one non-test source file. "
         "Existing files can be listed. Prefer unittest for Python projects with no dependencies. "
         "Choose available local tools. Avoid package installation or external services in this offline mode. "
@@ -134,8 +160,13 @@ def parse_plan(text, request, root, env):
     # but do not invent a second root file when one existing/planned path is unique.
     existing = context.walk(root)
     references = []
-    for reference in FILE_REFERENCE.findall(request):
-        if "/" not in reference and not tools.resolve_in_workspace(root, reference).exists():
+    for match in FILE_REFERENCE.finditer(request):
+        reference = match.group(1)
+        explicit_root = "/" not in reference and re.search(r"\b(?:create|write|add)(?: a| the| new)?\s+$", request[:match.start()], re.I)
+        relocated = any(path != reference and Path(path).name == reference for path in files)
+        if explicit_root and reference not in files and relocated:
+            raise ValueError(f"The requested root path {reference} must appear exactly in the plan; do not relocate it into a subdirectory")
+        if not explicit_root and "/" not in reference and not tools.resolve_in_workspace(root, reference).exists():
             matches = sorted({path for path in files + existing if Path(path).name == reference})
             if len(matches) == 1:
                 reference = matches[0]
@@ -152,7 +183,10 @@ def parse_plan(text, request, root, env):
     if plan["test"] in {"npm-test", "pytest"} and not env["npm" if plan["test"] == "npm-test" else "pytest"]:
         raise ValueError("The planned test runner is not installed")
     smoke = smoke_spec(plan["smoke"], root, stack, files)
-    if re.search(r"\b(cli|command[- ]line|terminal|runnable|launch command)\b", request, re.I) and smoke is None:
+    explicit_cli = re.search(r"\b(cli|command[- ]line)\b", request, re.I)
+    startup = re.search(r"\b(terminal|runnable|launch command)\b", request, re.I)
+    needs_smoke = explicit_cli or (startup and not (stack == "node" and development_entries(root)))
+    if needs_smoke and smoke is None:
         raise ValueError("The requested runnable interface requires an actual smoke-test command")
     return {**plan, "files": files, "test": TESTS[plan["test"]], "build": BUILDS.get(build), "smoke": smoke}
 
@@ -384,7 +418,7 @@ def implementation_prompt(request, plan, prior, selected, *, verified=False, exi
               "operations in the operations array; paths must be the exact relative workspace paths. "
               "Further edits invalidate the passed checks and must be verified again. "
               if verified else IMPLEMENTATION_SCHEMA)
-    prompt = (schema + " Keep proposals small: for lengthy code emit one complete file per round, then continue. Never truncate JSON. " + gate + "\nUser request:\n" + request
+    prompt = (schema + " Keep proposals small: for lengthy code emit one complete file per round, then continue. Never truncate JSON. Preserve the exact requested root paths and declared development entry points; do not move them into src/. " + gate + "\nUser request:\n" + request
               + "\nExisting workspace files (edit using apply_patch; inspect with read_file): "
               + json.dumps(list(existing)[:80])
               + "\nRequired files: " + json.dumps(plan["files"]) + "\nPlan: " + plan["summary"]
