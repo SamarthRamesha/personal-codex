@@ -76,3 +76,9 @@ The intended path is a separately deployed authenticated backend behind private 
 - A stopped/interrupted task requires explicit resume within its original scope.
 - An expired Mac action must be reviewed again; check whether an uncertain open request already succeeded before retrying.
 - A server outage does not turn remote acceptance into success. Keep the local profile and last working app.
+
+## Reuse an already-running local model service
+
+Pass `--reuse-ollama` to the offline launcher to use the existing loopback Ollama. The launcher reads its inventory, restricts the app to cached supported local models, and never starts/stops/reconfigures that existing daemon. It still owns and stops its new backend/app and refuses an occupied backend port. Default launches continue to own their separate Ollama process and require both ports free.
+
+New integration artifacts include `Personal-Codex-source.zip` with the exact committed runtime source. Verify both archive entries in the checksum file. Extract source and app separately, then run the launcher from `Personal-Codex-source/` with the app's explicit path. Python, Git, Ollama and a cached supported model are still prerequisites; this is an owner-test kit, not a notarized self-contained installer.

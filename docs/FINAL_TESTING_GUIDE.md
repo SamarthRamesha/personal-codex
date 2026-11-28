@@ -2,7 +2,7 @@
 
 ## Download and launch on the M3
 
-1. Open the integration workflow runs and choose the newest successful run for the commit you want to test. Download the artifact named `Personal-Codex-macOS-ARM64-<commit>`. Keep its commit ID and use a separate source checkout at that exact commit. [Integration workflow runs](https://github.com/SamarthRamesha/personal-codex/actions?query=branch%3Apersonal-codex%2Fcodex-integration)
+1. Open the integration workflow runs and choose the newest successful run for the commit you want to test. Download the artifact named `Personal-Codex-macOS-ARM64-<commit>`. Keep its commit ID. New artifacts include Personal-Codex-source.zip at that exact commit; extract it into a separate directory, or use a matching source checkout. [Integration workflow runs](https://github.com/SamarthRamesha/personal-codex/actions?query=branch%3Apersonal-codex%2Fcodex-integration)
 2. Extract the artifact into a new folder. From that folder run `shasum -a 256 -c Personal-Codex-macOS.sha256` if the checksum file is included. Extract the inner `Personal-Codex-macOS.zip` there. Keep the installed, permission-approved Automation Preview in its current location.
 3. On macOS 14 or later, have Python 3.11+, Git, Ollama and at least one of `qwen3.5:9b` or `qwen2.5-coder:14b` already installed. If you downloaded the app, verify it with `codesign --verify --deep --strict "/absolute/path/Personal Codex.app"`. If macOS blocks the downloaded build, use the separate local source build documented below. The bundle is ad-hoc signed and still needs owner acceptance.
 4. From the matching source checkout, start an isolated profile:
@@ -12,7 +12,7 @@
      --app "/absolute/path/Personal Codex.app"
    ```
 
-   Pass `--model qwen2.5-coder:14b` to select that cached model at launch. Click **Connect backend** in the app. Keep the terminal open. [Source build and startup](GETTING_STARTED.md)
+   Pass `--model qwen2.5-coder:14b` to select that cached model at launch. If Ollama is already running, add `--reuse-ollama`; its existing lifecycle stays under your control. Click **Connect backend** in the app. Keep the terminal open. [Source build and startup](GETTING_STARTED.md)
 
 ## Run the acceptance checklist
 
@@ -42,3 +42,9 @@ Choose `qwen2.5-coder:14b` instead if that is the cached model. Keep `evidence.j
 ## Acceptance and JARVIS
 
 Hosted builds use scripted inference for calculator and resume checks. Real Ollama, native windows, OCR, browser isolation and local-model automation still need acceptance on the owner's M3 for this release. The JARVIS host is reported online. The prepared integration supports a private HTTPS backend and an outbound Mac model worker with separate credentials. Deployment and target readiness remain unverified in this session. Keep using the local candidate independently. [Deployment and approval plan](../DEPLOYMENT.md)
+
+## Reviewed installs and owned previews
+
+Task readiness now includes reviewed npm installation and managed Node previews. Start with a disposable locked project. Inspect the exact package URLs, file hashes and destination, confirm install and downloads independently, then verify progress and cancellation. Existing node_modules is preserved. See [supported installer and limits](DEPENDENCY_INSTALLATION.md).
+
+For a declared `node server.js` development script, review its exact task scope and a free loopback port. Confirm once, wait for owned HTTP readiness, inspect logs, then deliberately open or copy the preview address. Stop and confirm only that owned listener closes. Restart never replays the start; review again. Outbound connections, new binds and project writes remain denied. See [preview lifecycle and limits](MANAGED_PREVIEWS.md). Vite/general framework commands and write caches remain unimplemented adapters.

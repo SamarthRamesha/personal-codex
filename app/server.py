@@ -465,7 +465,8 @@ def round_transport(provider: dict, stop_check=None, on_chunk=None):
                 return streamer({**request, "stop_check": stop_check or (lambda: False),
                                  "on_chunk": on_chunk or (lambda count: None), "json_output": True})
             return transport
-    return providers.transport_for(provider, provider.get("secret_ref") or "")
+    adapter = providers.transport_for(provider, provider.get("secret_ref") or "")
+    return lambda request: adapter({**request, "json_output": True})
 
 def record_latency(provider_id: str, started: float) -> int:
     elapsed = int((time.time() - started) * 1000)

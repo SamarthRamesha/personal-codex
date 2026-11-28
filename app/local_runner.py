@@ -39,6 +39,11 @@ def profile(read_roots, write_roots, programs):
     roots = [*SYSTEM_READS, *read_roots]
     for program in programs:
         p = Path(program).resolve()
+        # Tool launch paths may be outside Homebrew (for example setup-node's cache).
+        # Permit the selected executable and npm's own module tree, never its broad parent.
+        roots.append(p)
+        if p.name == "npm-cli.js" and p.parent.name == "bin" and p.parent.parent.name == "npm":
+            roots.append(p.parent.parent)
         for parent in p.parents:
             if parent.name == "Python.framework":
                 roots.append(parent)

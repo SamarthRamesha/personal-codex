@@ -68,8 +68,8 @@ def wait_ready(process, port, route, timeout=15):
     raise RuntimeError(f"Service on port {port} did not become ready within {timeout}s: {last_error}")
 
 
-def require_free_ports():
-    for port in (OLLAMA_PORT, BACKEND_PORT):
+def require_free_ports(*, reuse_ollama=False):
+    for port in ((BACKEND_PORT,) if reuse_ollama else (OLLAMA_PORT, BACKEND_PORT)):
         for address in ("127.0.0.1", "::1"):
             try:
                 with socket.create_connection((address, port), timeout=1):
@@ -91,6 +91,7 @@ def stop(process):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--reuse-ollama", action="store_true", help="use the existing loopback Ollama without starting, stopping or reconfiguring it")
     parser.add_argument("--model", choices=network_policy.OFFLINE_MODELS,
                         help="require this installed model (defaults to the first supported model in the local cache)")
     parser.add_argument("--project-root", type=Path, help="existing directory dedicated to the hackathon repositories")
@@ -118,7 +119,7 @@ def main():
     else:
         projects = data / "projects"
         private_dir(projects)
-    require_free_ports()
+    require_free_ports(reuse_ollama=args.reuse_ollama)
 
     # Reuse the existing token creation path. Neither the token nor its contents go in an argument,
     # subprocess environment, browser storage, or this launcher's output.
@@ -134,15 +135,20 @@ def main():
     native_grant = secrets.token_urlsafe(32)
     processes = []
     try:
-        with (session / "ollama.log").open("xb") as log:
-            daemon = subprocess.Popen(
-                [ollama, "serve"], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
-                env={**env, "OLLAMA_HOST": "127.0.0.1:11434", "OLLAMA_NO_CLOUD": "1",
-                     "OLLAMA_NUM_PARALLEL": "1", "OLLAMA_MAX_LOADED_MODELS": "1",
-                     "OLLAMA_CONTEXT_LENGTH": "8192", "OLLAMA_KEEP_ALIVE": "3m"},
-            )
-        processes.append(daemon)
-        wait_ready(daemon, OLLAMA_PORT, "/api/version")
+        daemon = None
+        if args.reuse_ollama:
+            get_json(OLLAMA_PORT, "/api/version")
+            print("Using the existing loopback Ollama; its lifecycle remains under your control.", flush=True)
+        else:
+            with (session / "ollama.log").open("xb") as log:
+                daemon = subprocess.Popen(
+                    [ollama, "serve"], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                    env={**env, "OLLAMA_HOST": "127.0.0.1:11434", "OLLAMA_NO_CLOUD": "1",
+                         "OLLAMA_NUM_PARALLEL": "1", "OLLAMA_MAX_LOADED_MODELS": "1",
+                         "OLLAMA_CONTEXT_LENGTH": "8192", "OLLAMA_KEEP_ALIVE": "3m"},
+                )
+            processes.append(daemon)
+            wait_ready(daemon, OLLAMA_PORT, "/api/version")
         names = {model["name"] for model in get_json(OLLAMA_PORT, "/api/tags")["models"]}
         if args.model and args.model not in names:
             raise ValueError(f"{args.model} is missing from the local Ollama cache")
@@ -165,14 +171,14 @@ def main():
         print(f"Personal Codex offline at http://127.0.0.1:8787, default {model}", flush=True)
         print(f"Project root: {projects}", flush=True)
         if args.backend_only:
-            while daemon.poll() is None and backend.poll() is None:
+            while (daemon is None or daemon.poll() is None) and backend.poll() is None:
                 time.sleep(0.5)
             raise RuntimeError("A managed offline service exited")
         gui = subprocess.Popen([str(app)], cwd=app.parent, env={**env, "PERSONAL_CODEX_OFFLINE_TOKEN_FILE": str(token),
                                                           "PERSONAL_CODEX_NATIVE_GRANT": native_grant})
         processes.append(gui)
         while gui.poll() is None:
-            if daemon.poll() is not None or backend.poll() is not None:
+            if (daemon is not None and daemon.poll() is not None) or backend.poll() is not None:
                 raise RuntimeError("A managed offline service exited")
             time.sleep(0.5)
         return gui.returncode

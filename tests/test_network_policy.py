@@ -95,7 +95,7 @@ class OfflineProviderTests(unittest.TestCase):
         with patch.object(server.providers, "post_json", side_effect=[{}, {"message": {"content": "hello"}}]) as post:
             server.providers.OllamaTransport()({**self.row, "prompt": "hello", "json_output": True})
             payload = post.call_args.args[2]
-            self.assertEqual(payload["options"], {"num_ctx": 8192, "num_predict": 768, "temperature": 0.2})
+            self.assertEqual(payload["options"], {"num_ctx": 8192, "num_predict": 2048, "temperature": 0.2})
             self.assertEqual(payload["format"], "json")
             self.assertIs(payload["think"], False)
 

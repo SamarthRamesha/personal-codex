@@ -135,7 +135,7 @@ def _ollama_payload(request: dict, *, stream: bool) -> dict:
         metadata = post_json(endpoint, "/api/show", {"model": model}, timeout=5)
         if metadata.get("remote_model") or metadata.get("remote_host"):
             raise ProviderTransportError("The selected Ollama tag points to a remote model")
-        payload.update(think=False, keep_alive="3m", options={"num_ctx": 8192, "num_predict": 768, "temperature": 0.2})
+        payload.update(think=False, keep_alive="3m", options={"num_ctx": 8192, "num_predict": 2048 if request.get("json_output") else 768, "temperature": 0.2})
         if request.get("json_output"):
             payload["format"] = "json"
     return payload
@@ -165,6 +165,8 @@ class OllamaTransport:
             raise ProviderTransportError("Ollama reported an error for this model or request")
         if network_policy.offline_only() and (reply.get("remote_model") or reply.get("remote_host")):
             raise ProviderTransportError("Ollama returned an upstream model response")
+        if request.get("json_output") and reply.get("done_reason") == "length":
+            raise ProviderTransportError("Structured response reached its token limit; emit one small file change per proposal")
         message = reply.get("message")
         text = _assistant_text(message.get("content") if isinstance(message, dict) else reply.get("response"))
         if not text.strip():
@@ -393,6 +395,8 @@ class OllamaStreamTransport:
         if guard.reason:raise ProviderTransportError(guard.reason)
         if not done:
             raise ProviderTransportError("Provider stream ended before the completion marker")
+        if request.get("json_output") and terminal.get("done_reason") == "length":
+            raise ProviderTransportError("Structured response reached its token limit; emit one small file change per proposal")
         text = "".join(pieces)
         if not text.strip():
             raise ProviderTransportError("Provider stream did not contain assistant text")

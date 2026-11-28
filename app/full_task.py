@@ -384,7 +384,7 @@ def implementation_prompt(request, plan, prior, selected, *, verified=False, exi
               "operations in the operations array; paths must be the exact relative workspace paths. "
               "Further edits invalidate the passed checks and must be verified again. "
               if verified else IMPLEMENTATION_SCHEMA)
-    prompt = (schema + gate + "\nUser request:\n" + request
+    prompt = (schema + " Keep proposals small: for lengthy code emit one complete file per round, then continue. Never truncate JSON. " + gate + "\nUser request:\n" + request
               + "\nExisting workspace files (edit using apply_patch; inspect with read_file): "
               + json.dumps(list(existing)[:80])
               + "\nRequired files: " + json.dumps(plan["files"]) + "\nPlan: " + plan["summary"]
