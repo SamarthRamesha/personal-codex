@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { api } from './api';
+import { DependencyInstall } from './DependencyInstall';
 import { checkNote, readinessEmptyText, readinessRows, serverLabel, toolLine } from './readiness';
 import type { Readiness } from './readiness';
 
@@ -33,7 +34,7 @@ export function ProjectReadiness({projectId, taskId, onSelectCheck}:{
     try{await navigator.clipboard.writeText(command);setCopied(command);}
     catch(reason){setError(errorText(reason));}
   }
-  return <section className="readiness">
+  return <><section className="readiness">
     <h3>{taskId?'Task worktree readiness':'Project readiness'}<span className="pill">read-only</span></h3>
     <p className="muted small">{error||readinessEmptyText(report)||report?.summary}</p>
     {report&&<p><code>{report.path}</code></p>}
@@ -69,5 +70,5 @@ export function ProjectReadiness({projectId, taskId, onSelectCheck}:{
       {row.notes.map(note=><p className="muted small" key={note}>{note}</p>)}
     </details>)}
     {report&&<p className="muted small">{report.advisories.join(' ')}</p>}
-  </section>;
+  </section>{taskId&&report?.ecosystems.some(row=>row.kind==='node')&&<DependencyInstall key={taskId} taskId={taskId} onInstalled={()=>setRevision(value=>value+1)}/>}</>;
 }

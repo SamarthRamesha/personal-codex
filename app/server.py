@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents  # script execution puts app/ on sys.path
+    import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents, dependencies  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents
+    from app import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents, dependencies
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -50,6 +50,7 @@ LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 ENV_REF_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS dependency_jobs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, proposal TEXT NOT NULL, digest TEXT NOT NULL, status TEXT NOT NULL, output TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS native_project_roots (path TEXT PRIMARY KEY, device INTEGER NOT NULL, inode INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL, plan TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -131,6 +132,8 @@ class Store:
         treat it as finished instead of waiting for a worker thread that no longer exists.
         """
         stamp = now()
+        self.conn.execute("UPDATE dependency_jobs SET status='interrupted',output=?,updated_at=? WHERE status='running'",
+                          ("Backend restarted; installation is not replayed. Inspect staging and request a new review.", stamp))
         self.conn.execute("UPDATE autonomous_runs SET status='interrupted', summary=?, updated_at=? WHERE status='running'",
                           ("Service restarted. Review the workspace before explicitly resuming.", stamp))
         self.conn.execute("UPDATE tasks SET status='interrupted', updated_at=? WHERE status='running' "
@@ -1200,6 +1203,14 @@ def task_service() -> task_backend.TaskBackend:
     return task_backend.NativeTaskBackend(sys.modules[__name__])
 
 
+_DEPENDENCIES = None
+
+def dependency_service():
+    global _DEPENDENCIES
+    if _DEPENDENCIES is None or _DEPENDENCIES.store is not STORE:
+        _DEPENDENCIES = dependencies.Installer(sys.modules[__name__])
+    return _DEPENDENCIES
+
 class App(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         # Do not log paths/query strings, headers, credentials or request bodies.
@@ -1287,6 +1298,9 @@ class App(SimpleHTTPRequestHandler):
             print(f"[personal-codex] request failed ({type(error).__name__}); details withheld",file=sys.stderr)
             return self.json({"error":"Request failed; details withheld"},500)
     def get_route(self):
+        install = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/dependencies", self.route())
+        if install:
+            return self.json(dependency_service().get(install[1]))
         route=self.route()
         if route == "/api/health": return self.json({"ok":True,"version":"0.2.0","mode":"private-control-plane" if AUTH.enabled else "loopback-development"})
         if route == "/api/ready":
@@ -1641,6 +1655,23 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            install = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/dependencies/(propose|execute|cancel)", route)
+            if install:
+                task_id, operation = install.groups()
+                service = dependency_service()
+                if operation == 'propose':
+                    if data: raise ValueError("Dependency review accepts no command or URL")
+                    return self.json(service.propose(task_id), 201)
+                if operation == 'execute':
+                    return self.json(service.execute(task_id, data), 202)
+                if data: raise ValueError("Cancel accepts no fields")
+                return self.json({'cancel_requested': service.cancel(task_id)})
+            task_mutation = re.match(r"/api/tasks/([a-f0-9-]{36})/", route)
+            if task_mutation and STORE.one("SELECT id FROM dependency_jobs WHERE task_id=? AND status='running'", (task_mutation[1],)):
+                if route.endswith('/cancel'):
+                    dependency_service().cancel(task_mutation[1])
+                else:
+                    return self.json({'error': 'Wait for or cancel the dependency installation before changing this task'}, 409)
             document_route = re.fullmatch(r"/api/projects/([a-f0-9-]{36})/documents/(index|remove)", route)
             if document_route:
                 if not AUTH.enabled:
@@ -2429,7 +2460,8 @@ def main():
             drained=http.drain()
             chat_drained=conversations.drain(5)
             agent_drained=project_agent.stop_all()
-            if drained and chat_drained and agent_drained:STORE.close()
+            dependencies_drained = _DEPENDENCIES.close() if _DEPENDENCIES is not None else True
+            if drained and chat_drained and agent_drained and dependencies_drained:STORE.close()
             else:print('Some requests interrupted; startup recovery will reconcile them',file=sys.stderr)
             for sig,handler in previous.items():signal.signal(sig,handler)
 
