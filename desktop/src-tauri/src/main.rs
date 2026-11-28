@@ -194,6 +194,36 @@ fn cancel_stream(stream_id: String, state: State<'_, Arc<Bridge>>) -> Result<(),
     stop_stream(&state, &stream_id)
 }
 
+fn preview_address(value: &serde_json::Value, preview_id: &str) -> Result<Url,String> {
+    if value["id"].as_str()!=Some(preview_id) || value["status"].as_str()!=Some("running") {
+        return Err("Preview is no longer running".into());
+    }
+    let url=Url::parse(value["proposal"]["url"].as_str().ok_or("Missing preview address")?).map_err(|_|"Invalid preview address")?;
+    if url.scheme()!="http" || url.host_str()!=Some("127.0.0.1") || url.port().filter(|port|*port>=1024).is_none()
+        || url.path()!="/" || url.query().is_some() || url.fragment().is_some() || !url.username().is_empty() || url.password().is_some() {
+        return Err("Only the owned local preview address can open".into());
+    }
+    Ok(url)
+}
+#[tauri::command]
+async fn open_development_preview(task_id:String,preview_id:String,state:State<'_,Arc<Bridge>>) -> Result<(),String> {
+    if task_id.len()!=36 || !task_id.bytes().all(|c|c.is_ascii_hexdigit()||c==b'-') { return Err("Invalid task".into()); }
+    let connection=snapshot(&state)?;
+    if state.offline_base.as_deref()!=Some(connection.base.as_str().trim_end_matches('/')) || state.offline_token_file.is_none() {
+        return Err("Opening previews requires the managed local connection".into());
+    }
+    let mut request=connection.client.get(api_url(&connection,&format!("/api/tasks/{task_id}/preview"))?);
+    if !connection.token.is_empty(){request=request.bearer_auth(&connection.token);}
+    let response=request.send().await.map_err(|_|"Preview status unavailable")?;
+    if !response.status().is_success(){return Err("Preview status unavailable".into());}
+    let value:serde_json::Value=serde_json::from_str(&bounded_body(response,100_000).await?).map_err(|_|"Invalid preview status")?;
+    let address=preview_address(&value,&preview_id)?;
+    if state.connection.lock().map_err(|_|"Connection unavailable")?.as_ref().map(|c|c.generation)!=Some(connection.generation){return Err("Connection changed".into());}
+    let result=std::process::Command::new("/usr/bin/open").arg(address.as_str()).env_clear().env("PATH","/usr/bin:/bin").status().map_err(|_|"Browser could not open")?;
+    if !result.success(){return Err("Browser could not open".into());}
+    Ok(())
+}
+
 fn main() {
     let token_file = std::env::var_os("PERSONAL_CODEX_OFFLINE_TOKEN_FILE").map(PathBuf::from);
     let offline_base = token_file.as_ref().map(|_| {
@@ -221,13 +251,24 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![automation_ipc, stop_mac_automation, automation_activity, plan_mac_automation, mac_applications, prepare_mac_app, choose_mac_item, cancel_mac_action, execute_mac_action, choose_full_attachments, import_full_attachments, open_full_destination, attach_project_file, choose_project_folder, create_selected_project, offline_session, connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
+        .invoke_handler(tauri::generate_handler![automation_ipc, stop_mac_automation, automation_activity, plan_mac_automation, mac_applications, prepare_mac_app, choose_mac_item, cancel_mac_action, execute_mac_action, choose_full_attachments, import_full_attachments, open_full_destination, attach_project_file, choose_project_folder, create_selected_project, open_development_preview, offline_session, connect_backend, disconnect_backend, backend_request, backend_stream, cancel_stream])
         .run(tauri::generate_context!()).expect("Personal Codex could not start");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn preview_opener_requires_current_owned_loopback_root() {
+        let make=|url:&str|serde_json::json!({"id":"preview-1","status":"running","proposal":{"url":url}});
+        assert!(preview_address(&make("http://127.0.0.1:4300"),"preview-1").is_ok());
+        for url in ["https://example.com", "file:///tmp/a", "http://localhost:4300", "http://127.0.0.1:80", "http://127.0.0.1:4300/private", "http://u:p@127.0.0.1:4300", "http://127.0.0.1:4300/?token=x"] {
+            assert!(preview_address(&make(url),"preview-1").is_err());
+        }
+        assert!(preview_address(&make("http://127.0.0.1:4300"),"different").is_err());
+        let mut stopped=make("http://127.0.0.1:4300");stopped["status"]=serde_json::json!("stopped");
+        assert!(preview_address(&stopped,"preview-1").is_err());
+    }
     #[test]
     fn connection_policy_rejects_public_insecure_and_credential_urls() {
         for raw in ["http://jarvis.example.com", "https://example.com", "http://jarvis.tail.ts.net", "http://0.0.0.0:8787", "http://u:password@localhost:8787", "http://localhost:8787/api", "https://jarvis.tail.ts.net/?x=1"] { assert!(validate_base(raw).is_err(), "{raw}"); }

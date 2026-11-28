@@ -10,11 +10,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 try:
-    import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents, dependencies  # script execution puts app/ on sys.path
+    import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents, dependencies, previews  # script execution puts app/ on sys.path
     from providers import ProviderTransportError
     from providers import openai_transport, OllamaTransport, transport_for  # noqa: F401 (re-exported for tests)
 except ImportError:  # imported as app.server
-    from app import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents, dependencies
+    from app import context, conversations, environment, gateway, providers, tools, security, maintenance, inference, runtime, network_policy, native_projects, local_runner, project_agent, attachments, project_review, full_task, task_backend, documents, dependencies, previews
     from app.providers import ProviderTransportError
     from app.providers import openai_transport, OllamaTransport, transport_for  # noqa: F401
 
@@ -50,6 +50,7 @@ LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 ENV_REF_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS preview_jobs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, proposal TEXT NOT NULL, digest TEXT NOT NULL, status TEXT NOT NULL, output TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS dependency_jobs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, proposal TEXT NOT NULL, digest TEXT NOT NULL, status TEXT NOT NULL, output TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS native_project_roots (path TEXT PRIMARY KEY, device INTEGER NOT NULL, inode INTEGER NOT NULL);
@@ -132,6 +133,8 @@ class Store:
         treat it as finished instead of waiting for a worker thread that no longer exists.
         """
         stamp = now()
+        self.conn.execute("UPDATE preview_jobs SET status='interrupted',output=?,updated_at=? WHERE status IN ('starting','running')",
+                          ("Backend restarted; preview is not automatically resumed. Review a new start.", stamp))
         self.conn.execute("UPDATE dependency_jobs SET status='interrupted',output=?,updated_at=? WHERE status='running'",
                           ("Backend restarted; installation is not replayed. Inspect staging and request a new review.", stamp))
         self.conn.execute("UPDATE autonomous_runs SET status='interrupted', summary=?, updated_at=? WHERE status='running'",
@@ -835,6 +838,8 @@ def cancellation_row(task_id: str):
 
 def cancel_task(task_id: str, reason: str = "cancellation requested") -> dict:
     """Persist a cancellation. An executing round stops between operations; a pending one is closed now."""
+    if _DEPENDENCIES is not None: _DEPENDENCIES.cancel(task_id)
+    if _PREVIEWS is not None: _PREVIEWS.stop(task_id)
     active = STORE.one("SELECT * FROM rounds WHERE task_id=? AND status IN ('awaiting-approval','executing') ORDER BY round_number DESC LIMIT 1", (task_id,))
     STORE.write("INSERT OR REPLACE INTO cancellations VALUES (?,?,?,?)", (task_id, active["id"] if active else None, now(), reason[:200]))
     if active and active["status"] == "awaiting-approval":
@@ -1204,12 +1209,22 @@ def task_service() -> task_backend.TaskBackend:
 
 
 _DEPENDENCIES = None
+_PREVIEWS = None
+_DEVELOPMENT_LOCK = threading.RLock()
 
 def dependency_service():
     global _DEPENDENCIES
-    if _DEPENDENCIES is None or _DEPENDENCIES.store is not STORE:
-        _DEPENDENCIES = dependencies.Installer(sys.modules[__name__])
-    return _DEPENDENCIES
+    with _DEVELOPMENT_LOCK:
+        if _DEPENDENCIES is None or _DEPENDENCIES.store is not STORE:
+            _DEPENDENCIES = dependencies.Installer(sys.modules[__name__])
+        return _DEPENDENCIES
+
+def preview_service():
+    global _PREVIEWS
+    with _DEVELOPMENT_LOCK:
+        if _PREVIEWS is None or _PREVIEWS.store is not STORE:
+            _PREVIEWS = previews.Previews(sys.modules[__name__])
+        return _PREVIEWS
 
 class App(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -1298,6 +1313,9 @@ class App(SimpleHTTPRequestHandler):
             print(f"[personal-codex] request failed ({type(error).__name__}); details withheld",file=sys.stderr)
             return self.json({"error":"Request failed; details withheld"},500)
     def get_route(self):
+        preview = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/preview", self.route())
+        if preview:
+            return self.json(preview_service().get(preview[1]))
         install = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/dependencies", self.route())
         if install:
             return self.json(dependency_service().get(install[1]))
@@ -1655,6 +1673,16 @@ class App(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             route=self.route(); data=self.body()
+            preview = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/preview/(propose|execute|stop)", route)
+            if preview:
+                tid, operation = preview.groups()
+                service = preview_service()
+                if operation == 'propose':
+                    if set(data) != {'script','port'}: raise ValueError('Choose the declared script and loopback port')
+                    return self.json(service.propose(tid,data['script'],data['port']),201)
+                if operation == 'execute': return self.json(service.execute(tid,data),202)
+                if data: raise ValueError('Stop accepts no fields')
+                return self.json({'stop_requested':service.stop(tid)})
             install = re.fullmatch(r"/api/tasks/([a-f0-9-]{36})/dependencies/(propose|execute|cancel)", route)
             if install:
                 task_id, operation = install.groups()
@@ -2461,7 +2489,8 @@ def main():
             chat_drained=conversations.drain(5)
             agent_drained=project_agent.stop_all()
             dependencies_drained = _DEPENDENCIES.close() if _DEPENDENCIES is not None else True
-            if drained and chat_drained and agent_drained and dependencies_drained:STORE.close()
+            previews_drained = _PREVIEWS.close() if _PREVIEWS is not None else True
+            if drained and chat_drained and agent_drained and dependencies_drained and previews_drained:STORE.close()
             else:print('Some requests interrupted; startup recovery will reconcile them',file=sys.stderr)
             for sig,handler in previous.items():signal.signal(sig,handler)
 

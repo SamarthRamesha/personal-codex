@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { api } from './api';
 import { DependencyInstall } from './DependencyInstall';
+import { ManagedPreview } from './ManagedPreview';
 import { checkNote, readinessEmptyText, readinessRows, serverLabel, toolLine } from './readiness';
 import type { Readiness } from './readiness';
 
@@ -70,5 +71,5 @@ export function ProjectReadiness({projectId, taskId, onSelectCheck}:{
       {row.notes.map(note=><p className="muted small" key={note}>{note}</p>)}
     </details>)}
     {report&&<p className="muted small">{report.advisories.join(' ')}</p>}
-  </section>{taskId&&report?.ecosystems.some(row=>row.kind==='node')&&<DependencyInstall key={taskId} taskId={taskId} onInstalled={()=>setRevision(value=>value+1)}/>}</>;
+  </section>{taskId&&report?.ecosystems.some(row=>row.kind==='node')&&<div key={taskId}><DependencyInstall taskId={taskId} onInstalled={()=>setRevision(value=>value+1)}/><ManagedPreview taskId={taskId}/></div>}</>;
 }

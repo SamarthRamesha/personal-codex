@@ -129,6 +129,8 @@ class Installer:
 
     def propose(self, task_id):
         with self.lock:
+            if task_id in self.active:
+                raise ValueError('Wait for or cancel the current installation')
             root = self.workspace(task_id)
             if os.path.lexists(root / 'node_modules'):
                 raise ValueError('Existing node_modules is preserved; replacement is not supported')

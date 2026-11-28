@@ -110,3 +110,12 @@ export async function importFullAttachments(projectId: string, names: string[]) 
 export function openFullDestination(taskId: string) {
   return invoke<void>('open_full_destination', {taskId});
 }
+
+export async function openDevelopmentPreview(taskId:string,previewId:string,url:string){
+  if(native){await invoke('open_development_preview',{taskId,previewId});return;}
+  const current=await api<{id:string;status:string;proposal:{url:string}}>(`/api/tasks/${taskId}/preview`);
+  if(current.id!==previewId||current.status!=='running'||current.proposal.url!==url)throw new Error('Preview is no longer running.');
+  const address=new URL(url);
+  if(address.protocol!=='http:'||address.hostname!=='127.0.0.1'||!address.port||address.pathname!=='/'||address.search||address.hash||address.username||address.password)throw new Error('Invalid local preview address.');
+  window.open(address.href,'_blank','noopener,noreferrer');
+}
