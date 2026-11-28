@@ -37,6 +37,7 @@ type Delivery={status:string;path:string;workspace:string;files:string[];markdow
 type AgentRun = {status:string;full_task?:boolean;delivery?:Delivery|null;attempt?:number;max_rounds?:number;summary?:string;workspace?:string;files?:string[];
   command?:string;provider_id?:string;evidence:{attempt:number;type:string;exit_code?:number;changed?:string[];feedback?:string;metrics?:InferenceMetrics}[]};
 type FileView={path:string;text:string;sha256:string;truncated:boolean};
+type PlanningContext={id:string;round_number:number;bytes:number;files:{path:string;start_line:number;end_line:number}[]};
 type TaskView={
   id:string;
   rounds:RoundReport;
@@ -46,6 +47,7 @@ type TaskView={
   proposal:{operations:Record<string,unknown>[];summary?:string;status:string}|null;
   diff:Diff|null;
   report:TaskReport|null;
+  contexts:PlanningContext[];
   workspace:{status:string;path?:string;branch?:string};
 };
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
@@ -129,7 +131,7 @@ export default function App(){
   const loadTask=useCallback(async(id:string)=>{
     const request=++taskRequest.current;
     const base=`/api/tasks/${id}`;
-    const [rounds,approvals,activity,executions,proposal,diff,workspace,report]=await Promise.all([
+    const [rounds,approvals,activity,executions,proposal,diff,workspace,report,contextReport]=await Promise.all([
       api<RoundReport>(`${base}/agent/rounds`),
       api<Approval[]>(`/api/approvals?task_id=${encodeURIComponent(id)}`),
       api<ActivityEvent[]>(`${base}/events`),
@@ -138,9 +140,10 @@ export default function App(){
       api<Diff>(`${base}/agent/diff`).catch(()=>null),
       api<TaskView['workspace']>(`${base}/workspace`),
       api<TaskReport>(`${base}/agent/report`).catch(()=>null),
+      api<{contexts:PlanningContext[]}>(`${base}/agent/context`).catch(()=>null),
     ]);
     if(taskRef.current===id&&request===taskRequest.current)
-      setTaskView({id,rounds,approvals:approvals.filter(approval=>approval.task_id===id),activity,executions,proposal,diff,workspace,report});
+      setTaskView({id,rounds,approvals:approvals.filter(approval=>approval.task_id===id),activity,executions,proposal,diff,workspace,report,contexts:contextReport?.contexts??[]});
   },[]);
   useEffect(()=>{
     if(!connected)return;
@@ -439,6 +442,16 @@ export default function App(){
             <section className="task-controls"><div><p className="eyebrow">CODING TASK</p><h2>{selectedTask?.prompt}</h2><span className="pill">{rounds?.status||selectedTask?.status}</span></div><div className="button-row">{!workspaceReady&&<><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace-request')}>Request workspace</button><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace')}>Create approved workspace</button></>}{workspaceReady&&<><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/request',{provider_id:providerId,prompt:roundGuidance.trim()})}>{['interrupted','cancelled','needs-another-round'].includes(taskStatus)?'Request fresh round':'Request round'}</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/plan',{provider_id:providerId})}>Generate proposal</button></>}</div></section>
             {proposal?.status==='pending'&&<section><h3>Proposal operations</h3><p className="muted small">{proposal.summary}</p><pre>{JSON.stringify(proposal.operations,null,2)}</pre></section>}
             {diff&&<section className="diff-review"><h3>Proposed changes<span className="pill">{diff.stale?'STALE':'Ready for review'}</span></h3><code>{diff.digest}</code>{(diff.files||diff.patches||[]).map((p,i)=><div key={i}><h4>{p.path}</h4><pre>{p.diff.join("\n")}</pre></div>)}</section>}
+            {!!currentTask?.contexts.length&&<details className="readiness">
+              <summary>Planning context files</summary>
+              <p className="muted small">Workspace excerpts selected when planning approval was requested.</p>
+              {currentTask.contexts.slice(0,3).map(context=><div key={context.id}>
+                <p>Round {context.round_number} · {context.bytes} context bytes</p>
+                {context.files.length>0?<ul>{context.files.map(file=><li key={`${file.path}-${file.start_line}`}>
+                  <code>{file.path}</code> · lines {file.start_line}–{file.end_line}
+                </li>)}</ul>:<p className="muted small">No workspace excerpts selected.</p>}
+              </div>)}
+            </details>}
             {visibleApprovals.length>0&&<section className="approvals"><h3><ShieldCheck size={15}/>Waiting for your approval</h3><p className="muted small">Each approval authorizes exactly one action and lapses ten minutes after you approve it.</p>{visibleApprovals.map(a=><div className="approval" key={a.id}><span className="pill">{a.kind}</span><pre>{a.detail}</pre><div className="button-row"><button disabled={!!busy} className="primary" onClick={()=>act('Approving',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'approved'});await loadTask(taskId);})}>Approve exact request</button><button disabled={!!busy} onClick={()=>act('Rejecting',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'rejected'});await loadTask(taskId);})}>Reject</button></div></div>)}</section>}
             {workspaceReady&&!diff&&taskStatus!=='completed'&&<label>Instructions for the next round
               <textarea value={roundGuidance} maxLength={2000} disabled={!!busy||agentActive}

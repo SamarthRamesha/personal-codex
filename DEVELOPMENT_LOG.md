@@ -617,3 +617,8 @@ selection of supported declared npm checks into the existing command review.
 
 This workspace lacked real Ollama, interactive macOS and authorized JARVIS access. Network-enabled
 install and server lifecycle remain operator-managed. [Product inventory](docs/PRODUCT_COMPLETION.md)
+
+The follow-up check exposed a race in local task recovery. The supervisor cleared the active slot
+before persisting terminal status. The supervisor now saves a failed state for the run and any
+running task before releasing the slot, including failures that happen before normal execution
+cleanup. The desktop also shows planning context file ranges without displaying raw prompts.

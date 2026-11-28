@@ -613,7 +613,7 @@ class ReliabilityApiTests(RoundApiFixture):
         self.assertIsNotNone(rounds["cancellation"])
         self.assertEqual(rounds["rounds"][0]["status"], "cancelled")
         approval = server.STORE.one("SELECT * FROM approvals WHERE id=?", (planned["approval_id"],))
-        self.assertEqual(approval["status"], "revoked")
+        self.assertEqual(approval["status"], "consumed")
         status, _ = self.call(f"/api/tasks/{self.task_id}/agent/round/execute", "POST", {})
         self.assertEqual(status, 404, "a cancelled round must not execute with its old approval")
         status, fresh = self.call(f"/api/tasks/{self.task_id}/agent/round/request", "POST", {"provider_id": self.provider["id"]})

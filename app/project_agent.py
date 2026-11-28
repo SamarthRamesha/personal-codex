@@ -72,14 +72,20 @@ def _supervise(server, task, provider, command, initial, rounds, evidence, cance
         _run(server, task, provider, command, initial, rounds, evidence, cancelled)
     finally:
         task_id = task["id"]
-        with _LOCK:
-            _ACTIVE.pop(task_id, None)
         try:
-            server.STORE.write("UPDATE autonomous_runs SET status='failed',summary=?,updated_at=? "
-                               "WHERE task_id=? AND status='running'",
-                               ("Local coding run ended without a final status", server.now(), task_id))
+            store = server.STORE
+            with store.lock, store.conn:
+                failed = store.conn.execute("UPDATE autonomous_runs SET status='failed',summary=?,updated_at=? "
+                                            "WHERE task_id=? AND status='running'",
+                                            ("Local coding run ended without a final status", server.now(), task_id))
+                if failed.rowcount:
+                    store.conn.execute("UPDATE tasks SET status='failed',updated_at=? WHERE id=? AND status='running'",
+                                       (server.now(), task_id))
         except Exception:  # the store itself may be why the run ended; never mask that
             pass
+        finally:
+            with _LOCK:
+                _ACTIVE.pop(task_id, None)
 
 
 def start(server, task, provider, command, rounds, *, scope=None):
@@ -372,27 +378,23 @@ def _run(server, task, provider, command, initial, rounds, evidence, cancelled):
     except (ValueError, OSError, TypeError) as error:
         summary = server.redacted(str(error))[:1200]
     finally:
-        try:
-            if spec:
-                verified_checks = checks
-                if not verified_checks:
-                    for item in reversed(evidence):
-                        if "verification" in item:
-                            verified_checks = item["verification"]
-                            break
-                        if item.get("changed") and item.get("type") != "documentation":
-                            break
-                state = "completed" if final == "complete" else "partially completed" if any(
-                    item.get("changed") for item in evidence) else "blocked"
-                files = written or sorted({name for item in evidence for name in item.get("changed", [])})
-                detail, commands = full_task.markdown(state, source, root, plan, verified_checks, files, summary,
-                                                        spec["scope"], "" if final == "complete" else summary)
-                delivery = {"status": state, "path": str(source), "workspace": str(root), "files": files,
-                            "checks": verified_checks, "markdown": detail, "commands": commands}
-                store.write("UPDATE full_tasks SET delivery=? WHERE task_id=?", (json.dumps(delivery), task_id))
-                store.write("UPDATE tasks SET status=?,updated_at=? WHERE id=?", (final, server.now(), task_id))
-            write(final, summary)
-            event("local agent", summary)
-        finally:
-            with _LOCK:
-                _ACTIVE.pop(task_id, None)
+        if spec:
+            verified_checks = checks
+            if not verified_checks:
+                for item in reversed(evidence):
+                    if "verification" in item:
+                        verified_checks = item["verification"]
+                        break
+                    if item.get("changed") and item.get("type") != "documentation":
+                        break
+            state = "completed" if final == "complete" else "partially completed" if any(
+                item.get("changed") for item in evidence) else "blocked"
+            files = written or sorted({name for item in evidence for name in item.get("changed", [])})
+            detail, commands = full_task.markdown(state, source, root, plan, verified_checks, files, summary,
+                                                    spec["scope"], "" if final == "complete" else summary)
+            delivery = {"status": state, "path": str(source), "workspace": str(root), "files": files,
+                        "checks": verified_checks, "markdown": detail, "commands": commands}
+            store.write("UPDATE full_tasks SET delivery=? WHERE task_id=?", (json.dumps(delivery), task_id))
+            store.write("UPDATE tasks SET status=?,updated_at=? WHERE id=?", (final, server.now(), task_id))
+        write(final, summary)
+        event("local agent", summary)
