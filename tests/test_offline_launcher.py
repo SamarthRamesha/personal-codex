@@ -19,10 +19,12 @@ class LauncherOwnershipTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             data=Path(folder);(data/'owner.token').write_text('synthetic-launcher-token-00000000000')
             backend=MagicMock();backend.poll.return_value=0
-            with patch.object(launcher.sys,'platform','darwin'),patch.object(launcher.sys,'argv',['launcher','--reuse-ollama','--backend-only','--data-dir',folder]),patch.object(launcher.shutil,'which',return_value='/trusted/ollama'),patch.object(launcher,'require_free_ports'),patch.object(launcher,'wait_ready'),patch.object(launcher,'get_json',side_effect=[{'version':'synthetic'},{'models':[{'name':'qwen3.5:9b'}]}]),patch.object(launcher.subprocess,'Popen',return_value=backend) as start:
+            with patch.dict(launcher.os.environ,{'SSL_CERT_FILE':'/synthetic/trust/ca.pem','HTTPS_PROXY':'http://synthetic.invalid'}),patch.object(launcher.sys,'platform','darwin'),patch.object(launcher.sys,'argv',['launcher','--reuse-ollama','--backend-only','--data-dir',folder]),patch.object(launcher.shutil,'which',return_value='/trusted/ollama'),patch.object(launcher,'require_free_ports'),patch.object(launcher,'wait_ready'),patch.object(launcher,'get_json',side_effect=[{'version':'synthetic'},{'models':[{'name':'qwen3.5:9b'}]}]),patch.object(launcher.subprocess,'Popen',return_value=backend) as start:
                 with self.assertRaisesRegex(RuntimeError,'exited'):launcher.main()
             self.assertEqual(start.call_count,1)
             self.assertTrue(start.call_args.args[0][-1].endswith('app/server.py'))
+            self.assertEqual(start.call_args.kwargs['env'].get('SSL_CERT_FILE'),'/synthetic/trust/ca.pem')
+            self.assertNotIn('HTTPS_PROXY',start.call_args.kwargs['env'])
             backend.terminate.assert_not_called();backend.kill.assert_not_called()
 
 if __name__=='__main__':unittest.main()

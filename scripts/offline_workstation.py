@@ -130,8 +130,9 @@ def main():
     print(f"Offline service logs: {session}", flush=True)
 
     # Keep the normal user cache and project toolchain. Drop inherited provider, proxy and
-    # deployment environment settings for these managed processes.
-    env = {key: os.environ[key] for key in ("HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "LANG") if key in os.environ}
+    # deployment environment settings for these managed processes. Retain existing CA
+    # locations so verified HTTPS downloads use the same trust as the launcher.
+    env = {key: os.environ[key] for key in ("HOME", "PATH", "TMPDIR", "USER", "LOGNAME", "LANG", "SSL_CERT_FILE", "SSL_CERT_DIR") if key in os.environ}
     native_grant = secrets.token_urlsafe(32)
     processes = []
     try:
