@@ -25,6 +25,11 @@ import shutil
 import stat
 from pathlib import Path
 
+try:
+    from . import project_files
+except ImportError:
+    import project_files
+
 # A manifest bigger than this is not a manifest; it is reported as unread rather than parsed.
 MAX_MANIFEST_BYTES = 200_000
 DEV_SCRIPT_NAMES = ("dev", "serve", "start", "preview")
@@ -98,7 +103,9 @@ def _declared_dev_scripts(root: Path, manager: str) -> tuple[list[dict], list[st
         return [], [], [f"package.json is {size} bytes, above the {MAX_MANIFEST_BYTES}-byte read "
                         "limit; its scripts were not parsed"], "too large"
     try:
-        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        with project_files.parent_directory(root, "package.json") as (parent, name):
+            raw, _ = project_files.snapshot(parent, name, limit=MAX_MANIFEST_BYTES)
+        data = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError) as error:
         return [], [], [f"package.json could not be parsed as JSON ({type(error).__name__}); "
                         "its scripts were not read"], "invalid JSON"

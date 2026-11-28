@@ -40,17 +40,17 @@ def parent_directory(root, relative, *, create=False, root_identity=None):
         os.close(current)
 
 
-def snapshot(parent, name):
+def snapshot(parent, name, *, limit=LIMIT):
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
     with os.fdopen(fd, "rb") as stream:
         initial = os.fstat(stream.fileno())
         if not stat.S_ISREG(initial.st_mode) or initial.st_nlink != 1:
             raise ValueError("Workspace file must be a regular file with a single link")
-        if initial.st_size > LIMIT:
+        if initial.st_size > limit:
             raise ValueError("Workspace text file exceeds the 2 MB size limit")
-        data = stream.read(LIMIT + 1)
+        data = stream.read(limit + 1)
         current = os.fstat(stream.fileno())
-        if len(data) > LIMIT or fingerprint(initial) != fingerprint(current):
+        if len(data) > limit or fingerprint(initial) != fingerprint(current):
             raise ValueError("Workspace file changed while being read")
         return data, current
 

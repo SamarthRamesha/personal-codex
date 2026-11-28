@@ -627,3 +627,7 @@ Mac CI run #123 stopped during the offline backend startup smoke test before bun
 HTTP listener no longer performs a reverse DNS lookup while binding. The launcher now keeps
 immediate backend logs and reports the last readiness error after a bounded 30-second window.
 The synthetic launcher and actual Mac acceptance remain distinct checks.
+
+## 28 November 2026 — Mac repair sprint
+
+Started from published integration 0a8d742 in the clean integration worktree. Two synthetic negative controls reproduced readiness reading a hardlinked manifest and a manifest swapped to a symlink between metadata and read. Reused descriptor-relative no-follow reads with a bounded manifest byte limit and link/change checks. Focused suite: 24 discovered, 21 passed, three HTTP-gated skips in the restricted invocation. Current published main, approved preview, profiles and protected diagnostic remain untouched. Broader HTTP/native/live-model checks are recorded after completion.
