@@ -59,7 +59,7 @@ dependency tree can exist and still be wrong; a dev script can be declared and s
 ## Not covered
 
 - No dependency installation or dev-server process is started by this feature; that lifecycle is
-  still owned by the approved command runner and the operator's own terminal.
+  handled by separate [reviewed installation](DEPENDENCY_INSTALLATION.md) and [managed preview](MANAGED_PREVIEWS.md) controls for supported task worktrees. Other tools remain operator-managed.
 - Only the four ecosystems above are detected. A project with another manifest reports that no
   recognised manifest was found.
 - The report is a snapshot taken when it is requested; nothing watches the directory afterwards.

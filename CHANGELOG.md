@@ -1,5 +1,14 @@
 # Changelog
 
+## Integration candidate — 2026-11-28
+
+- Fixed truncated structured Ollama output with a bounded 2048-token coding budget, explicit token-limit errors and JSON mode retained without streaming; chat remains bounded at 768.
+- Kept explicitly requested root file paths intact and separated long-running web previews from finite CLI smoke checks. Independent tests remained protected through failed model attempts.
+- Added reviewed locked npm installation and owned loopback Node previews with bounded staging/logs, cancellation and restart/backend-crash cleanup.
+- Fixed setup-node npm module-read portability and retained configured CA trust in desktop child processes without disabling TLS verification.
+- Passed real 9B existing-project repair and supplied-baseline web implementation, independent tests/API checks and generated browser addition. Exercised isolated desktop startup, dependency installation, preview readiness, chat and opening review/cancel.
+- Updated current acceptance/owner guides and shipped matching source with hosted ARM64 candidates. Native cross-app acceptance, broader frameworks, JARVIS and notarized distribution remain open. No stable-main or approved-preview changes.
+
 ## Unreleased — 2026-11-20
 
 - Added local Mac app/document opening and Finder reveal through explicit, expiring one-use native review. No general system automation or remote control claim; visual acceptance remains blocked.

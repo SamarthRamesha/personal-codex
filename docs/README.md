@@ -10,6 +10,8 @@
 - [Mac actions](MAC_ACTIONS.md)
 - [Project-document search](PROJECT_DOCUMENT_SEARCH.md)
 - [Project environment readiness](PROJECT_ENVIRONMENT.md)
+- [Reviewed dependency installation](DEPENDENCY_INSTALLATION.md)
+- [Managed development previews](MANAGED_PREVIEWS.md)
 - [Native application](../desktop/README.md)
 
 ## Understanding and developing it

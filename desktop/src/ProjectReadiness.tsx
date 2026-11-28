@@ -8,11 +8,7 @@ import type { Readiness } from './readiness';
 
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 
-/** Read-only project readiness: manifests, dependency state and the exact commands to run.
- *
- * Every command here is shown for the owner to run deliberately. Nothing on this panel installs a
- * dependency or starts a server, and it never labels an unverified state as ready.
- */
+/** Read-only readiness plus separately reviewed task installation and preview controls. */
 export function ProjectReadiness({projectId, taskId, onSelectCheck}:{
   projectId:string;taskId?:string;onSelectCheck?:(command:string)=>void;
 }){
@@ -67,7 +63,7 @@ export function ProjectReadiness({projectId, taskId, onSelectCheck}:{
           <button onClick={()=>copy(server.command)}>{copied===server.command?'Copied':'Copy start command'}</button>
         </li>)}
       </ul>}
-      {row.devServers.length>0&&<p className="muted small">Review the declared script and its bind address, then run it from the displayed directory in a dedicated terminal. Press Ctrl+C there to stop it.</p>}
+      {row.devServers.length>0&&<p className="muted small">{taskId?'For a supported Node entry point, use Managed development preview below. Other scripts require your own terminal and project-specific setup.':'Review the declared script and its bind address before running it in your own terminal. Select an approved task worktree to review a supported managed preview.'}</p>}
       {row.notes.map(note=><p className="muted small" key={note}>{note}</p>)}
     </details>)}
     {report&&<p className="muted small">{report.advisories.join(' ')}</p>}

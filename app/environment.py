@@ -47,8 +47,8 @@ NODE_MANAGERS = (
 )
 NODE_RUNNERS = {"npm": "npm run", "pnpm": "pnpm run", "yarn": "yarn", "bun": "bun run"}
 ADVISORIES = (
-    "This report is read-only: nothing was installed, started or downloaded.",
-    "Review install and server commands before running them in your own terminal. "
+    "This readiness check does not install packages, start services or download files.",
+    "Installation and preview actions require a separate review. Review other commands before running them in your own terminal. "
     "The approved runner handles supported checks.",
 )
 

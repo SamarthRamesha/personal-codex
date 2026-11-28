@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "live_model": "qwen3.5:9b",
+  "seconds": 180.81,
+  "checks": [
+    "real-model implementation from supplied manifest/tests",
+    "independent tests unchanged",
+    "reviewed registry installation",
+    "owned loopback preview",
+    "independent frontend/API responses"
+  ],
+  "jarvis_accessed": false,
+  "date": "2026-11-28",
+  "baseline": "Supplied manifest, lockfile and independent Node tests; not a blank project",
+  "browser_checks": [
+    {
+      "a": 2,
+      "b": 3,
+      "displayed": 5
+    },
+    {
+      "a": -2,
+      "b": 3,
+      "displayed": 1
+    }
+  ],
+  "limitations": [
+    "Synthetic fixture only",
+    "Product browser automation helper not exercised",
+    "No JARVIS deployment",
+    "No native Accessibility/key-event grants changed"
+  ]
+}
