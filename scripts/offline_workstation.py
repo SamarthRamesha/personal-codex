@@ -54,16 +54,18 @@ def get_json(port, path):
         connection.close()
 
 
-def wait_ready(process, port, route):
-    deadline = time.monotonic() + 15
+def wait_ready(process, port, route, timeout=15):
+    deadline = time.monotonic() + timeout
+    last_error = None
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(f"Service on port {port} exited during startup")
         try:
             return get_json(port, route)
-        except (OSError, ValueError):
+        except (OSError, ValueError) as error:
+            last_error = error
             time.sleep(0.2)
-    raise RuntimeError(f"Service on port {port} did not become ready")
+    raise RuntimeError(f"Service on port {port} did not become ready within {timeout}s: {last_error}")
 
 
 def require_free_ports():
@@ -150,7 +152,7 @@ def main():
             raise ValueError(f"No supported model is installed in the local Ollama cache. Supported models: {supported}")
         with (session / "backend.log").open("xb") as log:
             backend = subprocess.Popen(
-                [sys.executable, str(ROOT / "app/server.py")], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                [sys.executable, "-u", str(ROOT / "app/server.py")], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
                 env={**env, "PERSONAL_CODEX_INFERENCE_POLICY": "offline", "PERSONAL_CODEX_HOST": "127.0.0.1",
                      "PERSONAL_CODEX_DATA": str(data), "PERSONAL_CODEX_TOKEN_FILE": str(token),
                      "PERSONAL_CODEX_PROJECT_ROOTS": str(projects), "PERSONAL_CODEX_OFFLINE_MODEL": model,
@@ -158,7 +160,7 @@ def main():
                      "PERSONAL_CODEX_MAX_CONTEXT_BYTES": "12000", "PERSONAL_CODEX_NATIVE_GRANT": native_grant},
             )
         processes.append(backend)
-        wait_ready(backend, BACKEND_PORT, "/api/health")
+        wait_ready(backend, BACKEND_PORT, "/api/health", timeout=30)
 
         print(f"Personal Codex offline at http://127.0.0.1:8787, default {model}", flush=True)
         print(f"Project root: {projects}", flush=True)

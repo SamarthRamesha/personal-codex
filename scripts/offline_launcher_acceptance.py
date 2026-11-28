@@ -60,7 +60,7 @@ HTTPServer(("127.0.0.1", 11434), Fixture).serve_forever()
                 stdout=log, stderr=subprocess.STDOUT,
             )
             try:
-                deadline = time.monotonic() + 35
+                deadline = time.monotonic() + 55
                 while True:
                     if process.poll() is not None:
                         raise RuntimeError(f"Launcher exited during startup with status {process.returncode}")

@@ -622,3 +622,8 @@ The follow-up check exposed a race in local task recovery. The supervisor cleare
 before persisting terminal status. The supervisor now saves a failed state for the run and any
 running task before releasing the slot, including failures that happen before normal execution
 cleanup. The desktop also shows planning context file ranges without displaying raw prompts.
+
+Mac CI run #123 stopped during the offline backend startup smoke test before bundling. The
+HTTP listener no longer performs a reverse DNS lookup while binding. The launcher now keeps
+immediate backend logs and reports the last readiness error after a bounded 30-second window.
+The synthetic launcher and actual Mac acceptance remain distinct checks.

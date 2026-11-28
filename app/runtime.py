@@ -4,6 +4,7 @@ import fcntl
 import os
 from pathlib import Path
 import socket
+from socketserver import TCPServer
 import stat
 import threading
 import time
@@ -34,6 +35,10 @@ class ControlServer(ThreadingHTTPServer):
         self.tls_context=tls_context;self.capacity=threading.BoundedSemaphore(max_clients)
         self.active=0;self.activity=threading.Condition()
         super().__init__(address,handler)
+    def server_bind(self):
+        # HTTPServer uses getfqdn here. A local listener must start without reverse DNS.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
     def get_request(self):
         client,address=super().get_request();client.settimeout(10)
         if self.tls_context is not None:

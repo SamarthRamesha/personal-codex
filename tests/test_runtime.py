@@ -18,6 +18,13 @@ from app import runtime,server
 
 
 class RuntimePolicyTests(unittest.TestCase):
+    @unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires explicitly enabled loopback listener")
+    def test_loopback_listener_does_not_need_reverse_dns(self):
+        with patch("socket.getfqdn", side_effect=AssertionError("Unexpected reverse DNS lookup")):
+            with runtime.ControlServer(("127.0.0.1", 0), BaseHTTPRequestHandler) as listener:
+                self.assertEqual(listener.server_name, "127.0.0.1")
+                self.assertEqual(listener.server_port, listener.server_address[1])
+
     def test_instance_lock_excludes_other_starts_and_recovers_after_release(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
