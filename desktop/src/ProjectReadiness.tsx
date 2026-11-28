@@ -11,7 +11,9 @@ const errorText=(error:unknown)=>error instanceof Error?error.message:String(err
  * Every command here is shown for the owner to run deliberately. Nothing on this panel installs a
  * dependency or starts a server, and it never labels an unverified state as ready.
  */
-export function ProjectReadiness({projectId, taskId}:{projectId:string;taskId?:string}){
+export function ProjectReadiness({projectId, taskId, onSelectCheck}:{
+  projectId:string;taskId?:string;onSelectCheck?:(command:string)=>void;
+}){
   const [report,setReport]=useState<Readiness|null>(null);
   const [error,setError]=useState('');
   const [copied,setCopied]=useState('');
@@ -49,9 +51,13 @@ export function ProjectReadiness({projectId, taskId}:{projectId:string;taskId?:s
       </div>}
       {row.tools.length>0&&<p className="muted small">{toolLine(row.tools)}</p>}
       {row.checks.length>0&&<div className="button-row">
-        {row.checks.map(check=><button key={check.script} title={`Copy: ${check.command}`} onClick={()=>copy(check.command)}>
-          {copied===check.command?<Check size={13}/>:<Copy size={13}/>}<code>{check.command}</code>
-        </button>)}
+        {row.checks.map(check=><div key={check.script}>
+          <button title={`Copy: ${check.command}`} onClick={()=>copy(check.command)}>
+            {copied===check.command?<Check size={13}/>:<Copy size={13}/>}<code>{check.command}</code>
+          </button>
+          {onSelectCheck&&/^npm run (test|build|lint|typecheck)$/.test(check.command)&&
+            <button onClick={()=>onSelectCheck(check.command)}>Review check</button>}
+        </div>)}
       </div>}
       {row.checks.length===0&&<p className="muted small">{checkNote(row)}</p>}
       {row.devServers.length>0&&<ul className="muted small">

@@ -209,13 +209,13 @@ class Store:
                               (approval_id,stamp))
             self.conn.commit()
             return False
-    def claim_execution(self, proposal_id: str, round_id: str | None = None) -> str:
+    def claim_execution(self, proposal_id: str, round_id: str | None = None, approval_id: str | None = None) -> str:
         """Take a pending proposal (and a round, when given) in one locked transaction.
 
         The connection is shared with streamed chat workers, so the claim and the round update are
         made under the same lock every other write uses; a lost claim rolls back only this attempt
-        instead of discarding another thread's in-flight insert. Returns ``ok``, ``proposal`` or
-        ``round`` so the caller can report the exact conflict.
+        instead of discarding another thread's in-flight insert. A reviewed round can spend its
+        approval as part of the same claim.
         """
         with self.lock:
             claim = self.conn.execute("UPDATE proposals SET status='executing' WHERE id=? AND status='pending'", (proposal_id,))
@@ -230,6 +230,12 @@ class Store:
             if round_claim.rowcount != 1:
                 self.conn.rollback()
                 return "round"
+            if approval_id is not None:
+                spend = self.conn.execute("UPDATE approvals SET status='consumed' WHERE id=? AND status='approved' "
+                                          "AND (expires_at IS NULL OR expires_at>?)", (approval_id, now()))
+                if spend.rowcount != 1:
+                    self.conn.rollback()
+                    return "approval"
             self.conn.commit()
             return "ok"
 
@@ -1993,9 +1999,6 @@ class App(SimpleHTTPRequestHandler):
                 workspace=STORE.one("SELECT * FROM workspaces WHERE task_id=? AND status='ready'",(tid,))
                 if not workspace: return self.json({"error":"ready task workspace required"},403)
                 if task["status"]=="completed": return self.json({"error":"task is completed"},409)
-                if task["status"]=="cancelled":
-                    STORE.write("DELETE FROM cancellations WHERE task_id=?",(tid,))
-                    task_event(tid,"orchestrator","info","User requested a fresh round after cancellation; prior approvals remain revoked.")
                 provider=provider_row(data.get("provider_id"))
                 if not provider: return self.json({"error":"provider not found"},404)
                 if not provider["enabled"]: return self.json({"error":"provider is disabled"},400)
@@ -2010,11 +2013,25 @@ class App(SimpleHTTPRequestHandler):
                 prompt=validate_provider_prompt(build_round_prompt(task,workspace,str(data.get("prompt") or ""),rounds,context_text))
                 budget=budget_error(tid, prompt_bytes=len(prompt.encode("utf-8")))
                 if budget:
-                    if task["status"] != "budget-exhausted":
+                    if task["status"] not in {"budget-exhausted", "cancelled"}:
                         STORE.write("UPDATE tasks SET status='budget-exhausted', updated_at=? WHERE id=?",(now(),tid))
                     task_event(tid,"security","warning",f"Round {number} refused before any provider call: {budget}")
                     return self.json({"error":budget,"budget":budget_state(tid),"limits":limits},409)
                 kind=provider_approval_kind(provider); detail=round_invocation_detail(tid,provider,prompt,number); aid=uid()
+                if task["status"] == "cancelled":
+                    with STORE.lock, STORE.conn:
+                        if STORE.one("SELECT 1 FROM rounds WHERE task_id=? AND status='executing'", (tid,)):
+                            return self.json({"error": "Wait for the cancelled round to stop"}, 409)
+                        resumed = STORE.conn.execute("UPDATE tasks SET status='needs-another-round',updated_at=? "
+                                                     "WHERE id=? AND status='cancelled'", (now(), tid))
+                        if resumed.rowcount != 1:
+                            return self.json({"error": "Task status changed; refresh before requesting a round"}, 409)
+                        for approval in STORE.rows("SELECT id,detail FROM approvals WHERE project_id=? AND status IN ('approved','pending')",
+                                                   (task["project_id"],)):
+                            if approval_belongs_to_task(approval["detail"], tid):
+                                STORE.conn.execute("UPDATE approvals SET status='revoked' WHERE id=?", (approval["id"],))
+                        STORE.conn.execute("DELETE FROM cancellations WHERE task_id=?", (tid,))
+                    task_event(tid,"orchestrator","info","Fresh round requested after cancellation. Previous approvals were revoked.")
                 STORE.write("INSERT INTO approvals (id,project_id,kind,detail,status,created_at) VALUES (?,?,?,?,?,?)",(aid,task["project_id"],kind,detail,"pending",now()))
                 prompt_sha=json.loads(detail)["refs"]["prompt_sha256"]
                 context_id=uid()
@@ -2094,11 +2111,32 @@ class App(SimpleHTTPRequestHandler):
                 STORE.write("UPDATE tasks SET status=?, updated_at=? WHERE id=?",(parsed["status"],now(),tid))
                 task_event(tid,"orchestrator","warning",f"Round {number} is {parsed['status']}: {parsed['summary'][:300]}")
                 return self.json({"round_id":rid,"round":number,"status":parsed["status"],"summary":parsed["summary"],"limits":round_limits(tid)},201)
+            if route.startswith("/api/tasks/") and route.endswith("/agent/round/discard"):
+                tid = route.split("/")[3]
+                if not isinstance(data.get("proposal_id"), str):
+                    return self.json({"error": "Supply the exact proposal ID"}, 400)
+                with STORE.lock, STORE.conn:
+                    round_row = STORE.one("SELECT r.id,r.round_number,r.proposal_id,r.approval_id FROM rounds r "
+                                          "JOIN proposals p ON p.id=r.proposal_id AND p.task_id=r.task_id "
+                                          "WHERE r.task_id=? AND p.id=? AND r.status='awaiting-approval' AND p.status='pending'",
+                                          (tid, data["proposal_id"]))
+                    if not round_row:
+                        return self.json({"error": "That proposal is no longer awaiting review"}, 409)
+                    STORE.conn.execute("UPDATE rounds SET status='discarded',updated_at=? WHERE id=?", (now(), round_row["id"]))
+                    STORE.conn.execute("UPDATE proposals SET status='discarded' WHERE id=?", (round_row["proposal_id"],))
+                    STORE.conn.execute("UPDATE approvals SET status='revoked' WHERE id=? AND status IN ('approved','pending')",
+                                       (round_row["approval_id"],))
+                    STORE.conn.execute("UPDATE tasks SET status='needs-another-round',updated_at=? WHERE id=? AND status='iterating'",
+                                       (now(), tid))
+                task_event(tid, "reviewer", "info", f"Round {round_row['round_number']} was discarded without execution.")
+                return self.json({"status": "discarded", "round_id": round_row["id"]})
             if route.startswith("/api/tasks/") and route.endswith("/agent/round/execute"):
                 tid=route.split("/")[3]; task=STORE.one("SELECT * FROM tasks WHERE id=?",(tid,))
                 if not task: return self.json({"error":"task not found"},404)
                 round_row=STORE.one("SELECT * FROM rounds WHERE task_id=? AND status='awaiting-approval' ORDER BY round_number DESC LIMIT 1",(tid,))
                 if not round_row: return self.json({"error":"no round awaiting approval"},404)
+                if "proposal_id" in data and data["proposal_id"] != round_row["proposal_id"]:
+                    return self.json({"error":"The reviewed proposal changed. Refresh and review the current proposal."},409)
                 proposal=STORE.one("SELECT * FROM proposals WHERE id=? AND status='pending'",(round_row["proposal_id"],))
                 if not proposal: return self.json({"error":"round proposal is not pending"},409)
                 operations=json.loads(proposal["operations"]); digest=tools.proposal_digest(tid, proposal["workspace_branch"], operations)
@@ -2116,7 +2154,9 @@ class App(SimpleHTTPRequestHandler):
                     STORE.write("UPDATE proposals SET status='cancelled' WHERE id=? AND status='pending'",(proposal["id"],))
                     task_event(tid,"orchestrator","warning",f"Round {round_row['round_number']} was cancelled before it started; nothing ran.")
                     return self.json({"round_id":round_row["id"],"round":round_row["round_number"],"status":"cancelled","ok":False,"results":[],"task_status":"cancelled","ledger":round_ledger(round_row["id"])},409)
-                claimed=STORE.claim_execution(proposal["id"],round_row["id"])
+                claimed=STORE.claim_execution(proposal["id"],round_row["id"],permitted["id"])
+                if claimed=="approval":
+                    return self.json({"error":"Proposal approval is no longer valid"},403)
                 if claimed!="ok":
                     return self.json({"error":"Proposal is already being executed" if claimed=="proposal" else "Round is already being executed"},409)
                 op_ids={}

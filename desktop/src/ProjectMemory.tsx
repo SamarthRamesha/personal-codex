@@ -29,6 +29,7 @@ export function ProjectMemory({projectId}:{projectId:string}) {
   const [kind,setKind]=useState('convention'),[content,setContent]=useState('');
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const [removing,setRemoving]=useState('');
+  const [edit,setEdit]=useState<{id:string;content:string}|null>(null);
   const path=`/api/projects/${projectId}/memory`;
 
   async function update(mutation?:()=>Promise<unknown>){
@@ -57,14 +58,31 @@ export function ProjectMemory({projectId}:{projectId:string}) {
       {memory.memory.length===0&&<p>No saved notes.</p>}
       {memory.memory.map(entry=><article key={entry.id}>
         <strong>{entry.kind}</strong> <small>{provenance[entry.verification]||entry.verification}</small>
-        <p>{entry.content}</p>
+        {edit?.id===entry.id?<form onSubmit={event=>{
+          event.preventDefault();
+          if(busy||!edit.content.trim()||edit.content.trim()===entry.content)return;
+          void update(async()=>{
+            await api(`${path}/update`,'POST',{id:entry.id,content:edit.content.trim()});
+            setEdit(null);
+          });
+        }}>
+          <label>Correct saved note<textarea maxLength={2000} disabled={busy} value={edit.content}
+            onChange={event=>setEdit({id:entry.id,content:event.target.value})}/></label>
+          {entry.verification!=='manual'&&<p className="muted small">An edited note will be listed as an owner note.</p>}
+          <div className="button-row">
+            <button type="submit" disabled={busy||!edit.content.trim()||edit.content.trim()===entry.content}>Save correction</button>
+            <button type="button" disabled={busy} onClick={()=>setEdit(null)}>Cancel edit</button>
+          </div>
+        </form>:<><p>{entry.content}</p>
+          <button disabled={busy} onClick={()=>{setRemoving('');setEdit({id:entry.id,content:entry.content});}}>Edit note</button>
+        </>}
         {removing===entry.id?<div className="button-row">
           <button disabled={busy} onClick={()=>void update(async()=>{
             await api(`${path}/delete`,'POST',{id:entry.id});
             setRemoving('');
           })}>Confirm removal</button>
           <button disabled={busy} onClick={()=>setRemoving('')}>Keep note</button>
-        </div>:<button disabled={busy} onClick={()=>setRemoving(entry.id)}>Remove note</button>}
+        </div>:<button disabled={busy} onClick={()=>{setEdit(null);setRemoving(entry.id);}}>Remove note</button>}
       </article>)}
       {proposals.length>0&&<h3>Notes awaiting review</h3>}
       {proposals.map(proposal=>{

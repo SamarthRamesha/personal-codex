@@ -370,6 +370,43 @@ class RoundApiFixture(unittest.TestCase):
 class MultiRoundApiTests(RoundApiFixture):
     """Iterative rounds: execute, feed evidence back, require fresh approvals, verify completion."""
 
+    def test_discarded_proposal_cannot_run_and_replacement_uses_new_approval(self):
+        self.responses = [json.dumps({"summary": f"attempt {i}", "status": "continue", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": f"attempt {i}\n"},
+            {"tool": "run_tests", "command": 'python3 -c "print(1)"'},
+        ]}) for i in (1, 2)]
+        base = f"/api/tasks/{self.task_id}/agent"
+        first = self.plan_round()
+        self.assertEqual(self.approve(first["approval_id"]), 200)
+        self.assertEqual(self.call(f"{base}/round/discard", "POST", {"proposal_id": "other"})[0], 409)
+        self.assertEqual(self.call(f"{base}/round/discard", "POST", {"proposal_id": first["proposal_id"]})[0], 200)
+        self.assertEqual(self.call(f"{base}/diff")[0], 404)
+        self.assertEqual(self.call(f"{base}/round/execute", "POST", {})[0], 404)
+        self.assertEqual((self.workspace / "README.md").read_text(), "hi\n")
+        self.assertEqual(server.STORE.one("SELECT status FROM approvals WHERE id=?", (first["approval_id"],))["status"], "revoked")
+        replacement = self.plan_round()
+        self.assertEqual(self.call(f"{base}/round/discard", "POST", {"proposal_id": first["proposal_id"]})[0], 409)
+        self.assertEqual(self.call(f"{base}/round/execute", "POST", {})[0], 403)
+        self.assertEqual(self.approve(replacement["approval_id"]), 200)
+        self.assertEqual(self.call(f"{base}/round/execute", "POST", {"proposal_id": first["proposal_id"]})[0], 409)
+        self.assertEqual(self.call(f"{base}/round/execute", "POST", {"proposal_id": replacement["proposal_id"]})[0], 200)
+        self.assertEqual((self.workspace / "README.md").read_text(), "attempt 2\n")
+        self.assertEqual(server.STORE.one("SELECT status FROM approvals WHERE id=?", (replacement["approval_id"],))["status"], "consumed")
+
+    def test_cancelled_task_can_request_and_generate_a_fresh_round(self):
+        base = f"/api/tasks/{self.task_id}"
+        old = self.request_round()
+        self.assertEqual(self.call(f"{base}/cancel", "POST", {})[0], 202)
+        self.assertEqual(self.call(f"{base}/agent/round/request", "POST", {"provider_id": "unknown"})[0], 404)
+        self.assertIsNotNone(server.cancellation_row(self.task_id))
+        self.responses = [json.dumps({"summary": "replacement", "status": "continue", "operations": [
+            {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "replacement\n"},
+        ]})]
+        replacement = self.plan_round()
+        self.assertEqual(replacement["status"], "awaiting-approval")
+        self.assertEqual(server.STORE.one("SELECT status FROM approvals WHERE id=?", (old["approval_id"],))["status"], "revoked")
+        self.assertEqual((self.workspace / "README.md").read_text(), "hi\n")
+
     def test_round_review_keeps_credential_shaped_code_intact(self):
         self.responses = [json.dumps({"summary": "record a token", "status": "continue", "operations": [
             {"tool": "apply_patch", "path": "README.md", "old_text": "hi\n", "new_text": "token=abc123def\n"},

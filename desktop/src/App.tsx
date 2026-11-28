@@ -68,7 +68,8 @@ export default function App(){
   const [taskView,setTaskView]=useState<TaskView|null>(null);
   const [taskPrompt,setTaskPrompt]=useState('');
   const [files,setFiles]=useState<string[]>([]),[file,setFile]=useState<FileView|null>(null);
-  const [command,setCommand]=useState('python3 -m unittest discover -s tests -v');
+  const [roundGuidance,setRoundGuidance]=useState('');
+  const [command,setCommand]=useState('');
   const [projectPath,setProjectPath]=useState(''),[newProject,setNewProject]=useState(false),[providerEndpoint,setProviderEndpoint]=useState('http://127.0.0.1:11434'),[providerModel,setProviderModel]=useState('');
   const [fullDialog,setFullDialog]=useState<{prompt:string;mode:'new'|'existing'|'registered'}|null>(null);
   const [copiedCommands,setCopiedCommands]=useState(false);
@@ -94,7 +95,7 @@ export default function App(){
   function setTaskId(id:string){
     if(taskRef.current===id)return;
     taskRequest.current++;taskRef.current=id;
-    setTaskSelection(id);setTaskView(null);
+    setTaskSelection(id);setTaskView(null);setRoundGuidance('');setCommand('');
     setAgentRun(null);setConfirmRun(false);setAgentChanges(null);setAppliedPath('');setCopiedCommands(false);
   }
   function selectProvider(id:string){
@@ -383,7 +384,11 @@ export default function App(){
           <ProjectTaskList key={`tasks-${projectId}`} tasks={tasks} projectId={projectId} selectedId={taskId} onSelect={id=>setTaskId(id)}/>
           {connected&&projectId&&<ProjectMemory key={`memory-${projectId}`} projectId={projectId}/>}
           {offline&&connected&&projectId&&<ProjectDocuments key={`documents-${projectId}`} projectId={projectId} attachments={attachments} onImport={()=>attachFile(false)}/>}
-          {connected&&projectId&&<ProjectReadiness key={`readiness-${workspaceReady?taskId:projectId}`} projectId={projectId} taskId={workspaceReady?taskId:undefined}/>}
+          {connected&&projectId&&<ProjectReadiness key={`readiness-${workspaceReady?taskId:projectId}`} projectId={projectId} taskId={workspaceReady?taskId:undefined}
+            onSelectCheck={workspaceReady&&executionEnabled&&!busy&&!agentActive&&!agentRun?.full_task?value=>{
+              setCommand(value);
+              document.getElementById('task-check-command')?.focus();
+            }:undefined}/>}
           {file&&<section className="file-preview"><div><FileCode2 size={14}/><strong>{file.path}</strong><span>Read only · {file.sha256.slice(0,12)}</span><button title="Close file" onClick={()=>setFile(null)}><X size={14}/></button></div><pre>{file.text}</pre>{file.truncated&&<p className="muted">Preview truncated.</p>}</section>}
           {!taskId&&!file&&!projectId&&<div className="work-empty"><GitBranch size={30}/><h2>Choose a project or open a saved task.</h2></div>}
           {taskId&&<>{offline&&executionEnabled&&<section className="local-agent">
@@ -408,7 +413,7 @@ export default function App(){
             {confirmRun&&<div className="local-agent-scope">
               <p>Authorize up to four rounds of file creation and edits in the task worktree.</p>
               <label>Exact validation command<input aria-label="Agent validation command" value={agentRun?.command||command} readOnly={!!agentRun?.command} onChange={e=>setCommand(e.target.value)}/></label>
-              <button className="primary" disabled={!!busy} onClick={startAutonomous}>Authorize and run</button>
+              <button className="primary" disabled={!!busy||!(agentRun?.command||command).trim()} onClick={startAutonomous}>Authorize and run</button>
               <button onClick={()=>setConfirmRun(false)}>Cancel</button>
             </div>}
              {!agentRun?.full_task&&agentRun?.status==='complete'&&<button disabled={!!busy} onClick={()=>act('Reviewing task changes',async()=>{
@@ -431,11 +436,17 @@ export default function App(){
                   <option key={item.id} value={item.id}>{item.kind} · {item.model}</option>)}
               </select>
             </label>}
-            <section className="task-controls"><div><p className="eyebrow">CODING TASK</p><h2>{selectedTask?.prompt}</h2><span className="pill">{rounds?.status||selectedTask?.status}</span></div><div className="button-row">{!workspaceReady&&<><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace-request')}>Request workspace</button><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace')}>Create approved workspace</button></>}{workspaceReady&&<><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/request',{provider_id:providerId})}>{taskStatus==='interrupted'?'Request fresh round':'Request round'}</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/plan',{provider_id:providerId})}>Generate proposal</button></>}</div></section>
+            <section className="task-controls"><div><p className="eyebrow">CODING TASK</p><h2>{selectedTask?.prompt}</h2><span className="pill">{rounds?.status||selectedTask?.status}</span></div><div className="button-row">{!workspaceReady&&<><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace-request')}>Request workspace</button><button disabled={!!busy||!currentTask||!executionEnabled||agentActive} onClick={()=>taskAction('workspace')}>Create approved workspace</button></>}{workspaceReady&&<><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/request',{provider_id:providerId,prompt:roundGuidance.trim()})}>{['interrupted','cancelled','needs-another-round'].includes(taskStatus)?'Request fresh round':'Request round'}</button><button disabled={!!busy||!providerId||!executionEnabled||agentActive||!!diff} onClick={()=>taskAction('agent/round/plan',{provider_id:providerId})}>Generate proposal</button></>}</div></section>
             {proposal?.status==='pending'&&<section><h3>Proposal operations</h3><p className="muted small">{proposal.summary}</p><pre>{JSON.stringify(proposal.operations,null,2)}</pre></section>}
             {diff&&<section className="diff-review"><h3>Proposed changes<span className="pill">{diff.stale?'STALE':'Ready for review'}</span></h3><code>{diff.digest}</code>{(diff.files||diff.patches||[]).map((p,i)=><div key={i}><h4>{p.path}</h4><pre>{p.diff.join("\n")}</pre></div>)}</section>}
             {visibleApprovals.length>0&&<section className="approvals"><h3><ShieldCheck size={15}/>Waiting for your approval</h3><p className="muted small">Each approval authorizes exactly one action and lapses ten minutes after you approve it.</p>{visibleApprovals.map(a=><div className="approval" key={a.id}><span className="pill">{a.kind}</span><pre>{a.detail}</pre><div className="button-row"><button disabled={!!busy} className="primary" onClick={()=>act('Approving',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'approved'});await loadTask(taskId);})}>Approve exact request</button><button disabled={!!busy} onClick={()=>act('Rejecting',async()=>{await api(`/api/approvals/${a.id}`,'PATCH',{status:'rejected'});await loadTask(taskId);})}>Reject</button></div></div>)}</section>}
-            {diff&&<button disabled={!!busy||!executionEnabled||diff.stale||!diff.digest_valid} onClick={()=>taskAction('agent/round/execute')}>Execute approved proposal</button>}
+            {workspaceReady&&!diff&&taskStatus!=='completed'&&<label>Instructions for the next round
+              <textarea value={roundGuidance} maxLength={2000} disabled={!!busy||agentActive}
+                onChange={event=>setRoundGuidance(event.target.value)}/>
+            </label>}
+            {diff?.proposal_id&&<button disabled={!!busy||agentActive}
+              onClick={()=>taskAction('agent/round/discard',{proposal_id:diff.proposal_id})}>Discard proposal</button>}
+            {diff&&<button disabled={!!busy||!executionEnabled||diff.stale||!diff.digest_valid} onClick={()=>taskAction('agent/round/execute',{proposal_id:diff.proposal_id})}>Execute approved proposal</button>}
             {rounds?.rounds.map(r=><section className="round" key={r.id}>
               <h3>Round {r.round_number}<span className="pill" aria-live="polite">{r.status}</span></h3>
               <p>{r.summary}</p>
@@ -446,7 +457,7 @@ export default function App(){
             </section>)}
             {currentTask&&taskStatus==='completed'&&<TaskDelivery workspace={currentTask.workspace}
               disabled={!!busy||!executionEnabled||agentActive} act={taskAction}/>}
-            <section className="terminal-panel"><h3><Terminal size={15}/>Approved command runner</h3><p className="muted small">Runs an exact approved command in this task’s isolated worktree.</p><input aria-label="Test command" value={command} onChange={e=>setCommand(e.target.value)}/><div className="button-row"><button disabled={!!busy||!workspaceReady||!executionEnabled||agentActive} onClick={()=>taskAction('execution-request',{command})}>Request command approval</button><button disabled={!!busy||!workspaceReady||!executionEnabled||agentActive} onClick={()=>taskAction('execute',{command,timeout:120})}>Run approved command</button></div>{executions.map((e,i)=><div key={i}><span className="pill">Exit {e.exit_code}</span><pre>{e.output}</pre></div>)}</section>
+            <section className="terminal-panel"><h3><Terminal size={15}/>Approved command runner</h3><p className="muted small">Runs an exact approved command in this task’s isolated worktree.</p><input id="task-check-command" aria-label="Test command" placeholder="Enter an exact check command" value={command} onChange={e=>setCommand(e.target.value)}/><div className="button-row"><button disabled={!!busy||!workspaceReady||!executionEnabled||agentActive||!command.trim()} onClick={()=>taskAction('execution-request',{command})}>Request command approval</button><button disabled={!!busy||!workspaceReady||!executionEnabled||agentActive||!command.trim()} onClick={()=>taskAction('execute',{command,timeout:120})}>Run approved command</button></div>{executions.map((e,i)=><div key={i}><span className="pill">Exit {e.exit_code}</span><pre>{e.output}</pre></div>)}</section>
             </>}
             {currentTask?.report&&<TaskReportPanel report={currentTask.report}/>}
             <section className="activity"><h3>Activity</h3>{activityView.hidden>0&&<p className="muted small">{activityNote(activityView.hidden,activity.length)}</p>}{activityView.rows.map((e,i)=><p key={i}><span>{e.agent}<small>{e.at}</small></span>{e.message}</p>)}</section>
