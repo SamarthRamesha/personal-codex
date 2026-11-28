@@ -66,6 +66,44 @@ class OfflineProviderTests(unittest.TestCase):
             self.assertFalse(policy.provider_allowed({**self.row, "model": first}))
             self.assertTrue(policy.provider_allowed({**self.row, "model": second}))
 
+    def test_explicitly_named_installed_model_is_usable_offline(self):
+        custom = "llama3.2:3b"
+        with patch.dict(os.environ, {"PERSONAL_CODEX_OFFLINE_MODEL": custom,
+                                    "PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS": custom}, clear=False):
+            self.assertEqual(policy.offline_models(), (custom,))
+            self.assertTrue(policy.provider_allowed({**self.row, "model": custom}))
+            self.assertFalse(policy.provider_allowed({**self.row, "model": "other:latest"}))
+            self.assertFalse(policy.provider_allowed({**self.row, "model": custom, "cloud_allowed": True}))
+            self.assertFalse(policy.provider_allowed({**self.row, "model": custom, "secret_ref": "KEY"}))
+
+    def test_additional_models_extend_the_selector_without_replacing_the_default(self):
+        first, second = policy.OFFLINE_MODELS
+        with patch.dict(os.environ, {"PERSONAL_CODEX_OFFLINE_MODELS": "llama3.2:3b, mistral:7b",
+                                    "PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS": f"{first},llama3.2:3b"}, clear=False):
+            self.assertEqual(policy.offline_models(), (first, "llama3.2:3b"))
+            self.assertIn("llama3.2:3b", policy.offline_model_allowlist())
+            self.assertNotIn("mistral:7b", policy.offline_models())
+
+    def test_seeding_registers_an_explicitly_named_model_for_the_desktop_selector(self):
+        store = Mock()
+        with patch.object(server, "STORE", store), \
+                patch.dict(os.environ, {"PERSONAL_CODEX_OFFLINE_MODEL": "llama3.2:3b",
+                                       "PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS": "llama3.2:3b"}, clear=False):
+            server.seed_offline_providers()
+        seeded = [call.args[1][3] for call in store.write.call_args_list]
+        self.assertEqual(seeded, ["llama3.2:3b"])
+        for call in store.write.call_args_list:
+            self.assertEqual(call.args[1][1], "ollama")
+            self.assertEqual(call.args[1][2], policy.OLLAMA_ENDPOINT)
+            self.assertEqual(call.args[1][4], "")
+
+    def test_offline_model_tags_are_validated_before_use(self):
+        for override in ({"PERSONAL_CODEX_OFFLINE_MODEL": "bad tag; touch /tmp/x"},
+                         {"PERSONAL_CODEX_OFFLINE_MODELS": "ok:1,bad tag"}):
+            with self.subTest(override=override), patch.dict(os.environ, override, clear=False):
+                with self.assertRaisesRegex(ValueError, "valid Ollama model tag"):
+                    policy.offline_models()
+
     def test_offline_policy_requires_exact_endpoint_and_configured_tag_before_transport(self):
         for alternate in (
             {"endpoint": "http://localhost:11434"},

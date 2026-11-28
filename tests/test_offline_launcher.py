@@ -27,4 +27,21 @@ class LauncherOwnershipTests(unittest.TestCase):
             self.assertNotIn('HTTPS_PROXY',start.call_args.kwargs['env'])
             backend.terminate.assert_not_called();backend.kill.assert_not_called()
 
+    def test_named_unvetted_model_reaches_the_backend_with_its_inventory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data=Path(folder);(data/'owner.token').write_text('synthetic-launcher-token-00000000000')
+            backend=MagicMock();backend.poll.return_value=0
+            argv=['launcher','--reuse-ollama','--backend-only','--model','llama3.2:3b','--data-dir',folder]
+            with patch.object(launcher.sys,'platform','darwin'),patch.object(launcher.sys,'argv',argv), \
+                 patch.object(launcher.shutil,'which',return_value='/trusted/ollama'), \
+                 patch.object(launcher,'require_free_ports'),patch.object(launcher,'wait_ready'), \
+                 patch.object(launcher,'get_json',side_effect=[{'version':'synthetic'},{'models':[{'name':'llama3.2:3b'}]}]), \
+                 patch.object(launcher.subprocess,'Popen',return_value=backend) as start:
+                with self.assertRaisesRegex(RuntimeError,'exited'):launcher.main()
+            env=start.call_args.kwargs['env']
+            self.assertEqual(env['PERSONAL_CODEX_OFFLINE_MODEL'],'llama3.2:3b')
+            self.assertEqual(env['PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS'],'llama3.2:3b')
+            self.assertEqual(env['PERSONAL_CODEX_OFFLINE_MODELS'],'llama3.2:3b')
+
+
 if __name__=='__main__':unittest.main()

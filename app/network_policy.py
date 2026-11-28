@@ -8,6 +8,7 @@ import ctypes
 import errno
 import os
 import platform
+import re
 import socket
 import sys
 
@@ -18,7 +19,10 @@ KILL=0x80000000
 
 
 OLLAMA_ENDPOINT = "http://127.0.0.1:11434"
+# Vetted for structured coding output. The owner may name any other installed tag
+# explicitly; that never widens the network, secret or provider boundary below.
 OFFLINE_MODELS = ("qwen3.5:9b", "qwen2.5-coder:14b")
+MODEL_TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,120}$")
 
 
 def inference_policy():
@@ -36,15 +40,31 @@ def offline_only():
     return inference_policy() == "offline"
 
 
+def model_tag(value, label="Model tag"):
+    """Accept only a plain Ollama tag; never pass arbitrary text into a launch or a provider row."""
+    if not isinstance(value, str) or not MODEL_TAG.match(value):
+        raise ValueError(f"{label} is not a valid Ollama model tag")
+    return value
+
+
+def offline_model_allowlist():
+    """The vetted tags plus any tags the owner explicitly adds for an offline launch."""
+    extra = os.getenv("PERSONAL_CODEX_OFFLINE_MODELS", "")
+    tags = [tag.strip() for tag in extra.split(",") if tag.strip()]
+    return tuple(dict.fromkeys((*OFFLINE_MODELS, *(model_tag(tag, "An added offline model") for tag in tags))))
+
+
 def offline_models():
-    preferred = os.getenv("PERSONAL_CODEX_OFFLINE_MODEL", OFFLINE_MODELS[0])
-    if preferred not in OFFLINE_MODELS:
-        raise ValueError("Offline default must be one of the two configured Qwen tags")
+    preferred = model_tag(os.getenv("PERSONAL_CODEX_OFFLINE_MODEL", OFFLINE_MODELS[0]), "Offline default")
+    allowed = offline_model_allowlist()
+    if preferred not in allowed:
+        # An explicitly named, installed model is usable even when it is not vetted.
+        allowed = (*allowed, preferred)
     inventory = os.getenv("PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS")
-    available = set(inventory.split(",")) if inventory is not None else set(OFFLINE_MODELS)
+    available = set(inventory.split(",")) if inventory is not None else set(allowed)
     if preferred not in available:
         raise ValueError("Offline default is missing from the launcher’s installed-model inventory")
-    return (preferred, *(model for model in OFFLINE_MODELS if model != preferred and model in available))
+    return (preferred, *(model for model in allowed if model != preferred and model in available))
 
 
 def provider_allowed(provider):

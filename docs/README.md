@@ -3,6 +3,7 @@
 ## Using Personal Codex
 
 - [Owner testing guide](FINAL_TESTING_GUIDE.md)
+- [Using it without a paid AI service](OFFLINE_INDEPENDENCE.md)
 - [Product completeness and acceptance gates](PRODUCT_COMPLETION.md)
 - [Getting started](GETTING_STARTED.md)
 - [Current capabilities and unfinished work](IMPLEMENTATION_MATRIX.md)

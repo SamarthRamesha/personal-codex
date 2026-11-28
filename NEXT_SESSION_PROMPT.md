@@ -6,7 +6,7 @@ This release adds replacement proposals and fresh approvals after discard or can
 
 ## Remaining gates in order
 
-1. On the M3, launch with a cached supported Ollama model. Verify streaming, stop, regeneration, model switching when two models are cached, and persisted chat and search.
+1. On the M3, launch with a cached Ollama model. No paid AI service is required; the launcher seeds the local providers, and any other installed tag can be selected with `--model`. Run `scripts/offline_workstation.py --doctor` first. Verify streaming, stop, regeneration, model switching when two models are cached, and persisted chat and search.
 2. Run the real calculator fixture and the reviewed coding and delivery checklist. Keep failure, repair, test and resume receipts with the candidate commit.
 3. Run the Mac automation acceptance stages against synthetic fixtures. Record Accessibility, controls, scrolling, OCR, protected-window refusal, new-browser-window isolation and exact one-use approvals independently.
 4. Review the JARVIS deployment requirements with the owner. The host is reported online. This workspace had no authorized connection available. Deployment, private HTTPS routing and the persistent worker require separate approval and target verification. [Deployment plan](DEPLOYMENT.md)

@@ -1,18 +1,34 @@
 # Personal Codex owner testing guide
 
+## No subscription or paid API is required
+
+Personal Codex runs entirely on the Mac with a local Ollama model. ChatGPT Plus,
+Codex tokens, Freebuff, hosted API keys and cloud accounts are not used by an
+offline launch. There is no telemetry and no automatic cloud fallback; offline
+mode accepts only the loopback Ollama endpoint with a configured local model.
+[Offline operation, backup and recovery](OFFLINE_INDEPENDENCE.md)
+
 ## Download and launch on the M3
 
 1. Open the integration workflow runs and choose the newest successful run for the commit you want to test. Download the artifact named `Personal-Codex-macOS-ARM64-<commit>`. Keep its commit ID. New artifacts include Personal-Codex-source.zip at that exact commit; extract it into a separate directory, or use a matching source checkout. [Integration workflow runs](https://github.com/SamarthRamesha/personal-codex/actions?query=branch%3Apersonal-codex%2Fcodex-integration)
 2. Extract the artifact into a new folder. From that folder run `shasum -a 256 -c Personal-Codex-macOS.sha256` if the checksum file is included. Extract the inner `Personal-Codex-macOS.zip` there. Keep the installed, permission-approved Automation Preview in its current location.
-3. On macOS 14 or later, have Python 3.11+, Git, Ollama and at least one of `qwen3.5:9b` or `qwen2.5-coder:14b` already installed. If you downloaded the app, verify it with `codesign --verify --deep --strict "/absolute/path/Personal Codex.app"`. If macOS blocks the downloaded build, use the separate local source build documented below. The bundle is ad-hoc signed and still needs owner acceptance.
-4. From the matching source checkout, start an isolated profile:
+3. On macOS 14 or later, have Python 3.11+, Git, Ollama and at least one model in the local Ollama cache. The vetted coding models are `qwen3.5:9b` and `qwen2.5-coder:14b`; any other installed tag can be selected with `--model`, though structured proposals are tuned for the vetted pair. If you downloaded the app, verify it with `codesign --verify --deep --strict "/absolute/path/Personal Codex.app"`. If macOS blocks the downloaded build, use the separate local source build documented below. The bundle is ad-hoc signed and still needs owner acceptance.
+4. From the matching source checkout, check readiness first (it starts nothing and exits non-zero on a blocker):
+
+   ```sh
+   python3 scripts/offline_workstation.py --doctor \
+     --data-dir "$PWD/data/release-candidate" \
+     --app "/absolute/path/Personal Codex.app"
+   ```
+
+   Then start an isolated profile:
 
    ```sh
    python3 scripts/offline_workstation.py --data-dir "$PWD/data/release-candidate" \
      --app "/absolute/path/Personal Codex.app"
    ```
 
-   Pass `--model qwen2.5-coder:14b` to select that cached model at launch. If Ollama is already running, add `--reuse-ollama`; its existing lifecycle stays under your control. Click **Connect backend** in the app. Keep the terminal open. [Source build and startup](GETTING_STARTED.md)
+   Pass `--model qwen2.5-coder:14b` (or any other installed tag) to select that cached model at launch. If Ollama is already running, add `--reuse-ollama`; its existing lifecycle stays under your control. Click **Connect backend** in the app. Keep the terminal open. [Source build and startup](GETTING_STARTED.md)
 
 ## Run the acceptance checklist
 

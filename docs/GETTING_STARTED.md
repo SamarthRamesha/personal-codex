@@ -14,7 +14,7 @@ destination and review the scope before authorizing it. This mode supports expli
 the original scope. **Project memory** shows saved notes and evidence from completed rounds before
 you decide whether to save a proposed note.
 
-The launcher picks the standard release bundle in `desktop/src-tauri/target/release/bundle/macos/` first. Use `--app` to select a specific bundle. It needs the Ollama CLI and either `qwen3.5:9b` or `qwen2.5-coder:14b` already cached. It selects the first installed model in that order unless you pass `--model`. If port 11434 or 8787 is occupied, quit the existing service through its normal controls before launching.
+The launcher picks the standard release bundle in `desktop/src-tauri/target/release/bundle/macos/` first. Use `--app` to select a specific bundle. It needs the Ollama CLI and an already cached model: it prefers `qwen3.5:9b` or `qwen2.5-coder:14b`, and `--model` selects any other installed tag. Run the same command with `--doctor` first to check the app, ports, models and database without starting anything. [Offline operation and recovery](OFFLINE_INDEPENDENCE.md) If port 11434 or 8787 is occupied, quit the existing service through its normal controls before launching.
 
 ## Mac opening actions
 

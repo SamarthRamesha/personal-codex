@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 2026-11-28
+
+- An offline launch now accepts any installed Ollama tag named with `--model`; the vetted `qwen3.5:9b` and `qwen2.5-coder:14b` stay the default and keep their ordered preference. The named model is seeded into the provider list, so the desktop can select it without extra setup. Previously only the two hardcoded tags could be launched at all.
+- Added `offline_workstation.py --doctor` (and `--json`): a read-only readiness report for the platform, Python, Git, app bundle, loopback ports, installed models, disk space and database integrity, each blocker with a remedy and a non-zero exit status. It starts no service.
+- Documented the no-subscription path end to end (launch, model choice, profile data, snapshots, restore, interrupted work and maintenance) and linked it from the owner guide and documentation index.
+- Verified an offline backend with no Ollama process running: startup seeds the configured local provider, `/api/health` answers, and `/api/providers` refuses an unauthenticated request.
+
 ## Integration candidate — 2026-11-28
 
 - Fixed truncated structured Ollama output with a bounded 2048-token coding budget, explicit token-limit errors and JSON mode retained without streaming; chat remains bounded at 768.

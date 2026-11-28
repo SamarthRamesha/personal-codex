@@ -3,6 +3,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import app.server as server
 from app import conversations
@@ -284,5 +285,39 @@ class ExecutionClaimTests(unittest.TestCase):
         self.assertEqual(observed,['p1'])
         self.assertFalse(closer.is_alive())
         self.assertFalse(thread.is_alive())
+
+@unittest.skipUnless(os.getenv("PERSONAL_CODEX_HTTP_TESTS") == "1", "requires an explicitly enabled loopback listener")
+class OfflineBootstrapTests(unittest.TestCase):
+    """An offline profile must offer its local models without a paid service."""
+    def test_offline_startup_seeds_only_the_configured_local_models(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            old_data, old_db, old_store = server.DATA, server.DB_PATH, server.STORE
+            env = patch.dict(os.environ, {"PERSONAL_CODEX_INFERENCE_POLICY": "offline",
+                                          "PERSONAL_CODEX_OFFLINE_MODEL": "llama3.2:3b",
+                                          "PERSONAL_CODEX_INSTALLED_OFFLINE_MODELS": "llama3.2:3b"})
+            env.start()
+            try:
+                server.DATA, server.DB_PATH = base / "data", base / "data/test.db"
+                server.STORE = server.Store()
+                server.seed_offline_providers()
+                http = ThreadingHTTPServer(("127.0.0.1", 0), server.App)
+                thread = threading.Thread(target=http.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    with urlopen(f"http://127.0.0.1:{http.server_port}/api/providers", timeout=3) as response:
+                        providers = json.loads(response.read())
+                finally:
+                    http.shutdown(); http.server_close(); thread.join()
+                self.assertEqual([row["model"] for row in providers], ["llama3.2:3b"])
+                self.assertEqual(providers[0]["kind"], "ollama")
+                self.assertEqual(providers[0]["endpoint"], "http://127.0.0.1:11434")
+                self.assertFalse(providers[0]["cloud_allowed"])
+                self.assertNotIn("secret_ref", providers[0])
+            finally:
+                env.stop()
+                server.STORE.close()
+                server.DATA, server.DB_PATH, server.STORE = old_data, old_db, old_store
+
 
 if __name__ == '__main__': unittest.main()

@@ -1,5 +1,26 @@
 # Development log
 
+## 28 November 2026 — running without a paid AI service
+
+The owner is not renewing ChatGPT Plus. The launch path already used only loopback Ollama, but it
+accepted exactly two hardcoded model tags, so any other installed model was a dead end with an
+unhelpful message. `--model` now takes any installed tag, the launcher writes the chosen tag into the
+provider inventory, and offline mode seeds it for the desktop selector. The vetted Qwen pair remains
+the default and keeps its preference order; an unvetted choice prints a quality warning and every
+proposal is still reviewed before a write. Model tags are validated so an env value cannot become
+arbitrary text.
+
+`offline_workstation.py --doctor [--json]` reports platform, Python, Git, app bundle, both loopback
+ports, installed models, disk space and existing SQLite integrity, each with a remedy, and exits
+non-zero on a blocker without starting anything. It mirrors the launcher's own ownership rules,
+including `--reuse-ollama`.
+
+Checked here: 521 backend tests discovered, 501 passed, 20 optional/platform skips; the focused
+launcher, policy, doctor and offline-bootstrap tests pass. A real offline backend was started on
+Linux with no Ollama process: it seeded `llama3.2:3b` as the only provider, answered `/api/health`,
+and returned 401 for an unauthenticated `/api/providers`. Not checked: any macOS launch, a real
+Ollama answer, the desktop rendering of the new model, or macOS CI for this commit.
+
 ## 23 November 2026 — the integration seam, an honest 403, and a CI file that never loaded
 
 Continuing the same session. Five commits, one of which was a mistake worth recording in full.
