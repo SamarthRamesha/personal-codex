@@ -10,7 +10,7 @@ The initial server profile is worker-only and repository execution stays disable
 
 ## What has been tested
 
-Exact API source `282b90d759c2cf76e3306fe87ee6a1f74f7922f2` passed 17 actual container checks in a disposable Debian/Linux machine. The current desktop/documentation release has identical API-context bytes. The checks cover authenticated readiness, owner/worker separation, execution-disabled/worker-only behavior, additive no-connect filtering, actual runtime resource/mount controls, document index/removal, the proposal guard and restart persistence. See [container verification](docs/CONTAINER_VERIFICATION.md).
+Exact API source `282b90d759c2cf76e3306fe87ee6a1f74f7922f2` passed 17 actual container checks in a disposable Debian/Linux machine. This is historical container evidence. Build and review the image for the exact current release before any installation. The checks cover authenticated readiness, owner/worker separation, execution-disabled/worker-only behavior, additive no-connect filtering, actual runtime resource/mount controls, document index/removal, the proposal guard and restart persistence. See [container verification](docs/CONTAINER_VERIFICATION.md).
 
 These results do not prove JARVIS's Docker identity mapping, importer behavior, service configuration, quota, TLS, access policy or coding executor. The disposable machine is stopped and its snapshot is preserved.
 

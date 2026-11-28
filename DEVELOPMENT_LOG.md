@@ -605,3 +605,15 @@ writes to named output directories. The CI artifact contains a checksum for the 
 The owner reports JARVIS online. The existing private HTTPS, outbound worker, isolated service,
 capacity and rollback plan was reviewed locally. No authorized JARVIS connection was available
 here. Target checks and deployment remain pending separate owner action. [Owner guide](docs/FINAL_TESTING_GUIDE.md)
+
+## 28 November 2026 · Completion inventory and supervised review
+
+Verified the previous release and recorded the outstanding capability and acceptance gates. Fixed the
+desktop dead end after a proposal is rejected, stale or expired by adding an exact discard action.
+Discard preserves the worktree and revokes the proposal approval. A cancelled supervised task can
+request a fresh plan with a new approval. The execute button binds the action to the displayed
+proposal, and the server consumes that approval with the claim. Added saved-note corrections and
+selection of supported declared npm checks into the existing command review.
+
+This workspace lacked real Ollama, interactive macOS and authorized JARVIS access. Network-enabled
+install and server lifecycle remain operator-managed. [Product inventory](docs/PRODUCT_COMPLETION.md)

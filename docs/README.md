@@ -2,6 +2,8 @@
 
 ## Using Personal Codex
 
+- [Owner testing guide](FINAL_TESTING_GUIDE.md)
+- [Product completeness and acceptance gates](PRODUCT_COMPLETION.md)
 - [Getting started](GETTING_STARTED.md)
 - [Current capabilities and unfinished work](IMPLEMENTATION_MATRIX.md)
 - [Mac automation preview and acceptance gates](MAC_AUTOMATION.md)

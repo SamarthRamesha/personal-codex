@@ -2,7 +2,7 @@
 
 Start from the published tip of `personal-codex/codex-integration` and its matching ARM64 GitHub artifact. Run the owner checklist with an isolated profile and disposable projects. Keep the current Automation Preview and permissions in place. [Owner testing guide](docs/FINAL_TESTING_GUIDE.md)
 
-This release adds task-worktree readiness with reviewed terminal handoff for setup and preview, launch-time filtering of installed offline models, a selectable model for live calculator acceptance, and archive checksum verification. Earlier verified browser demonstrations used scripted inference. Hosted CI also uses scripted inference.
+This release adds replacement proposals and fresh approvals after discard or cancellation, correction of saved project notes, and selection of declared npm checks into the existing approval flow. It retains launch-time installed-model selection, a selectable model for live calculator acceptance and archive checksum verification. [Product completeness and evidence](docs/PRODUCT_COMPLETION.md) Earlier verified browser demonstrations used scripted inference. Hosted CI also uses scripted inference.
 
 ## Remaining gates in order
 
